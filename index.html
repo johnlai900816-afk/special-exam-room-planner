@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>特殊試場排列機</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:14px;color:#1f2937;background:#f3f4f6}
+header{background:#1e3a5f;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:18px;margin:0}
+header input{font-size:14px;padding:4px 8px;border-radius:4px;border:0;min-width:340px}
+.tabs{display:flex;gap:2px;background:#1e3a5f;padding:0 12px}
+.tabs button{border:0;background:#33557f;color:#dbe6f3;padding:8px 18px;font-size:14px;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit}
+.tabs button.on{background:#f3f4f6;color:#111;font-weight:bold}
+.tab{display:none;padding:12px 16px}
+.tab.on{display:block}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+button.b{border:1px solid #9ca3af;background:#fff;border-radius:5px;padding:6px 12px;font-size:14px;cursor:pointer;font-family:inherit}
+button.b:hover{background:#eef2ff}
+button.b.pri{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:bold}
+button.b.pri:hover{background:#1d4ed8}
+button.b.sm{padding:2px 8px;font-size:12px}
+.stat{background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:5px 12px}
+.stat b{font-size:17px;color:#1e3a5f}
+.pref{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:4px 10px}
+.warnbox{background:#fff7ed;border:1px solid #fdba74;border-radius:6px;padding:6px 12px;margin-bottom:10px;max-height:130px;overflow:auto}
+.warnbox.ok{background:#f0fdf4;border-color:#86efac}
+.warnbox div.err{color:#b91c1c}.warnbox div.warn{color:#b45309}
+.scroll{overflow-x:auto}
+table.board{border-collapse:collapse;background:#fff;margin-bottom:18px;width:100%}
+table.board th,table.board td{border:1px solid #9ca3af;vertical-align:top;padding:4px}
+table.board th{background:#e5e7eb;font-size:13px;white-space:nowrap}
+table.board th small{font-weight:normal;color:#4b5563}
+td.sh{background:#e5e7eb;width:118px;min-width:118px;text-align:center}
+td.sh .sub{font-size:17px;font-weight:bold}
+td.sh .tm{font-size:12px;color:#374151}
+td.sh .ex{font-size:12px;color:#b45309}
+td.cell{min-width:118px;height:56px;position:relative}
+td.cell.over{outline:3px solid #2563eb;outline-offset:-3px;background:#eff6ff}
+td.cell.bad{background:#fef2f2}
+td.cell.un{background:#fffbeb}
+.ch{font-size:12px;color:#6b7280;display:flex;justify-content:space-between;flex-wrap:wrap;gap:0 8px}
+.ch .n.full{color:#b91c1c;font-weight:bold}
+.gl{font-size:12px;font-weight:bold;margin-top:3px;color:#374151}
+.chip{display:inline-block;border-radius:10px;padding:1px 7px;margin:1px;font-size:13px;cursor:grab;border:1px solid transparent;white-space:nowrap;user-select:none}
+.chip.g7{background:#dcfce7;border-color:#86efac}.chip.g8{background:#dbeafe;border-color:#93c5fd}.chip.g9{background:#ffedd5;border-color:#fdba74}.chip.g0{background:#eee;border-color:#ccc}
+.chip.pin{border-color:#111;border-width:2px}
+.chip.hl{box-shadow:0 0 0 3px #facc15}
+.chip.wt{opacity:.55;cursor:default;border-style:dashed}
+.cm{font-size:12px;color:#b91c1c;margin-top:2px}
+.cm.warn{color:#b45309}
+.cf{margin-top:4px;display:flex;gap:3px;flex-wrap:wrap}
+.cf select,.cf input{font-size:12px;font-family:inherit;max-width:100%;border:1px solid #d1d5db;border-radius:3px;padding:1px 2px}
+.cf input{width:100%}
+.hint{font-size:12px;color:#9ca3af;text-align:center;padding-top:14px}
+.legend{font-size:12px;color:#4b5563}
+table.ed{border-collapse:collapse;background:#fff;margin-bottom:8px}
+table.ed th,table.ed td{border:1px solid #d1d5db;padding:3px 5px;font-size:13px}
+table.ed th{background:#e5e7eb}
+table.ed input[type=text],table.ed input[type=number],table.ed input[type=time],table.ed select{font-family:inherit;font-size:13px;border:1px solid #d1d5db;border-radius:3px;padding:2px 4px}
+table.ed tr.off td{background:#f3f4f6;color:#9ca3af}
+.sc{border:1px solid #d1d5db;background:#f9fafb;border-radius:4px;padding:2px 6px;min-width:44px;cursor:pointer;font-family:inherit;font-size:13px}
+.sc.has{background:#dbeafe;border-color:#60a5fa;font-weight:bold}
+#pop{position:absolute;background:#fff;border:1px solid #6b7280;border-radius:6px;padding:8px 10px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:50;display:none}
+#pop label{display:block;margin:2px 0;cursor:pointer}
+h3{margin:14px 0 6px}
+.note{font-size:12.5px;color:#4b5563;margin:4px 0 10px;line-height:1.6}
+#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#111;color:#fff;padding:8px 18px;border-radius:20px;display:none;z-index:99}
+#busy{position:fixed;inset:0;background:rgba(255,255,255,.7);display:none;align-items:center;justify-content:center;font-size:22px;z-index:98}
+table.out{border-collapse:collapse;width:100%;background:#fff;margin-bottom:14px}
+table.out th,table.out td{border:1px solid #000;padding:4px 5px;vertical-align:top;font-size:12.5px;line-height:1.45}
+table.out th{background:#d9d9d9}
+table.out td.sh2{background:#d9d9d9;text-align:center;font-weight:bold;white-space:nowrap}
+table.out td.chg{background:#fff3c4}
+#outArea h2{font-size:17px;text-align:center;margin:6px 0}
+@media print{
+  header,.tabs,.noprint,#toast,#busy{display:none!important}
+  body{background:#fff}
+  .tab{padding:0}
+  @page{size:A4 landscape;margin:8mm}
+  table.out{page-break-inside:auto}
+  table.out tr{page-break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<header class="noprint">
+  <h1>特殊試場排列機</h1>
+  <input id="title" onchange="D.title=this.value;save()">
+  <span style="flex:1"></span>
+  <span id="cloud" style="font-size:12.5px;display:flex;gap:6px;align-items:center"></span>
+  <button class="b sm" onclick="exportJson()">匯出設定檔</button>
+  <button class="b sm" onclick="document.getElementById('imp').click()">匯入設定檔</button>
+  <input type="file" id="imp" accept=".json" style="display:none" onchange="importJson(this)">
+  <button class="b sm" onclick="resetAll()">還原預設資料</button>
+</header>
+<div class="tabs noprint">
+  <button data-tab="board" class="on">① 排考場</button>
+  <button data-tab="stu">② 學生與服務</button>
+  <button data-tab="set">③ 節次／教室／監考</button>
+  <button data-tab="out">④ 輸出表格</button>
+</div>
+
+<div class="tab on" id="tab-board">
+  <div class="bar">
+    <button class="b pri" onclick="runSolve('all')">⚙ 自動排列</button>
+    <button class="b" onclick="runSolve('fill')">只補排「未排入」</button>
+    <button class="b" onclick="runSolve('next')">換一組解</button>
+    <span class="pref">少用考場 <input type="range" id="pref" min="0" max="100" step="10" onchange="setPref(this.value)"> 少換教室</span>
+    <button class="b" onclick="undo()">↶ 復原</button>
+    <button class="b" onclick="unpinAll()">全部解鎖</button>
+    <button class="b" onclick="autoProctor()">自動分配監考</button>
+    <span id="stats"></span>
+  </div>
+  <div class="legend">拖曳學生可換教室（拖過的會自動上鎖 <b>粗框</b>，自動排列時不會被動到）；點一下學生可上鎖／解鎖；滑鼠移到學生上會標出他每一節在哪裡。
+    <span class="chip g7">七年級</span><span class="chip g8">八年級</span><span class="chip g9">九年級</span></div>
+  <div id="warn" class="warnbox"></div>
+  <div id="board" class="scroll"></div>
+  <div id="ptally"></div>
+</div>
+
+<div class="tab" id="tab-stu">
+  <div class="bar"><button class="b" onclick="addStu()">＋ 新增學生</button>
+  <span class="note">點服務欄位可選「全科」或指定科目。取消「排入」＝這次不排（例如確定不來考的學生），資料會保留。</span></div>
+  <div id="stuTable" class="scroll"></div>
+</div>
+
+<div class="tab" id="tab-set">
+  <h3>考試節次</h3>
+  <div class="note">「延長方向」：提早開始（例：英文 10:45 先發延長卷）或延後結束（例：數學考到 10:20）。「分年級」：同一間只放同年級（英文聽力）。「口頭上限」：每間最多幾位口頭回答學生。「口頭獨立一間」：口頭學生不和其他學生同一間（作文、國文）。<br>
+  「補考節」：同科目的第二個時段（例：作文補），口頭學生在正考排不下時會自動排到補考節，正考時段在自習等候教室。「不計誦讀」：該科只有誦讀服務的學生不進特殊試場（例：作文）。</div>
+  <div id="sesTable" class="scroll"></div>
+  <button class="b" onclick="addSes()">＋ 新增節次</button>
+  <h3>教室</h3>
+  <div class="note">類型：一般／電腦教室（只放電腦作答）／備用（盡量不用）／自習等候（補考學生正考時段待的地方）。</div>
+  <div id="roomTable"></div>
+  <button class="b" onclick="addRoom()">＋ 新增教室</button>
+  <h3>其他規則</h3>
+  <div>有「人數調整（獨立）」學生的試場，人數上限 <input type="number" id="smallMax" style="width:60px" onchange="D.settings.smallMax=+this.value;dataChanged()"> 人</div>
+  <h3>監考老師</h3>
+  <div class="note">一行一位。</div>
+  <textarea id="proctors" rows="8" style="width:220px;font-family:inherit;font-size:14px" onchange="D.proctors=this.value.split('\n').map(s=>s.trim()).filter(Boolean);save()"></textarea>
+</div>
+
+<div class="tab" id="tab-out">
+  <div class="bar noprint">
+    <button class="b on" id="ov1" onclick="showOut('svc')">段考服務表</button>
+    <button class="b" id="ov2" onclick="showOut('itin')">學生動線表</button>
+    <span style="width:20px"></span>
+    <button class="b pri" onclick="window.print()">🖨 列印／存 PDF</button>
+    <button class="b" onclick="copyOut()">複製表格（貼到 Word／Google 文件）</button>
+    <button class="b" onclick="downloadDoc()">下載 Word 檔</button>
+  </div>
+  <div id="outArea"></div>
+</div>
+
+<div id="pop"></div><div id="toast"></div><div id="busy">排列中…</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+/*CORE-START*/
+'use strict';
+const SV=[
+  {id:'ext',name:'延長'},
+  {id:'read',name:'誦讀'},
+  {id:'oral',name:'口頭'},
+  {id:'pc',name:'電腦'},
+  {id:'small',name:'獨立'}
+];
+const GN={7:'七',8:'八',9:'九'};
+function defaultData(){
+  const A='*',KW=['國文','作文'],KWE=['國文','作文','英文'];
+  const S=(cls,seat,name,sv,memo,on)=>({id:cls+'-'+seat+name,cls,seat,name,sv,memo:memo||'',on:on!==false});
+  const T=(id,date,dow,period,subject,grades,start,end,extMin,extMode,o)=>Object.assign({id,date,dow,period,subject,grades,start,end,extMin,extMode,oralCap:8,split:false,noRead:false,makeup:false,oralSep:false},o||{});
+  const G=[7,8,9];
+  return {
+    title:'○○學年度第○學期 第○次段考服務表（範例資料）',
+    students:[
+      S('901','01','王小明',{ext:A}),
+      S('901','02','陳小華',{small:A}),
+      S('902','03','林小美',{read:A,oral:KW}),
+      S('903','04','張小安',{pc:KW}),
+      S('801','05','李小芳',{read:A}),
+      S('802','06','黃小傑',{small:A,ext:A}),
+      S('803','07','吳小婷',{oral:KW}),
+      S('701','08','劉小宇',{ext:A}),
+      S('702','09','蔡小晴',{read:A,small:A}),
+      S('703','10','楊小恩',{pc:KW,ext:KW})
+    ],
+    sessions:[
+      T('d1p1','12/1','二','第1節','作文',G,'08:20','09:05',20,'before',{oralCap:2,noRead:true,oralSep:true}),
+      T('d1p2','12/1','二','第2節','數學',G,'09:15','10:00',20,'after'),
+      T('d1p3','12/1','二','第3節','作文',G,'10:10','10:55',0,'after',{oralCap:2,noRead:true,makeup:true,oralSep:true}),
+      T('d1p4','12/1','二','第4節','英文',G,'11:05','11:50',20,'before',{oralCap:3,split:true}),
+      T('d1p5','12/1','二','第5節','地科',[9],'13:10','13:55',20,'after'),
+      T('d1p7','12/1','二','第7節','社會',G,'15:10','15:55',20,'before'),
+      T('d2p2','12/2','三','第2節','國文',G,'09:15','10:00',20,'after',{oralCap:7,oralSep:true}),
+      T('d2p4','12/2','三','第4節','生物/理化',G,'11:05','11:50',20,'before')
+    ],
+    rooms:[
+      {id:'A',name:'環教中心',cap:20,type:'normal'},
+      {id:'B',name:'學中一',cap:8,type:'normal'},
+      {id:'C',name:'學中二',cap:8,type:'normal'},
+      {id:'D',name:'學中三',cap:8,type:'normal'},
+      {id:'E',name:'學中四',cap:8,type:'normal'},
+      {id:'F',name:'電腦教室',cap:30,type:'pc'},
+      {id:'G',name:'特教辦公室',cap:2,type:'spare'},
+      {id:'H',name:'綠光教室',cap:30,type:'wait'}
+    ],
+    proctors:['老師A','老師B','老師C','老師D','老師E','老師F'],
+    settings:{smallMax:20,pref:50,seed:1},
+    assign:{},proctorOf:{},notes:{}
+  };
+}
+function hm(s){const a=String(s||'0:0').split(':');return (+a[0])*60+(+a[1]||0);}
+function fmt(m){return Math.floor(m/60)+':'+String(m%60).padStart(2,'0');}
+function gradeOf(stu){const g=parseInt(String(stu.cls).trim()[0],10);return isNaN(g)?0:g;}
+function shortName(stu){const n=stu.name||'';return stu.cls+(n.length>=3?n.slice(1):n);}
+function applies(scope,subject){return scope==='*'||(Array.isArray(scope)&&scope.includes(subject));}
+function weights(pref){const x=(pref==null?50:+pref)/100;return {room:6+18*(1-x),change:0.5+5*x,distinct:1,mix:4,extSplit:300,makeup:0.5};}
+function labelOf(P){const a=[];if(P.oral)a.push('口頭');if(P.ext)a.push('延長');if(P.read)a.push('誦讀');if(P.pc)a.push('電腦');return a.length?a.join('+'):'獨立';}
+function labelRank(P){return P.pc?0:P.ext?1:(!P.read&&!P.oral)?2:(P.read&&!P.oral)?3:4;}
+
+function compile(D){
+  const rooms=D.rooms.map((r,i)=>({i,id:r.id,name:r.name,cap:+r.cap||0,type:r.type||'normal'}));
+  const dates=[...new Set(D.sessions.map(s=>s.date))];
+  const ses=D.sessions.map((s,i)=>{const st=hm(s.start),en=hm(s.end),e=+s.extMin||0;
+    return {i,id:s.id,ref:s,date:s.date,subject:s.subject,st,en,est:s.extMode==='before'?st-e:st,een:s.extMode==='after'?en+e:en,
+      oralCap:(s.oralCap===''||s.oralCap==null)?99:+s.oralCap,split:!!s.split,makeup:!!s.makeup,oralSep:!!s.oralSep,grades:s.grades||[],key:dates.indexOf(s.date)*10000+st};});
+  const subj={};
+  ses.forEach(s=>{const o=subj[s.subject]=subj[s.subject]||{name:s.subject,ses:[],noRead:false};o.ses.push(s.i);if(s.ref.noRead)o.noRead=true;});
+  const parts=[],byStu=[];
+  D.students.forEach((stu,si)=>{
+    if(!stu.on)return;const g=gradeOf(stu),list=[];
+    for(const name in subj){const sj=subj[name],f={};let any=false;
+      for(const v of SV){let a=applies(stu.sv&&stu.sv[v.id],name);if(v.id==='read'&&sj.noRead)a=false;f[v.id]=a;any=any||a;}
+      if(!any)continue;
+      const cand=sj.ses.filter(t=>ses[t].grades.includes(g)).sort((a,b)=>(ses[a].makeup-ses[b].makeup)||(ses[a].key-ses[b].key));
+      if(!cand.length)continue;
+      const mains=cand.filter(t=>!ses[t].makeup);
+      const P=Object.assign({p:parts.length,si,stu,subject:name,g,opts:f.oral?cand:(mains.length?mains:cand),all:cand},f);
+      P.kind=P.pc?'pc':P.ext?'ext':P.oral?'oral':P.read?'read':'small';
+      list.push(P.p);parts.push(P);
+    }
+    if(list.length)byStu.push(list);
+  });
+  const pairs=[];
+  for(let a=0;a<ses.length;a++)for(let b=a+1;b<ses.length;b++)
+    if(ses[a].date===ses[b].date&&ses[a].est<ses[b].een&&ses[b].est<ses[a].een)pairs.push([a,b]);
+  const n=ses.length*rooms.length;
+  return {D,rooms,ses,subj,parts,byStu,pairs,W:weights(D.settings.pref),smallMax:+D.settings.smallMax||99,
+    pcRooms:rooms.filter(r=>r.type==='pc').map(r=>r.i),exRooms:rooms.filter(r=>r.type==='normal'||r.type==='spare').map(r=>r.i),
+    c_cnt:new Int16Array(n),c_ext:new Int16Array(n),c_any:new Int16Array(n),c_oral:new Int16Array(n),c_small:new Int16Array(n),c_gm:new Int32Array(n),c_eg:new Int32Array(n),c_gc:new Int16Array(n*10)};
+}
+function pop(x){let c=0;while(x){c+=x&1;x>>>=1;}return c;}
+function sesLabel(T){return T.subject+(T.makeup?'（補）':'');}
+
+function evaluate(M,S,out){
+  const nS=M.ses.length,nR=M.rooms.length,W=M.W,H=M.H||1000;let viol=0;
+  const cnt=M.c_cnt,ext=M.c_ext,any=M.c_any,oral=M.c_oral,small=M.c_small,gm=M.c_gm,eg=M.c_eg,gc=M.c_gc;
+  gc.fill(0);cnt.fill(0);ext.fill(0);any.fill(0);oral.fill(0);small.fill(0);gm.fill(0);eg.fill(0);
+  let cost=0;
+  const msg=out?(t,r,lvl,m)=>out.msgs.push({t,r,lvl,m}):null;
+  for(let p=0;p<M.parts.length;p++){
+    const P=M.parts[p],t=S.ses[p],r=S.room[p];
+    if(r<0){viol++;if(out)out.unassigned++;continue;}
+    const k=t*nR+r,R=M.rooms[r];
+    cnt[k]++;if(P.ext){any[k]++;if(!P.pc){ext[k]++;eg[k]|=1<<P.g;}}
+    if(P.oral)oral[k]++;if(P.small)small[k]++;gm[k]|=1<<P.g;gc[k*10+P.g]++;
+    if(R.type==='wait'){viol++;msg&&msg(t,r,'err',shortName(P.stu)+' 排在自習等候教室，不能考試');}
+    else if(P.pc&&R.type!=='pc'&&M.pcRooms.length){viol++;msg&&msg(t,r,'err',shortName(P.stu)+' 需要電腦作答，這間不是電腦教室');}
+    else if(!P.pc&&R.type==='pc'){viol++;msg&&msg(t,r,'err',shortName(P.stu)+' 不需電腦，卻排在電腦教室');}
+    if(M.ses[t].makeup)cost+=W.makeup;
+  }
+  let uses=0;
+  for(let t=0;t<nS;t++){
+    const T=M.ses[t];let extRooms=0;
+    for(let r=0;r<nR;r++){
+      const k=t*nR+r,c=cnt[k];if(!c)continue;const R=M.rooms[r];
+      if(R.type!=='wait'){uses++;cost+=W.room*(R.type==='spare'?2.5:1)+0.2*r;}
+      if(c>R.cap){viol+=(c-R.cap);msg&&msg(t,r,'err','超過容量（'+c+'／'+R.cap+'）');}
+      if(oral[k]>T.oralCap){viol+=(oral[k]-T.oralCap);msg&&msg(t,r,'err','口頭學生 '+oral[k]+' 人，超過上限 '+T.oralCap);}
+      if(small[k]&&c>M.smallMax){viol+=(c-M.smallMax);msg&&msg(t,r,'err','有人數調整學生，但本間 '+c+' 人超過 '+M.smallMax);}
+      if(T.split){const n=pop(gm[k]);if(n>1){let mx=0;for(let g=0;g<10;g++)if(gc[k*10+g]>mx)mx=gc[k*10+g];viol+=(c-mx);msg&&msg(t,r,'err','本科要分年級，這間混了 '+n+' 個年級');}}
+      if(R.type!=='pc'&&oral[k]&&oral[k]<c){if(T.oralSep){cost+=200*Math.min(oral[k],c-oral[k]);msg&&msg(t,r,'warn','口頭學生和其他學生混在同一間');}else cost+=W.mix;}
+      if(ext[k])extRooms++;
+    }
+    if(!T.split){if(extRooms>1){cost+=W.extSplit*(extRooms-1);msg&&msg(t,-1,'warn','延長學生被分在 '+extRooms+' 間試場');}}
+    else for(let g=0;g<10;g++){let n=0;for(let r=0;r<nR;r++)if(eg[t*nR+r]&(1<<g))n++;
+      if(n>1){cost+=W.extSplit*(n-1);msg&&msg(t,-1,'warn',(GN[g]||g)+'年級延長學生被分在 '+n+' 間試場');}}
+  }
+  for(const pr of M.pairs){const a=M.ses[pr[0]],b=M.ses[pr[1]];
+    for(let r=0;r<nR;r++){const ka=pr[0]*nR+r,kb=pr[1]*nR+r;if(!cnt[ka]||!cnt[kb])continue;
+      const as=any[ka]?a.est:a.st,ae=any[ka]?a.een:a.en,bs=any[kb]?b.est:b.st,be=any[kb]?b.een:b.en;
+      if(as<be&&bs<ae){viol++;msg&&msg(pr[1],r,'err','時間重疊：'+sesLabel(a)+' '+fmt(as)+'~'+fmt(ae)+' 還在用這間');}}}
+  let changes=0;const tk=M._tk||(M._tk=[]),tp=M._tp||(M._tp=[]);
+  for(const list of M.byStu){
+    let n=0;
+    for(const p of list){if(S.room[p]<0)continue;const key=M.ses[S.ses[p]].key;let j=n++;
+      while(j>0&&tk[j-1]>key){tk[j]=tk[j-1];tp[j]=tp[j-1];j--;}tk[j]=key;tp[j]=p;}
+    let ch=0,dist=0;
+    for(let i=0;i<n;i++){const p=tp[i],r=S.room[p];
+      let seen=false;for(let j=0;j<i;j++)if(S.room[tp[j]]===r){seen=true;break;}
+      if(!seen)dist++;
+      if(i>0){const q=tp[i-1];if(S.room[q]!==r)ch++;
+        const Ta=M.ses[S.ses[q]],Tb=M.ses[S.ses[p]];
+        if(Ta.date===Tb.date){const ae=M.parts[q].ext?Ta.een:Ta.en,bs=M.parts[p].ext?Tb.est:Tb.st;
+          if(bs<ae){viol++;msg&&msg(S.ses[p],S.room[p],'err',shortName(M.parts[p].stu)+' 與 '+sesLabel(Ta)+' 時間重疊');}}}
+    }
+    changes+=ch;cost+=W.change*ch+W.distinct*Math.max(0,dist-1);
+  }
+  if(out){out.uses=uses;out.changes=changes;}
+  M.viol=viol;return cost+H*viol;
+}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function solve(M,S0,opt){
+  opt=opt||{};const N=opt.iters||60000,RS=opt.restarts||4;
+  const rnd=mulberry32(opt.seed||1),ri=n=>Math.floor(rnd()*n);
+  const free=[];for(let p=0;p<M.parts.length;p++)if(!S0.pin[p])free.push(p);
+  if(!free.length||!M.exRooms.length)return S0;
+  const isPc=p=>M.parts[p].pc&&M.pcRooms.length>0;
+  const allowed=p=>isPc(p)?M.pcRooms:M.exRooms;
+  const ex=M.exRooms,nS=M.ses.length;
+  let best=null,bestC=Infinity;
+  const lp=new Int32Array(4000),ls=new Int16Array(4000),lr=new Int16Array(4000);
+  const mark=new Uint8Array(M.D.students.length);
+  for(let rs=0;rs<RS;rs++){
+    const S={ses:Int16Array.from(S0.ses),room:Int16Array.from(S0.room),pin:S0.pin};
+    for(const p of free){S.ses[p]=M.parts[p].opts[0];S.room[p]=allowed(p)[0];}
+    let ln=0;
+    const set=(p,t,r)=>{if(S.ses[p]===t&&S.room[p]===r)return;lp[ln]=p;ls[ln]=S.ses[p];lr[ln]=S.room[p];ln++;S.ses[p]=t;S.room[p]=r;};
+    M.H=1000;let c0=evaluate(M,S),curV=M.viol,curSoft=c0-1000*curV;
+    if(c0<bestC){bestC=c0;best={ses:Int16Array.from(S.ses),room:Int16Array.from(S.room),pin:S0.pin};}
+    const T0=40,T1=0.05;
+    for(let i=0;i<N;i++){
+      const T=T0*Math.pow(T1/T0,i/N),m=rnd();ln=0;M.H=Math.min(1000,15*Math.pow(1000/15,i/(0.35*N)));
+      if(m<0.35){const p=free[ri(free.length)],P=M.parts[p];let t=S.ses[p];
+        if(P.opts.length>1&&rnd()<0.3)t=P.opts[ri(P.opts.length)];const a=allowed(p);set(p,t,a[ri(a.length)]);}
+      else if(m<0.5){const list=M.byStu[ri(M.byStu.length)],r=ex[ri(ex.length)];
+        for(const p of list)if(!S.pin[p]&&!isPc(p))set(p,S.ses[p],r);}
+      else if(m<0.72){const p0=free[ri(free.length)];if(isPc(p0))continue;
+        const t=S.ses[p0],r0=S.room[p0],kind=M.parts[p0].kind,g=M.parts[p0].g,mode=rnd(),r=ex[ri(ex.length)];
+        for(const p of free)if(S.ses[p]===t&&S.room[p]===r0&&!isPc(p)&&(mode<0.3||(M.parts[p].kind===kind&&(mode<0.65||M.parts[p].g===g))))set(p,t,r);}
+      else if(m<0.82){const t=ri(nS),a=ex[ri(ex.length)],b=ex[ri(ex.length)];if(a===b)continue;
+        for(const p of free){if(S.ses[p]!==t||isPc(p))continue;if(S.room[p]===a)set(p,t,b);else if(S.room[p]===b)set(p,t,a);}}
+      else{const p0=free[ri(free.length)];if(isPc(p0))continue;
+        const t=S.ses[p0],r0=S.room[p0],kind=M.parts[p0].kind,g=M.parts[p0].g,mode=rnd(),r=ex[ri(ex.length)];
+        mark.fill(0);
+        for(const p of free)if(S.ses[p]===t&&S.room[p]===r0&&!isPc(p)&&(mode<0.3||(M.parts[p].kind===kind&&(mode<0.65||M.parts[p].g===g))))mark[M.parts[p].si]=1;
+        for(const p of free)if(mark[M.parts[p].si]&&!isPc(p))set(p,S.ses[p],r);}
+      if(!ln)continue;
+      const c=evaluate(M,S),v=M.viol,soft=c-M.H*v,cur=curSoft+M.H*curV;
+      if(c<=cur||rnd()<Math.exp((cur-c)/T)){curSoft=soft;curV=v;const tr=soft+1000*v;if(tr<bestC){bestC=tr;best.ses.set(S.ses);best.room.set(S.room);}}
+      else for(let j=ln-1;j>=0;j--){S.ses[lp[j]]=ls[j];S.room[lp[j]]=lr[j];}
+    }
+  }
+  // 收尾：逐一嘗試更好的位置
+  M.H=1000;let cur=evaluate(M,best),imp=true,pass=0;
+  while(imp&&pass++<6){imp=false;
+    for(const p of free){const P=M.parts[p],ot=best.ses[p],or=best.room[p];let bt=ot,br=or;
+      for(const t of P.opts)for(const r of allowed(p)){if(t===ot&&r===or)continue;best.ses[p]=t;best.room[p]=r;
+        const c=evaluate(M,best);if(c<cur-1e-9){cur=c;bt=t;br=r;}}
+      best.ses[p]=bt;best.room[p]=br;if(bt!==ot||br!==or)imp=true;}
+  }
+  best.cost=cur;return best;
+}
+function toState(M,D){
+  const n=M.parts.length,S={ses:new Int16Array(n),room:new Int16Array(n).fill(-1),pin:new Uint8Array(n)};
+  M.parts.forEach((P,p)=>{S.ses[p]=P.opts[0];const a=D.assign&&D.assign[P.stu.id+'|'+P.subject];if(!a)return;
+    const t=M.ses.findIndex(s=>s.id===a.ses),r=M.rooms.findIndex(x=>x.id===a.room);
+    if(t>=0&&P.all.includes(t)){S.ses[p]=t;if(r>=0){S.room[p]=r;S.pin[p]=a.pin?1:0;}}});
+  return S;
+}
+function fromState(M,S){const a={};M.parts.forEach((P,p)=>{a[P.stu.id+'|'+P.subject]={ses:M.ses[S.ses[p]].id,room:S.room[p]>=0?M.rooms[S.room[p]].id:null,pin:!!S.pin[p]};});return a;}
+if(typeof module!=='undefined')module.exports={SV,GN,defaultData,compile,evaluate,solve,toState,fromState,fmt,shortName,labelOf,labelRank,sesLabel};
+/*CORE-END*/
+</script>
+<script>
+'use strict';
+const KEY='special-exam-room-v1';
+let D,M,ST,undoStack=[],outMode='svc',curTab='board';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
+function localSave(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
+function save(){localSave();cloudPush();}
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2200);}
+function rebuild(){M=compile(D);ST=toState(M,D);}
+function commit(){D.assign=fromState(M,ST);save();renderBoard();}
+function dataChanged(){save();rebuild();}
+function pushUndo(){undoStack.push(JSON.stringify(D.assign));if(undoStack.length>40)undoStack.shift();}
+function undo(){if(!undoStack.length){toast('沒有可復原的動作');return;}D.assign=JSON.parse(undoStack.pop());rebuild();save();renderBoard();}
+function unpinAll(){pushUndo();ST.pin.fill(0);commit();}
+function setPref(v){D.settings.pref=+v;M.W=weights(D.settings.pref);save();renderBoard();toast('已調整偏好，按「自動排列」套用');}
+
+function runSolve(mode){
+  $('busy').style.display='flex';
+  setTimeout(()=>{
+    try{
+      pushUndo();
+      if(mode==='next')D.settings.seed=(D.settings.seed||1)+1;
+      let S0=ST;
+      if(mode==='fill'){const pin=new Uint8Array(ST.pin.length);for(let p=0;p<pin.length;p++)pin[p]=ST.room[p]>=0?1:0;S0={ses:ST.ses,room:ST.room,pin};}
+      const R=solve(M,S0,{seed:D.settings.seed||1,iters:60000,restarts:4});
+      ST={ses:R.ses,room:R.room,pin:ST.pin};
+      commit();
+    }finally{$('busy').style.display='none';}
+  },30);
+}
+
+/* ---------- 排考場 ---------- */
+function cellMap(){const c={};M.parts.forEach((P,p)=>{const k=ST.ses[p]+'|'+ST.room[p];(c[k]=c[k]||[]).push(p);});return c;}
+function waitMap(){const w={};M.parts.forEach((P,p)=>{if(ST.room[p]<0||!M.ses[ST.ses[p]].makeup)return;
+  P.all.forEach(t=>{if(!M.ses[t].makeup)(w[t]=w[t]||[]).push(p);});});return w;}
+function groupsOf(list){const g={};list.forEach(p=>{const P=M.parts[p],l=labelOf(P);(g[l]=g[l]||{l,rank:labelRank(P),ps:[]}).ps.push(p);});
+  return Object.values(g).sort((a,b)=>a.rank-b.rank||a.l.localeCompare(b.l));}
+function gradeCount(list){const c={};list.forEach(p=>{const g=M.parts[p].g;c[g]=(c[g]||0)+1;});
+  return Object.keys(c).sort((a,b)=>b-a).map(g=>(GN[g]||g)+c[g]).join(' ');}
+function busyHint(t,r){const nR=M.rooms.length,T=M.ses[t];
+  for(const pr of M.pairs){const o=pr[0]===t?pr[1]:pr[1]===t?pr[0]:-1;if(o<0)continue;const k=o*nR+r;if(!M.c_cnt[k])continue;
+    const O=M.ses[o],os=M.c_any[k]?O.est:O.st,oe=M.c_any[k]?O.een:O.en;if(os<T.en&&T.st<oe)return '（'+sesLabel(O)+'延長使用中）';}
+  return '';}
+function renderBoard(){
+  $('pref').value=D.settings.pref;
+  const out={msgs:[],unassigned:0};evaluate(M,ST,out);
+  const cells=cellMap(),waits=waitMap(),waitRoom=M.rooms.findIndex(r=>r.type==='wait');
+  const showUn=out.unassigned>0;
+  $('stats').innerHTML='<span class="stat">試場使用 <b>'+out.uses+'</b> 間次</span> <span class="stat">學生換教室 <b>'+out.changes+'</b> 人次</span>'+(showUn?' <span class="stat" style="color:#b91c1c">未排入 <b>'+out.unassigned+'</b></span>':'');
+  const errs=out.msgs;
+  $('warn').className='warnbox'+(errs.length||showUn?'':' ok');
+  $('warn').innerHTML=(errs.length||showUn)?(showUn?'<div class="err">● 有 '+out.unassigned+' 人次尚未排入，請按「自動排列」或「只補排未排入」。</div>':'')+errs.map(e=>'<div class="'+e.lvl+'">● '+esc(M.ses[e.t].date+' '+sesLabel(M.ses[e.t]))+(e.r>=0?' '+esc(M.rooms[e.r].name):'')+'：'+esc(e.m)+'</div>').join(''):'✔ 目前沒有違反規則的地方。';
+  const dates=[...new Set(M.ses.map(s=>s.date))];let h='';
+  for(const d of dates){
+    const list=M.ses.filter(s=>s.date===d).sort((a,b)=>a.key-b.key);
+    h+='<table class="board"><tr><th>'+esc(d)+' 星期'+esc(list[0].ref.dow||'')+'</th>'+(showUn?'<th style="background:#fde68a">未排入</th>':'');
+    M.rooms.forEach(R=>{h+='<th>'+esc(R.name)+'<br><small>'+(R.type==='wait'?'自習等候':R.type==='pc'?'電腦・上限'+R.cap:(R.type==='spare'?'備用・':'')+'上限'+R.cap)+'</small></th>';});
+    h+='</tr>';
+    for(const T of list){
+      const t=T.i,sm=errs.filter(e=>e.t===t&&e.r<0);
+      h+='<tr><td class="sh"><div class="sub">'+esc(sesLabel(T))+'</div><div class="tm">'+esc(T.ref.period||'')+'</div><div class="tm">'+fmt(T.st)+'~'+fmt(T.en)+'</div>'+
+        ((T.est!==T.st||T.een!==T.en)?'<div class="ex">延長 '+fmt(T.est)+'~'+fmt(T.een)+'</div>':'')+
+        (T.split?'<div class="ex">分年級</div>':'')+sm.map(e=>'<div class="cm warn">'+esc(e.m)+'</div>').join('')+'</td>';
+      if(showUn)h+=cellHtml(t,-1,cells[t+'|-1']||[],[],[]);
+      M.rooms.forEach((R,r)=>{h+=cellHtml(t,r,cells[t+'|'+r]||[],r===waitRoom?(waits[t]||[]):[],errs.filter(e=>e.t===t&&e.r===r));});
+      h+='</tr>';
+    }
+    h+='</table>';
+  }
+  $('board').innerHTML=h;
+  renderTally(cells,waits,waitRoom);
+}
+function chip(p,wt){const P=M.parts[p];
+  return '<span class="chip g'+(GN[P.g]?P.g:0)+(ST.pin[p]&&!wt?' pin':'')+(wt?' wt':'')+'" '+(wt?'':'draggable="true" data-p="'+p+'" ')+'data-si="'+P.si+'" title="'+esc(P.stu.cls+(P.stu.seat?'-'+P.stu.seat:'')+' '+P.stu.name+'｜'+P.subject+'：'+labelOf(P)+(P.small&&labelOf(P)!=='獨立'?'、人數調整':'')+(P.stu.memo?'｜'+P.stu.memo:''))+'">'+esc(shortName(P.stu))+(ST.pin[p]&&!wt?'🔒':'')+'</span>';}
+function cellHtml(t,r,list,wait,errs){
+  const T=M.ses[t],R=r>=0?M.rooms[r]:null,key=T.id+'|'+(R?R.id:'');
+  let h='<td class="cell'+(errs.some(e=>e.lvl==='err')?' bad':'')+(r<0?' un':'')+'" data-t="'+t+'" data-r="'+r+'">';
+  if(!list.length&&!wait.length){h+='<div class="hint">'+(R?esc(busyHint(t,r)):'')+'</div></td>';return h;}
+  if(list.length){
+    const hasExt=list.some(p=>M.parts[p].ext),hasNon=list.some(p=>!M.parts[p].ext);
+    h+='<div class="ch"><span>'+(R&&hasExt?fmt(T.est)+'~'+fmt(T.een):'')+'</span><span class="n'+(R&&list.length>=R.cap?' full':'')+'">'+list.length+(R&&R.type!=='wait'?'／'+R.cap:'')+' 人</span></div>';
+    for(const g of groupsOf(list)){h+='<div class="gl">➢'+esc(g.l)+'</div>';g.ps.sort((a,b)=>M.parts[b].g-M.parts[a].g||M.parts[a].si-M.parts[b].si).forEach(p=>h+=chip(p));}
+    if(R){const rd=list.filter(p=>M.parts[p].read).length;
+      h+='<div class="ch" style="margin-top:3px"><span>'+gradeCount(list)+'</span><span>'+(rd?'平板'+rd:'')+'</span></div>';}
+  }
+  if(wait.length){h+='<div class="gl">自習等候（'+wait.length+'人，之後補考）</div>';wait.forEach(p=>h+=chip(p,true));}
+  errs.forEach(e=>h+='<div class="cm '+e.lvl+'">'+esc(e.m)+'</div>');
+  if(R){h+='<div class="cf"><select data-pk="'+esc(key)+'"><option value="">'+(wait.length&&!list.length?'監視':'監考')+'…</option>'+D.proctors.map(n=>'<option'+(D.proctorOf[key]===n?' selected':'')+'>'+esc(n)+'</option>').join('')+'</select>'+
+    '<input data-nk="'+esc(key)+'" placeholder="備註" value="'+esc(D.notes[key]||'')+'"></div>';}
+  return h+'</td>';
+}
+function usedCells(cells,waits,waitRoom){
+  const a=[];M.ses.forEach(T=>M.rooms.forEach((R,r)=>{const list=cells[T.i+'|'+r]||[],w=r===waitRoom?(waits[T.i]||[]):[];
+    if(!list.length&&!w.length)return;const ext=list.some(p=>M.parts[p].ext);
+    a.push({T,R,key:T.id+'|'+R.id,s:ext?T.est:T.st,e:ext?T.een:T.en,ext});}));
+  return a.sort((x,y)=>x.T.key-y.T.key||x.R.i-y.R.i);
+}
+function renderTally(cells,waits,waitRoom){
+  const used=usedCells(cells,waits,waitRoom),cnt={},extc={},conf=[];
+  D.proctors.forEach(n=>{cnt[n]=0;extc[n]=0;});
+  used.forEach(c=>{const n=D.proctorOf[c.key];if(!n)return;cnt[n]=(cnt[n]||0)+1;if(c.ext)extc[n]=(extc[n]||0)+1;});
+  for(let i=0;i<used.length;i++)for(let j=i+1;j<used.length;j++){const a=used[i],b=used[j],n=D.proctorOf[a.key];
+    if(n&&n===D.proctorOf[b.key]&&a.T.date===b.T.date&&a.s<b.e&&b.s<a.e)conf.push(n+'：'+a.T.date+' '+sesLabel(a.T)+a.R.name+' 與 '+sesLabel(b.T)+b.R.name+' 時間重疊');}
+  const miss=used.filter(c=>!D.proctorOf[c.key]).length;
+  $('ptally').innerHTML='<h3>監考統計（共 '+used.length+' 場'+(miss?'，尚有 '+miss+' 場未指定':'')+'）</h3><table class="ed"><tr><th>老師</th>'+Object.keys(cnt).map(n=>'<td>'+esc(n)+'</td>').join('')+'</tr><tr><th>場次</th>'+Object.keys(cnt).map(n=>'<td style="text-align:center">'+cnt[n]+'</td>').join('')+'</tr><tr><th>其中延長場</th>'+Object.keys(cnt).map(n=>'<td style="text-align:center">'+(extc[n]||0)+'</td>').join('')+'</tr></table>'+conf.map(c=>'<div class="cm">● '+esc(c)+'</div>').join('');
+}
+function autoProctor(){
+  if(!D.proctors.length){toast('請先到③設定監考老師名單');return;}
+  const used=usedCells(cellMap(),waitMap(),M.rooms.findIndex(r=>r.type==='wait')),load={},done=[];
+  D.proctors.forEach(n=>load[n]=0);D.proctorOf={};
+  used.forEach(c=>{let best=null;
+    for(const n of D.proctors){if(done.some(d=>d.n===n&&d.c.T.date===c.T.date&&d.c.s<c.e&&c.s<d.c.e))continue;if(best===null||load[n]<load[best])best=n;}
+    if(best){D.proctorOf[c.key]=best;load[best]+=c.ext?1.4:1;done.push({n:best,c});}});
+  save();renderBoard();toast('已平均分配監考（可在每格下拉選單修改）');
+}
+(function(){
+  const b=$('board');let hl=null;
+  b.addEventListener('dragstart',e=>{const c=e.target.closest('.chip[data-p]');if(c)e.dataTransfer.setData('text/plain',c.dataset.p);});
+  b.addEventListener('dragover',e=>{const c=e.target.closest('td.cell');if(c){e.preventDefault();c.classList.add('over');}});
+  b.addEventListener('dragleave',e=>{const c=e.target.closest('td.cell');if(c&&!c.contains(e.relatedTarget))c.classList.remove('over');});
+  b.addEventListener('drop',e=>{const c=e.target.closest('td.cell');if(!c)return;e.preventDefault();c.classList.remove('over');
+    const p=+e.dataTransfer.getData('text/plain'),t=+c.dataset.t,r=+c.dataset.r,P=M.parts[p];if(!P)return;
+    if(!P.all.includes(t)){toast('只能移到「'+P.subject+'」的節次');return;}
+    if(ST.ses[p]===t&&ST.room[p]===r)return;
+    pushUndo();ST.ses[p]=t;ST.room[p]=r;ST.pin[p]=r>=0?1:0;commit();});
+  b.addEventListener('click',e=>{const c=e.target.closest('.chip[data-p]');if(!c)return;const p=+c.dataset.p;pushUndo();ST.pin[p]=ST.pin[p]?0:1;commit();});
+  b.addEventListener('mouseover',e=>{const c=e.target.closest('.chip');const si=c?c.dataset.si:null;if(si===hl)return;
+    b.querySelectorAll('.chip.hl').forEach(x=>x.classList.remove('hl'));hl=si;if(si!=null)b.querySelectorAll('.chip[data-si="'+si+'"]').forEach(x=>x.classList.add('hl'));});
+  b.addEventListener('change',e=>{const x=e.target;
+    if(x.dataset.pk!=null){if(x.value)D.proctorOf[x.dataset.pk]=x.value;else delete D.proctorOf[x.dataset.pk];save();renderBoard();}
+    else if(x.dataset.nk!=null){if(x.value)D.notes[x.dataset.nk]=x.value;else delete D.notes[x.dataset.nk];save();}});
+})();
+
+/* ---------- 學生 ---------- */
+function subjects(){return [...new Set(D.sessions.map(s=>s.subject))];}
+function scopeText(sc){return sc==='*'?'全科':(Array.isArray(sc)&&sc.length?sc.join('、'):'—');}
+function renderStu(){
+  let h='<table class="ed"><tr><th>排入</th><th>班級</th><th>座號</th><th>姓名</th>'+SV.map(v=>'<th>'+(v.id==='small'?'人數調整<br>(獨立)':v.id==='read'?'誦讀／報讀':v.id==='pc'?'電腦作答':v.id==='oral'?'口頭回答':'延長時間')+'</th>').join('')+'<th>備註</th><th></th></tr>';
+  D.students.forEach((s,i)=>{
+    h+='<tr class="'+(s.on?'':'off')+'"><td style="text-align:center"><input type="checkbox" '+(s.on?'checked':'')+' onchange="D.students['+i+'].on=this.checked;dataChanged();renderStu()"></td>'+
+      '<td><input type="text" style="width:52px" value="'+esc(s.cls)+'" onchange="D.students['+i+'].cls=this.value.trim();dataChanged()"></td>'+
+      '<td><input type="text" style="width:40px" value="'+esc(s.seat)+'" onchange="D.students['+i+'].seat=this.value.trim();dataChanged()"></td>'+
+      '<td><input type="text" style="width:80px" value="'+esc(s.name)+'" onchange="D.students['+i+'].name=this.value.trim();dataChanged()"></td>'+
+      SV.map(v=>{const sc=s.sv[v.id];const has=sc==='*'||(Array.isArray(sc)&&sc.length);return '<td style="text-align:center"><button class="sc'+(has?' has':'')+'" onclick="openScope(event,'+i+',\''+v.id+'\')">'+esc(scopeText(sc))+'</button></td>';}).join('')+
+      '<td><input type="text" style="width:260px" value="'+esc(s.memo)+'" onchange="D.students['+i+'].memo=this.value;save()"></td>'+
+      '<td><button class="b sm" onclick="delStu('+i+')">刪除</button></td></tr>';
+  });
+  $('stuTable').innerHTML=h+'</table>';
+}
+function addStu(){D.students.push({id:'n'+Date.now().toString(36),cls:'',seat:'',name:'',sv:{},memo:'',on:true});dataChanged();renderStu();window.scrollTo(0,document.body.scrollHeight);}
+function delStu(i){if(!confirm('確定刪除 '+D.students[i].cls+' '+D.students[i].name+'？'))return;D.students.splice(i,1);dataChanged();renderStu();}
+function openScope(ev,i,sv){
+  ev.stopPropagation();const s=D.students[i],sc=s.sv[sv],subs=subjects(),pop=$('pop');
+  const mode=sc==='*'?'all':(Array.isArray(sc)&&sc.length?'some':'none');
+  pop.innerHTML='<b>'+esc(s.name)+'｜'+SV.find(v=>v.id===sv).name+'</b>'+
+    '<label><input type="radio" name="scm" value="none" '+(mode==='none'?'checked':'')+'> 無</label>'+
+    '<label><input type="radio" name="scm" value="all" '+(mode==='all'?'checked':'')+'> 全科</label>'+
+    '<label><input type="radio" name="scm" value="some" '+(mode==='some'?'checked':'')+'> 指定科目：</label>'+
+    subs.map(x=>'<label style="margin-left:22px"><input type="checkbox" value="'+esc(x)+'" '+(Array.isArray(sc)&&sc.includes(x)?'checked':'')+'> '+esc(x)+'</label>').join('')+
+    '<div style="text-align:right;margin-top:6px"><button class="b sm pri" id="popok">確定</button></div>';
+  const rc=ev.target.getBoundingClientRect();pop.style.left=(rc.left+window.scrollX)+'px';pop.style.top=(rc.bottom+window.scrollY+2)+'px';pop.style.display='block';
+  pop.querySelectorAll('input[type=checkbox]').forEach(c=>c.onchange=()=>{pop.querySelector('input[value=some]').checked=true;});
+  $('popok').onclick=()=>{const m=pop.querySelector('input[name=scm]:checked').value;
+    if(m==='all')s.sv[sv]='*';else if(m==='none')delete s.sv[sv];
+    else{const a=[...pop.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);if(a.length)s.sv[sv]=a;else delete s.sv[sv];}
+    pop.style.display='none';dataChanged();renderStu();};
+}
+document.addEventListener('click',e=>{const pop=$('pop');if(pop.style.display==='block'&&!pop.contains(e.target))pop.style.display='none';});
+
+/* ---------- 設定 ---------- */
+function renderSet(){
+  let h='<table class="ed"><tr><th>日期</th><th>星期</th><th>節次</th><th>科目</th><th>年級</th><th>開始</th><th>結束</th><th>延長(分)</th><th>延長方向</th><th>口頭上限/間</th><th>口頭獨立一間</th><th>分年級</th><th>不計誦讀</th><th>補考節</th><th></th></tr>';
+  const tx=(i,f,w)=>'<input type="text" style="width:'+w+'px" value="'+esc(D.sessions[i][f])+'" onchange="D.sessions['+i+'].'+f+'=this.value.trim();dataChanged()">';
+  const ck=(i,f)=>'<td style="text-align:center"><input type="checkbox" '+(D.sessions[i][f]?'checked':'')+' onchange="D.sessions['+i+'].'+f+'=this.checked;dataChanged()"></td>';
+  D.sessions.forEach((s,i)=>{
+    h+='<tr><td>'+tx(i,'date',50)+'</td><td>'+tx(i,'dow',30)+'</td><td>'+tx(i,'period',60)+'</td><td>'+tx(i,'subject',90)+'</td><td>'+
+      [7,8,9].map(g=>'<label><input type="checkbox" '+(s.grades.includes(g)?'checked':'')+' onchange="togGrade('+i+','+g+',this.checked)">'+GN[g]+'</label>').join(' ')+'</td>'+
+      '<td><input type="time" value="'+esc(s.start)+'" onchange="D.sessions['+i+'].start=this.value;dataChanged()"></td>'+
+      '<td><input type="time" value="'+esc(s.end)+'" onchange="D.sessions['+i+'].end=this.value;dataChanged()"></td>'+
+      '<td><input type="number" style="width:54px" value="'+esc(s.extMin)+'" onchange="D.sessions['+i+'].extMin=+this.value;dataChanged()"></td>'+
+      '<td><select onchange="D.sessions['+i+'].extMode=this.value;dataChanged()"><option value="before"'+(s.extMode==='before'?' selected':'')+'>提早開始</option><option value="after"'+(s.extMode==='after'?' selected':'')+'>延後結束</option></select></td>'+
+      '<td><input type="number" style="width:54px" value="'+esc(s.oralCap)+'" onchange="D.sessions['+i+'].oralCap=+this.value;dataChanged()"></td>'+
+      ck(i,'oralSep')+ck(i,'split')+ck(i,'noRead')+ck(i,'makeup')+
+      '<td><button class="b sm" onclick="if(confirm(\'刪除這個節次？\')){D.sessions.splice('+i+',1);dataChanged();renderSet()}">刪除</button></td></tr>';
+  });
+  $('sesTable').innerHTML=h+'</table>';
+  h='<table class="ed"><tr><th>教室</th><th>人數上限</th><th>類型</th><th></th></tr>';
+  const types={normal:'一般',pc:'電腦教室',spare:'備用',wait:'自習等候'};
+  D.rooms.forEach((r,i)=>{
+    h+='<tr><td><input type="text" style="width:120px" value="'+esc(r.name)+'" onchange="D.rooms['+i+'].name=this.value.trim();dataChanged()"></td>'+
+      '<td><input type="number" style="width:60px" value="'+esc(r.cap)+'" onchange="D.rooms['+i+'].cap=+this.value;dataChanged()"></td>'+
+      '<td><select onchange="D.rooms['+i+'].type=this.value;dataChanged()">'+Object.keys(types).map(k=>'<option value="'+k+'"'+(r.type===k?' selected':'')+'>'+types[k]+'</option>').join('')+'</select></td>'+
+      '<td><button class="b sm" onclick="if(confirm(\'刪除這間教室？\')){D.rooms.splice('+i+',1);dataChanged();renderSet()}">刪除</button></td></tr>';
+  });
+  $('roomTable').innerHTML=h+'</table>';
+  $('smallMax').value=D.settings.smallMax;$('proctors').value=D.proctors.join('\n');
+}
+function togGrade(i,g,on){const a=D.sessions[i].grades.filter(x=>x!==g);if(on)a.push(g);D.sessions[i].grades=a.sort();dataChanged();}
+function addSes(){const l=D.sessions[D.sessions.length-1]||{};D.sessions.push({id:'s'+Date.now().toString(36),date:l.date||'',dow:l.dow||'',period:'',subject:'新科目',grades:[7,8,9],start:'09:15',end:'10:00',extMin:20,extMode:'after',oralCap:8,split:false,noRead:false,makeup:false,oralSep:false});dataChanged();renderSet();}
+function addRoom(){D.rooms.push({id:'r'+Date.now().toString(36),name:'新教室',cap:8,type:'normal'});dataChanged();renderSet();}
+
+/* ---------- 輸出 ---------- */
+function showOut(m){outMode=m;$('ov1').classList.toggle('pri',m==='svc');$('ov2').classList.toggle('pri',m==='itin');renderOut();}
+function renderOut(){$('outArea').innerHTML=outMode==='svc'?svcHtml():itinHtml();}
+function svcHtml(){
+  evaluate(M,ST);const cells=cellMap(),waits=waitMap(),waitRoom=M.rooms.findIndex(r=>r.type==='wait');
+  const usedRoom=M.rooms.filter((R,r)=>M.ses.some(T=>(cells[T.i+'|'+r]||[]).length||(r===waitRoom&&(waits[T.i]||[]).length)));
+  const dates=[...new Set(M.ses.map(s=>s.date))];let h='<h2>'+esc(D.title)+'</h2>';
+  for(const d of dates){
+    const list=M.ses.filter(s=>s.date===d).sort((a,b)=>a.key-b.key);
+    h+='<table class="out"><tr><th colspan="'+(usedRoom.length+1)+'">'+esc(d)+' 星期'+esc(list[0].ref.dow||'')+'</th></tr><tr><th></th>'+usedRoom.map(R=>'<th>'+esc(R.name)+'</th>').join('')+'</tr>';
+    for(const T of list){
+      h+='<tr><td class="sh2"><div style="font-size:16px">'+esc(sesLabel(T))+'</div>'+esc(T.ref.period||'')+'<br>'+fmt(Math.min(T.st,T.est))+(T.est<T.st?'/'+fmt(T.st):'')+'<br>～<br>'+fmt(T.en)+(T.een>T.en?'/'+fmt(T.een):'')+'</td>';
+      for(const R of usedRoom){const l=cells[T.i+'|'+R.i]||[],w=R.i===waitRoom?(waits[T.i]||[]):[],key=T.id+'|'+R.id;h+='<td>';
+        if(l.length){
+          const hasExt=l.some(p=>M.parts[p].ext),hasNon=l.some(p=>!M.parts[p].ext);
+          if(hasExt)h+='<b>'+fmt(T.est)+'~'+fmt(T.een)+'</b>'+(hasNon?'（延長）':'')+'<br>';
+          if(hasNon)h+='<b>'+fmt(T.st)+'~'+fmt(T.en)+'</b><br>';
+          for(const g of groupsOf(l)){h+='<b>➢'+esc(g.l)+'</b><br>'+g.ps.sort((a,b)=>M.parts[b].g-M.parts[a].g||M.parts[a].si-M.parts[b].si).map(p=>esc(shortName(M.parts[p].stu))).join('、')+'<br>';}
+          h+='<b>監考：'+esc(D.proctorOf[key]||'＿＿＿')+'</b>（'+l.length+'人）<br>';
+          if(new Set(l.map(p=>M.parts[p].g)).size>1)h+=esc(gradeCount(l))+'<br>';
+          const rd=l.filter(p=>M.parts[p].read).length;if(rd)h+='（平板'+rd+'台）<br>';
+        }
+        if(w.length)h+='<b>'+fmt(T.st)+'~'+fmt(T.en)+' 自習</b>（之後補考）<br>'+w.map(p=>esc(shortName(M.parts[p].stu))).join('、')+'<br><b>監視：'+esc(D.proctorOf[key]||'＿＿＿')+'</b>（'+w.length+'人）<br>';
+        if(D.notes[key]&&(l.length||w.length))h+=esc(D.notes[key]);
+        h+='</td>';}
+      h+='</tr>';
+    }
+    h+='</table>';
+  }
+  return h;
+}
+function itinHtml(){
+  const sesList=M.ses.slice().sort((a,b)=>a.key-b.key);
+  let h='<h2>'+esc(D.title)+'｜學生動線表</h2><table class="out"><tr><th>班級座號</th><th>姓名</th><th>服務</th>'+sesList.map(T=>'<th>'+esc(T.date)+'<br>'+esc(sesLabel(T))+'<br>'+fmt(T.st)+'</th>').join('')+'<th>換教室</th></tr>';
+  const rows=M.byStu.map(l=>l).sort((a,b)=>{const x=M.parts[a[0]].stu,y=M.parts[b[0]].stu;return gradeOf(y)-gradeOf(x)||String(x.cls).localeCompare(y.cls)||String(x.seat).localeCompare(y.seat);});
+  for(const list of rows){const stu=M.parts[list[0]].stu;let prev=null,ch=0;
+    const svs=SV.filter(v=>stu.sv[v.id]==='*'||(Array.isArray(stu.sv[v.id])&&stu.sv[v.id].length)).map(v=>v.id==='small'?'人數調整':v.name).join('、');
+    h+='<tr><td>'+esc(stu.cls+(stu.seat?'-'+stu.seat:''))+'</td><td>'+esc(stu.name)+'</td><td>'+esc(svs)+'</td>';
+    for(const T of sesList){const p=list.find(q=>ST.ses[q]===T.i&&ST.room[q]>=0);
+      if(p==null){h+='<td></td>';continue;}
+      const r=ST.room[p],P=M.parts[p],chg=prev!==null&&prev!==r;if(chg)ch++;prev=r;
+      h+='<td'+(chg?' class="chg"':'')+'>'+esc(M.rooms[r].name)+(P.ext&&(T.est!==T.st||T.een!==T.en)?'<br><small>'+fmt(T.est)+'~'+fmt(T.een)+'</small>':'')+'</td>';}
+    h+='<td style="text-align:center">'+ch+'</td></tr>';
+  }
+  return h+'</table><div class="note">黃底＝與上一場考試不同教室。</div>';
+}
+function copyOut(){const el=$('outArea'),r=document.createRange();r.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(r);
+  let ok=false;try{ok=document.execCommand('copy');}catch(e){}s.removeAllRanges();toast(ok?'已複製，可直接貼到 Word／Google 文件':'複製失敗，請手動選取表格複製');}
+function dl(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
+function downloadDoc(){
+  const css='body{font-family:"Microsoft JhengHei"}table{border-collapse:collapse;width:100%}th,td{border:1px solid #000;padding:3px 4px;vertical-align:top;font-size:10pt}th,td.sh2{background:#d9d9d9;text-align:center}td.chg{background:#fff3c4}h2{text-align:center;font-size:14pt}@page{size:29.7cm 21cm;margin:1cm}';
+  dl((D.title||'段考服務表')+(outMode==='itin'?'_學生動線':'')+'.doc','﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+$('outArea').innerHTML+'</body></html>','application/msword');
+}
+function exportJson(){dl('特殊試場設定_'+(D.title||'')+'.json',JSON.stringify(D,null,1),'application/json');}
+function importJson(inp){const f=inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const o=JSON.parse(rd.result);if(!o.students||!o.sessions||!o.rooms)throw 0;D=normalize(o);save();rebuild();init2();toast('已匯入');}catch(e){alert('這不是有效的設定檔');}inp.value='';};rd.readAsText(f);}
+function resetAll(){if(!confirm('確定還原成預設資料？目前的名單、設定與排法都會被清掉。'))return;D=defaultData();rebuild();save();init2();runSolve('all');}
+function normalize(o){const d=defaultData();o.settings=Object.assign(d.settings,o.settings||{});o.assign=o.assign||{};o.proctorOf=o.proctorOf||{};o.notes=o.notes||{};o.proctors=o.proctors||[];o.students.forEach(s=>{s.sv=s.sv||{};});return o;}
+
+/* ---------- 啟動 ---------- */
+function showTab(n){curTab=n;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===n));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.id==='tab-'+n));
+  if(n==='board')renderBoard();else if(n==='stu')renderStu();else if(n==='set')renderSet();else showOut(outMode);}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+function init2(){$('title').value=D.title||'';showTab('board');}
+
+/* ---------- 雲端同步（Firebase，可有可無） ---------- */
+let CLOUD=null,cloudTimer=null,lastPushed='',cloudReady=false;
+function setCloudUI(state){
+  const el=$('cloud'),u=CLOUD&&CLOUD.user,em=u?esc(u.email):'';
+  if(state==='local')el.innerHTML='💾 本機模式（資料只存在這個瀏覽器）';
+  else if(state==='out')el.innerHTML='☁ 尚未登入，資料只存在這個瀏覽器 <button class="b sm" onclick="cloudLogin()">Google 登入以同步</button>';
+  else if(state==='wait')el.innerHTML='☁ 連線中…';
+  else if(state==='denied')el.innerHTML='⚠ '+em+' 不在共用名單內，請管理者加入 <button class="b sm" onclick="CLOUD.auth.signOut()">登出</button>';
+  else el.innerHTML='☁ 已同步・'+em+(CLOUD.access&&CLOUD.access.admin===u.email?' <button class="b sm" onclick="cloudMembers()">共用名單</button>':'')+' <button class="b sm" onclick="CLOUD.auth.signOut()">登出</button>';
+}
+function cloudLogin(){CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast('登入失敗：'+(e.code||e.message)));}
+function cloudInit(){
+  if(typeof firebase==='undefined'||!window.FIREBASE_CONFIG){setCloudUI('local');return;}
+  firebase.initializeApp(window.FIREBASE_CONFIG);
+  CLOUD={auth:firebase.auth(),db:firebase.firestore(),user:null,unsub:null,access:null};
+  CLOUD.auth.onAuthStateChanged(u=>{CLOUD.user=u;if(CLOUD.unsub){CLOUD.unsub();CLOUD.unsub=null;}cloudReady=false;lastPushed='';
+    if(!u){setCloudUI('out');return;}setCloudUI('wait');cloudConnect();});
+}
+async function cloudConnect(){
+  const db=CLOUD.db,user=CLOUD.user,acc=db.doc('config/access');
+  try{
+    let a=await acc.get();
+    if(!a.exists){
+      if(!confirm('雲端還沒有管理者。要讓 '+user.email+' 成為管理者嗎？（之後由你決定哪些老師可以共用）')){setCloudUI('denied');return;}
+      await acc.set({admin:user.email,emails:[user.email]});a=await acc.get();
+    }
+    CLOUD.access=a.data();
+  }catch(e){setCloudUI('denied');return;}
+  CLOUD.unsub=db.doc('exams/main').onSnapshot(snap=>{
+    if(snap.metadata.hasPendingWrites)return;
+    if(!snap.exists){cloudReady=true;setCloudUI('on');cloudPush();return;}
+    const json=snap.data().json;cloudReady=true;setCloudUI('on');
+    if(json===lastPushed||json===JSON.stringify(D)){lastPushed=json;return;}
+    try{D=normalize(JSON.parse(json));}catch(e){return;}
+    lastPushed=json;localSave();rebuild();$('title').value=D.title||'';showTab(curTab);
+    toast('已載入雲端最新資料'+(snap.data().by?'（'+snap.data().by+' 更新）':''));
+  },()=>setCloudUI('denied'));
+}
+function cloudPush(){
+  if(!CLOUD||!CLOUD.user||!cloudReady)return;
+  clearTimeout(cloudTimer);
+  cloudTimer=setTimeout(()=>{const json=JSON.stringify(D);if(json===lastPushed)return;lastPushed=json;
+    CLOUD.db.doc('exams/main').set({json,by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(e=>toast('雲端儲存失敗：'+(e.code||e.message)));},800);
+}
+async function cloudMembers(){
+  const v=prompt('可以共用的 Google 帳號（用逗號或空白分開）：',(CLOUD.access.emails||[]).join(', '));
+  if(v==null)return;
+  const emails=[...new Set(v.split(/[\s,;]+/).map(x=>x.trim().toLowerCase()).filter(x=>x.includes('@')).concat([CLOUD.user.email]))];
+  try{await CLOUD.db.doc('config/access').update({emails});CLOUD.access.emails=emails;toast('共用名單已更新（'+emails.length+' 人）');}catch(e){toast('更新失敗：'+(e.code||e.message));}
+}
+
+const saved=load();D=saved?normalize(saved):defaultData();rebuild();init2();
+if(!saved)runSolve('all');
+cloudInit();
+</script>
+</body>
+</html>
