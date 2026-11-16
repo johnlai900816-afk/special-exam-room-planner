@@ -123,6 +123,27 @@ dialog.sheet::backdrop{background:rgba(16,24,40,.45)}
 .addrow{display:flex;gap:8px;margin-top:10px}
 .addrow input,.sheet textarea{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;width:100%}
 .addrow input:focus,.sheet textarea:focus{outline:2px solid var(--acc);outline-offset:-1px}
+dialog.sheet.wide{width:min(1040px,96vw)}
+.impsum{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.impsum span{background:#eef0f3;border-radius:99px;padding:4px 12px;font-size:13px}
+.impsum span b{font-size:15px}
+.impsum span.w{background:var(--warn-l);color:var(--warn)}
+.impwrap{max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:var(--r)}
+table.imp{border-collapse:collapse;width:100%;font-size:13px}
+table.imp th{position:sticky;top:0;background:#eef0f3;text-align:left;padding:7px 9px;font-weight:600;color:var(--ink2);z-index:1}
+table.imp td{padding:7px 9px;border-top:1px solid var(--line);vertical-align:top;line-height:1.6}
+table.imp tr.w td{background:#fffaf0}
+table.imp .src{color:var(--mute);font-size:12.5px}
+.svc{display:inline-block;background:var(--acc-l);color:var(--acc-d);border-radius:6px;padding:1px 7px;margin:1px 3px 1px 0;white-space:nowrap}
+.svc small{color:var(--ink2)}
+.why{color:var(--warn);font-size:12.5px}
+.tagn{font-size:12px;border-radius:99px;padding:1px 8px;background:var(--ok-l);color:var(--ok);white-space:nowrap}
+.tagn.u{background:#eef0f3;color:var(--mute)}
+.opt{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 4px}
+.opt label{cursor:pointer}
+.chk{color:var(--warn);font-size:12px;margin-bottom:3px;max-width:300px;line-height:1.5}
+.chk a{color:var(--acc);cursor:pointer;margin-left:6px;white-space:nowrap}
+tr.need td{background:#fffaf0}
 details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
 details.more summary{cursor:pointer;font-size:13px;color:var(--mute)}
 details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -171,8 +192,8 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 </div>
 
 <div class="tab" id="tab-stu">
-  <div class="guide"><span class="g"><b>步驟 1｜學生名單</b>　列出這次需要考評服務的學生，再點各服務欄位選「全科」或指定科目。</span><button class="next" onclick="showTab('set')">下一步：考程與教室 →</button></div>
-  <div class="bar"><button class="b pri" onclick="pasteStu()">貼上名單</button><button class="b" onclick="addStu()">＋ 新增一位</button>
+  <div class="guide"><span class="g"><b>步驟 1｜學生名單</b>　把「考評服務名單」的 PDF 或 Word 檔直接匯入，系統會讀出每位學生的服務與科目；也可以手動新增，再點各服務欄位調整。</span><button class="next" onclick="showTab('set')">下一步：考程與教室 →</button></div>
+  <div class="bar"><button class="b pri" onclick="$('impList').click()">📄 匯入服務名單（PDF／Word）</button><button class="b" onclick="pasteStu()">貼上名單</button><button class="b" onclick="addStu()">＋ 新增一位</button>
   <span class="note" style="margin:0">取消「排入」＝這次不排（例如確定不來考的學生），資料會保留。</span></div>
   <div id="stuTable" class="scroll"></div>
 </div>
@@ -214,6 +235,8 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 
 <dialog id="share" class="sheet"></dialog>
 <dialog id="paste" class="sheet"></dialog>
+<dialog id="impDlg" class="sheet wide"></dialog>
+<input type="file" id="impList" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none" onchange="importList(this)">
 <input type="file" id="imp" accept=".json" style="display:none" onchange="importJson(this)">
 <div id="pop"></div><div id="toast"></div><div id="busy">排列中…</div>
 
@@ -587,12 +610,12 @@ function scopeText(sc){return sc==='*'?'全科':(Array.isArray(sc)&&sc.length?sc
 function renderStu(){
   let h='<table class="ed"><tr><th>排入</th><th>班級</th><th>座號</th><th>姓名</th>'+SV.map(v=>'<th>'+(v.id==='small'?'人數調整<br>(獨立)':v.id==='read'?'誦讀／報讀':v.id==='pc'?'電腦作答':v.id==='oral'?'口頭回答':'延長時間')+'</th>').join('')+'<th>備註</th><th></th></tr>';
   D.students.forEach((s,i)=>{
-    h+='<tr class="'+(s.on?'':'off')+'"><td style="text-align:center"><input type="checkbox" '+(s.on?'checked':'')+' onchange="D.students['+i+'].on=this.checked;dataChanged();renderStu()"></td>'+
+    h+='<tr class="'+(s.on?'':'off')+(s.chk?' need':'')+'"><td style="text-align:center"><input type="checkbox" '+(s.on?'checked':'')+' onchange="D.students['+i+'].on=this.checked;dataChanged();renderStu()"></td>'+
       '<td><input type="text" style="width:52px" value="'+esc(s.cls)+'" onchange="D.students['+i+'].cls=this.value.trim();dataChanged()"></td>'+
       '<td><input type="text" style="width:40px" value="'+esc(s.seat)+'" onchange="D.students['+i+'].seat=this.value.trim();dataChanged()"></td>'+
       '<td><input type="text" style="width:80px" value="'+esc(s.name)+'" onchange="D.students['+i+'].name=this.value.trim();dataChanged()"></td>'+
       SV.map(v=>{const sc=s.sv[v.id];const has=sc==='*'||(Array.isArray(sc)&&sc.length);return '<td style="text-align:center"><button class="sc'+(has?' has':'')+'" onclick="openScope(event,'+i+',\''+v.id+'\')">'+esc(scopeText(sc))+'</button></td>';}).join('')+
-      '<td><input type="text" style="width:260px" value="'+esc(s.memo)+'" onchange="D.students['+i+'].memo=this.value;save()"></td>'+
+      '<td>'+(s.chk?'<div class="chk">⚠ 匯入時請確認：'+esc(s.chk)+'<a onclick="clearChk('+i+')">確認好了</a></div>':'')+'<input type="text" style="width:260px" value="'+esc(s.memo)+'" onchange="D.students['+i+'].memo=this.value;save()"></td>'+
       '<td><button class="b sm" onclick="delStu('+i+')">刪除</button></td></tr>';
   });
   $('stuTable').innerHTML=h+'</table>';
@@ -611,6 +634,185 @@ function pasteStuOk(){
     if(D.students.some(x=>x.cls===s.cls&&x.seat===s.seat&&x.name===s.name)){skip++;return;}
     D.students.push(Object.assign({id:'n'+Date.now().toString(36)+n,sv:{},memo:'',on:true},s));n++;});
   $('paste').close();dataChanged();renderStu();toast('已加入 '+n+' 位'+(skip?'（'+skip+' 位已在名單中，略過）':'')+'，接著幫每位勾選服務');
+}
+function clearChk(i){delete D.students[i].chk;save();renderStu();}
+
+/* ---------- 匯入服務名單（PDF／Word）：檔案只在這台電腦的瀏覽器裡讀取，不會上傳 ---------- */
+let IMP=null;
+async function importList(inp){
+  const f=inp.files[0];inp.value='';if(!f)return;
+  const busy=$('busy');busy.textContent='讀取名單中…';busy.style.display='flex';
+  try{
+    const buf=await f.arrayBuffer(),nm=f.name.toLowerCase();let rows;
+    if(nm.endsWith('.docx'))rows=await docxRows(buf);
+    else if(nm.endsWith('.pdf'))rows=await pdfRows(buf);
+    else throw new Error('只能讀 PDF 或 Word（.docx）檔。'+(nm.endsWith('.doc')?'舊版 .doc 請先用 Word 另存成 .docx 或 PDF。':''));
+    const list=rowsToStudents(rows);
+    if(!list.length)throw new Error('在檔案裡找不到學生名單的表格。\n表格需要有「班級座號、學生、服務、科目」這幾欄；如果是掃描成圖片的 PDF，請改用 Word 檔。');
+    busy.style.display='none';showImport(list,f.name);
+  }catch(e){busy.style.display='none';alert('匯入失敗：'+(e.message||e));}
+  finally{busy.textContent='排列中…';}
+}
+// --- Word：解開 .docx（zip）讀 word/document.xml 的表格
+async function unzipOne(buf,name){
+  const dv=new DataView(buf),u8=new Uint8Array(buf),td=new TextDecoder();let i=buf.byteLength-22;
+  while(i>=0&&dv.getUint32(i,true)!==0x06054b50)i--;
+  if(i<0)throw new Error('這不是有效的 Word 檔（.docx）。');
+  let p=dv.getUint32(i+16,true);const n=dv.getUint16(i+10,true);
+  for(let k=0;k<n&&dv.getUint32(p,true)===0x02014b50;k++){
+    const method=dv.getUint16(p+10,true),csz=dv.getUint32(p+20,true),fl=dv.getUint16(p+28,true),el=dv.getUint16(p+30,true),cl=dv.getUint16(p+32,true),off=dv.getUint32(p+42,true);
+    if(td.decode(u8.subarray(p+46,p+46+fl))===name){
+      const st=off+30+dv.getUint16(off+26,true)+dv.getUint16(off+28,true),data=u8.subarray(st,st+csz);
+      if(method===0)return td.decode(data);
+      return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();}
+    p+=46+fl+el+cl;}
+  throw new Error('這不是有效的 Word 檔（.docx）。');
+}
+async function docxRows(buf){
+  const doc=new DOMParser().parseFromString(await unzipOne(buf,'word/document.xml'),'application/xml'),W='http://schemas.openxmlformats.org/wordprocessingml/2006/main',rows=[];
+  for(const tr of doc.getElementsByTagNameNS(W,'tr')){const cells=[];
+    for(const tc of tr.children){if(tc.localName!=='tc')continue;let t='';
+      for(const p of tc.getElementsByTagNameNS(W,'p')){for(const x of p.getElementsByTagName('*')){if(x.localName==='t')t+=x.textContent;else if(x.localName==='br'||x.localName==='tab')t+=' ';}t+='\n';}
+      cells.push(t.trim());}
+    rows.push(cells);}
+  return rows;
+}
+// --- PDF：用 pdf.js 讀文字與表格線，把文字放回格子裡
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('PDF 讀取元件載入失敗，請確認網路連線後再試一次。'));document.head.appendChild(s);});}
+const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+async function pdfRows(buf){
+  if(!window.pdfjsLib){await loadScript(PDFJS+'pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js';}
+  const pdf=await pdfjsLib.getDocument({data:buf,cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true}).promise;
+  const O=pdfjsLib.OPS,U=pdfjsLib.Util,rows=[];let anyLine=false;
+  const uniq=(a,tol)=>{a.sort((x,y)=>x-y);const o=[];a.forEach(v=>{if(!o.length||v-o[o.length-1]>tol)o.push(v);});return o;};
+  for(let pn=1;pn<=pdf.numPages;pn++){
+    const page=await pdf.getPage(pn),vp=page.getViewport({scale:1}),PW=vp.width,PH=vp.height;
+    const ol=await page.getOperatorList();let ctm=[1,0,0,1,0,0],pend=[];const st=[],H=[],V=[];
+    const PAINT=new Set([O.stroke,O.closeStroke,O.fill,O.eoFill,O.fillStroke,O.eoFillStroke,O.closeFillStroke,O.closeEOFillStroke]);
+    const pt=(x,y)=>U.applyTransform(U.applyTransform([x,y],ctm),vp.transform);
+    const seg=(x1,y1,x2,y2)=>{const p=pt(x1,y1),q=pt(x2,y2);
+      if(Math.abs(p[1]-q[1])<1.5&&Math.abs(p[0]-q[0])>8)pend.push({y:(p[1]+q[1])/2,x1:Math.min(p[0],q[0]),x2:Math.max(p[0],q[0])});
+      else if(Math.abs(p[0]-q[0])<1.5&&Math.abs(p[1]-q[1])>4)pend.push({x:(p[0]+q[0])/2,y1:Math.min(p[1],q[1]),y2:Math.max(p[1],q[1])});};
+    for(let i=0;i<ol.fnArray.length;i++){const fn=ol.fnArray[i],a=ol.argsArray[i];
+      if(fn===O.save)st.push(ctm);else if(fn===O.restore)ctm=st.pop()||ctm;else if(fn===O.transform)ctm=U.transform(ctm,a);
+      else if(PAINT.has(fn)){pend.forEach(s=>(s.y!==undefined?H:V).push(s));pend=[];} // 真的畫出來的線才算表格線
+      else if(fn===O.endPath)pend=[]; // 只是裁切範圍，不算
+      else if(fn===O.constructPath){const ops=a[0],c=a[1];let k=0,cx=0,cy=0,sx=0,sy=0;
+        for(const op of ops){
+          if(op===O.rectangle){const x=c[k],y=c[k+1],w=c[k+2],hh=c[k+3];k+=4;
+            const p=pt(x,y),q=pt(x+w,y+hh),rw=Math.abs(p[0]-q[0]),rh=Math.abs(p[1]-q[1]);
+            if(rw>PW*.6&&rh>PH*.6)continue; // 整頁底色
+            if(rh<3)seg(x,y+hh/2,x+w,y+hh/2);else if(rw<3)seg(x+w/2,y,x+w/2,y+hh);
+            else{seg(x,y,x+w,y);seg(x,y+hh,x+w,y+hh);seg(x,y,x,y+hh);seg(x+w,y,x+w,y+hh);}}
+          else if(op===O.moveTo){cx=sx=c[k];cy=sy=c[k+1];k+=2;}
+          else if(op===O.lineTo){seg(cx,cy,c[k],c[k+1]);cx=c[k];cy=c[k+1];k+=2;}
+          else if(op===O.curveTo)k+=6;else if(op===O.curveTo2||op===O.curveTo3)k+=4;
+          else if(op===O.closePath){seg(cx,cy,sx,sy);cx=sx;cy=sy;}}}}
+    if(H.length&&V.length)anyLine=true;
+    const tc=await page.getTextContent(),items=[];
+    tc.items.forEach(it=>{if(!it.str||!it.str.trim())return;const t=U.transform(vp.transform,it.transform),hh=Math.hypot(t[2],t[3])||it.height||10;
+      items.push({s:it.str,x:t[4],y:t[5]-hh*.35,h:hh});});
+    const ys=uniq(H.map(l=>l.y),2);
+    for(let j=0;j<ys.length-1;j++){const y1=ys[j],y2=ys[j+1];if(y2-y1<6)continue;const ym=(y1+y2)/2;
+      const xs=uniq(V.filter(l=>l.y1-2<=ym&&ym<=l.y2+2).map(l=>l.x),2);if(xs.length<4)continue;
+      const cells=[];
+      for(let c=0;c<xs.length-1;c++){
+        const its=items.filter(it=>it.y>y1&&it.y<y2&&it.x+1>=xs[c]&&it.x+1<xs[c+1]).sort((a,b)=>a.y-b.y);
+        const lines=[];its.forEach(it=>{const L=lines[lines.length-1];if(L&&it.y-L.y<it.h*.6)L.a.push(it);else lines.push({y:it.y,a:[it]});});
+        cells.push(lines.map(L=>L.a.sort((a,b)=>a.x-b.x).map(i=>i.s).join('')).join('\n').trim());}
+      rows.push(cells);}
+  }
+  if(!anyLine)throw new Error('這份 PDF 讀不到表格線（可能是掃描的圖片）。請改用 Word 檔，或用「貼上名單」。');
+  return rows;
+}
+// --- 表格列 → 學生與服務
+function subjAliases(){const S0=subjects(),a=[];
+  S0.forEach(S=>{a.push([S,S]);if(S.includes('/'))S.split('/').forEach(x=>a.push([x.trim(),S]));if(/生物|理化|地科/.test(S))a.push(['自然',S]);});
+  [['國語','國文'],['英語','英文'],['寫作','作文']].forEach(([al,S])=>{if(S0.includes(S))a.push([al,S]);});
+  return a.filter(x=>x[0]);}
+function rowsToStudents(rows){
+  const AL=subjAliases(),out=[];let map=null;
+  for(const r of rows){
+    if(r.length<3)continue;
+    if(r.some(c=>/班級|座號/.test(c))&&r.some(c=>/學生|姓名/.test(c))){const fi=re=>r.findIndex(c=>re.test(c));
+      map={cls:fi(/班級/),seat:fi(/座號/),name:fi(/學生|姓名/),svc:fi(/服務|調整項目|考場/),scope:fi(/科目|備[註住注]/)};if(map.cls<0)map.cls=map.seat;continue;}
+    const m=map||{cls:0,seat:0,name:1,svc:2,scope:3},g=k=>m[k]>=0?(r[m[k]]||''):'';
+    const idT=g('cls')+(m.seat>=0&&m.seat!==m.cls?'-'+g('seat'):''),dg=idT.replace(/\D/g,''),name=g('name').replace(/\s+/g,'');
+    if(!dg&&!name){if(out.length&&(g('svc')||g('scope'))){const p=out[out.length-1];p.svcT+=g('svc');p.scopeT+=g('scope');}continue;} // 跨頁被切開的列，接回上一位
+    if(dg.length<3||!name||name.length>8)continue;
+    out.push({cls:dg.slice(0,3),seat:dg.length>=4?dg.slice(3,5).padStart(2,'0'):'',name,pre:idT.replace(/[\d\s\-－–—]/g,''),svcT:g('svc'),scopeT:g('scope')});
+  }
+  out.forEach(s=>{const r=parseSvc(s.svcT,s.scopeT,AL);s.sv=r.sv;s.why=r.why;s.memo=[s.pre].concat(r.memo).filter(Boolean).join('；');});
+  return out;
+}
+function parseSvc(svcT,scopeT,AL){
+  const N=s=>String(s||'').replace(/\s+/g,'').replace(/（/g,'(').replace(/）/g,')').replace(/[，,；;。]/g,'、').replace(/：/g,':');
+  const order=subjects(),find=t=>order.filter(S=>AL.some(x=>x[1]===S&&t.includes(x[0])));
+  const KW={small:'特殊考場(?:\\(人數(?:調整)?\\))?|人數調整|獨立考場',pc:'(?:作文)?電腦(?:作答|打字)?|打字',oral:'(?:口頭|口述)(?:回答|作答)?',read:'(?:誦讀|報讀|讀題)(?:題目)?',ext:'延長(?:時間)?'};
+  const SN={ext:'延長',read:'誦讀',oral:'口頭',pc:'電腦',small:'人數調整'};
+  let a=N(svcT),b=N(scopeT);const memo=[],why=[],kinds={},inline={},skip={},prefix={},expl={},neg=[];
+  // 服務欄
+  for(const k in KW){a=a.replace(new RegExp('('+KW[k]+')(?:\\(([^)]*)\\))?','g'),(m,w,p)=>{kinds[k]=1;
+      if(k==='pc'&&w.startsWith('作文')&&order.includes('作文'))prefix.pc=['作文'];
+      if(p){const ps=find(p);if(ps.length)inline[k]=ps;
+        else if(/訓練|觀察|暫|考慮|未定|評估|待/.test(p)){skip[k]=1;memo.push(SN[k]+'（'+p+'）');why.push(SN[k]+'註明「'+p+'」，先不排入');}
+        else memo.push(p);}
+      return '、';});}
+  a.split(/[、()\/]+/).filter(Boolean).forEach(x=>{memo.push(x);why.push('「'+x+'」不是系統裡的服務，已放進備註');});
+  // 科目、備註欄
+  b=b.replace(/[^、():]*?不用(?:口頭|誦讀|延長|電腦)?/g,m=>{neg.push(...find(m));memo.push(m);return '';});
+  b=b.replace(/\(([^)]*)\)/g,(m,c)=>{if(/觀察|問|要不要|不確定|待|再說|可能|看看/.test(c)){memo.push(c);why.push('註明「'+c+'」');return '';}return '、'+c+'、';}).replace(/[()]/g,'、');
+  const esc2=s=>s.replace(/[.*+?^${}()|[\]\\\/]/g,'\\$&'),SA=AL.map(x=>esc2(x[0])).sort((x,y)=>y.length-x.length).join('|');
+  if(SA){const LIST='((?:(?:'+SA+')[、:]*)+)';
+    for(const k in KW){let m=b.match(new RegExp('(?:'+KW[k]+')[:、]*'+LIST))||b.match(new RegExp(LIST+'(?:'+KW[k]+')'));
+      if(m){expl[k]=find(m[1]);kinds[k]=1;b=b.replace(m[0],'、');}}}
+  const hasAll=/全/.test(b),S=find(b);
+  let rest=b.replace(/全科|全|科目/g,'');AL.map(x=>x[0]).sort((x,y)=>y.length-x.length).forEach(x=>{rest=rest.split(x).join('');});
+  rest.split(/[、:]+/).filter(Boolean).forEach(x=>memo.push(x));
+  // 決定每種服務的科目
+  const lim=k=>k==='pc'||k==='oral',ks=['ext','read','oral','pc','small'].filter(k=>kinds[k]&&!skip[k]),sv={};
+  if(S.length&&hasAll&&!Object.keys(kinds).some(lim)&&ks.length)why.push('科目同時寫了「全」和個別科目，先當成全科');
+  ks.forEach(k=>{let sc;
+    if(inline[k])sc=inline[k];else if(expl[k])sc=expl[k];
+    else if(S.length&&!hasAll)sc=S;
+    else if(S.length&&hasAll)sc=lim(k)?S:'*';
+    else if(hasAll)sc='*';
+    else if(prefix[k])sc=prefix[k];
+    else{sc='*';why.push(SN[k]+'沒寫科目，先當成全科');}
+    if(Array.isArray(sc)){sc=sc.filter(x=>!neg.includes(x));if(!sc.length)return;}
+    sv[k]=sc;});
+  if(!Object.keys(sv).length)why.push('沒有讀出可以排入的服務');
+  const u=x=>[...new Set(x)];
+  return {sv,memo:u(memo),why:u(why)};
+}
+function impFind(s,used){return D.students.find(x=>!used.has(x)&&String(x.cls)===s.cls&&((s.seat&&x.seat&&+x.seat===+s.seat)||((!s.seat||!x.seat)&&x.name&&(s.name===x.name||s.name.endsWith(x.name)||x.name.endsWith(s.name)))));}
+function showImport(list,fname){
+  const used=new Set();list.forEach(s=>{s.old=impFind(s,used);if(s.old)used.add(s.old);});
+  IMP={list};
+  const nNew=list.filter(s=>!s.old).length,nUpd=list.length-nNew,nWhy=list.filter(s=>s.why.length).length,nOut=D.students.filter(x=>!used.has(x)).length;
+  const svHtml=s=>SV.filter(v=>s.sv[v.id]).map(v=>'<span class="svc">'+(v.id==='small'?'人數調整':v.name)+' <small>'+esc(scopeText(s.sv[v.id]))+'</small></span>').join('')||'<span class="why">（沒有）</span>';
+  let h='<button class="x" onclick="$(\'impDlg\').close()" aria-label="關閉">✕</button><h2>確認匯入的名單</h2><p class="sub" style="margin-top:0">來自 '+esc(fname)+'。檔案只在這台電腦上讀取，沒有上傳。</p>'+
+    '<div class="impsum"><span>共讀到 <b>'+list.length+'</b> 位</span><span>新增 <b>'+nNew+'</b></span><span>更新現有 <b>'+nUpd+'</b></span>'+(nWhy?'<span class="w">需要你確認 <b>'+nWhy+'</b> 位</span>':'')+'</div>'+
+    '<div class="impwrap"><table class="imp"><tr><th>班級座號</th><th>姓名</th><th>檔案上寫的</th><th>系統讀成</th><th>備註</th><th></th></tr>';
+  list.forEach(s=>{h+='<tr'+(s.why.length?' class="w"':'')+'><td style="white-space:nowrap">'+esc(s.cls+(s.seat?'-'+s.seat:''))+'</td><td style="white-space:nowrap">'+esc(s.name)+'</td>'+
+    '<td class="src">'+esc(s.svcT.replace(/\s+/g,''))+'<br>'+esc(s.scopeT.replace(/\s+/g,''))+'</td><td>'+svHtml(s)+(s.why.length?'<div class="why">⚠ '+esc(s.why.join('；'))+'</div>':'')+'</td>'+
+    '<td>'+esc(s.memo)+'</td><td><span class="tagn'+(s.old?' u':'')+'">'+(s.old?'更新':'新增')+'</span></td></tr>';});
+  h+='</table></div>';
+  if(nOut)h+='<div class="opt"><label><input type="radio" name="impMode" value="merge" checked> 名單上另外 '+nOut+' 位（不在這個檔案裡）<b>保留</b></label><label><input type="radio" name="impMode" value="replace"> 只留檔案裡的學生，其餘 '+nOut+' 位<b>移除</b></label></div>';
+  h+='<p class="sub">匯入後還是可以在名單上逐一修改。'+(nWhy?'標黃色的學生匯入後會留著提醒，請看一下。':'')+'已經排好的考場會保留。</p>'+
+     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="b" onclick="$(\'impDlg\').close()">取消</button><button class="b pri" onclick="applyImport()">匯入這 '+list.length+' 位</button></div>';
+  $('impDlg').innerHTML=h;$('impDlg').showModal();
+}
+function applyImport(){
+  const r=document.querySelector('input[name=impMode]:checked'),replace=r&&r.value==='replace',L=IMP.list,keep=new Set(),front=[];
+  L.forEach((s,i)=>{let o=s.old&&D.students.includes(s.old)?s.old:null;
+    if(o){o.cls=s.cls;if(s.seat)o.seat=s.seat;o.name=s.name;o.sv=s.sv;if(s.memo)o.memo=s.memo;}
+    else{o={id:'n'+Date.now().toString(36)+i,cls:s.cls,seat:s.seat,name:s.name,sv:s.sv,memo:s.memo,on:true};}
+    if(s.why.length)o.chk=s.why.join('；');else delete o.chk;
+    keep.add(o);front.push(o);});
+  D.students=front.concat(replace?[]:D.students.filter(x=>!keep.has(x)));
+  $('impDlg').close();IMP=null;dataChanged();renderStu();
+  toast('已匯入 '+L.length+' 位。確認服務後，到「排考場」按自動排列');
 }
 function delStu(i){if(!confirm('確定刪除 '+D.students[i].cls+' '+D.students[i].name+'？'))return;D.students.splice(i,1);dataChanged();renderStu();}
 function openScope(ev,i,sv){
