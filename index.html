@@ -5,68 +5,93 @@
 <title>特殊試場排列機</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+:root{--bg:#f5f6f8;--card:#fff;--line:#e2e5ea;--line2:#cdd3db;--ink:#18202b;--ink2:#3b4554;--mute:#667085;--acc:#3451d1;--acc-d:#2a41ab;--acc-l:#eef1fd;--ok:#12805c;--ok-l:#e7f6ef;--bad:#b42318;--bad-l:#fdecea;--warn:#b25e09;--warn-l:#fff4e5;--r:10px}
 *{box-sizing:border-box}
-body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:14px;color:#1f2937;background:#f3f4f6}
-header{background:#1e3a5f;color:#fff;padding:10px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-header h1{font-size:18px;margin:0}
-header input{font-size:14px;padding:4px 8px;border-radius:4px;border:0;min-width:340px}
-.tabs{display:flex;gap:2px;background:#1e3a5f;padding:0 12px}
-.tabs button{border:0;background:#33557f;color:#dbe6f3;padding:8px 18px;font-size:14px;border-radius:6px 6px 0 0;cursor:pointer;font-family:inherit}
-.tabs button.on{background:#f3f4f6;color:#111;font-weight:bold}
-.tab{display:none;padding:12px 16px}
+body{margin:0;font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;font-size:14px;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+header.top{background:#fff;border-bottom:1px solid var(--line);padding:10px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px}
+.brand b{font-size:16px;letter-spacing:.02em;white-space:nowrap}
+#title{font:inherit;color:var(--ink);border:1px solid transparent;border-radius:8px;padding:7px 11px;width:min(400px,70vw);background:var(--bg)}
+#title:hover{border-color:var(--line2)}
+#title:focus{outline:2px solid var(--acc);outline-offset:-1px;background:#fff}
+#cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{font-size:12.5px;padding:4px 10px;border-radius:99px;background:#eef0f3;color:var(--mute);white-space:nowrap}
+.pill.ok{background:var(--ok-l);color:var(--ok)}
+.pill.ok::before{content:"●";margin-right:5px;font-size:9px;vertical-align:1px}
+.pill.bad{background:var(--bad-l);color:var(--bad)}
+.avs{display:flex;padding-left:6px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--acc-l);color:var(--acc-d);border:2px solid #fff;display:grid;place-items:center;font-size:12.5px;font-weight:700;margin-left:-6px;box-shadow:0 0 0 1px var(--line)}
+.tabs{display:flex;gap:4px;align-items:center;background:#fff;border-bottom:1px solid var(--line);padding:8px 20px;overflow-x:auto}
+.tabs button{border:0;background:none;color:var(--mute);padding:6px 14px 6px 7px;border-radius:99px;cursor:pointer;font:inherit;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.tabs button i{font-style:normal;width:24px;height:24px;border-radius:50%;background:#eef0f3;display:grid;place-items:center;font-size:12.5px;font-weight:700;color:var(--mute)}
+.tabs button:hover{background:var(--bg);color:var(--ink)}
+.tabs button.on{background:var(--acc-l);color:var(--acc-d);font-weight:700}
+.tabs button.on i{background:var(--acc);color:#fff}
+.tabs .sep{color:#c5cad3;font-size:13px}
+.tab{display:none;padding:16px 20px}
 .tab.on{display:block}
-.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-button.b{border:1px solid #9ca3af;background:#fff;border-radius:5px;padding:6px 12px;font-size:14px;cursor:pointer;font-family:inherit}
-button.b:hover{background:#eef2ff}
-button.b.pri{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:bold}
-button.b.pri:hover{background:#1d4ed8}
-button.b.sm{padding:2px 8px;font-size:12px}
-.stat{background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:5px 12px}
-.stat b{font-size:17px;color:#1e3a5f}
-.pref{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:4px 10px}
-.warnbox{background:#fff7ed;border:1px solid #fdba74;border-radius:6px;padding:6px 12px;margin-bottom:10px;max-height:130px;overflow:auto}
-.warnbox.ok{background:#f0fdf4;border-color:#86efac}
-.warnbox div.err{color:#b91c1c}.warnbox div.warn{color:#b45309}
+.guide{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;line-height:1.6}
+.guide .g{flex:1;color:var(--ink2)}
+.guide .g b{color:var(--ink)}
+.guide .next{border:0;background:var(--acc-l);color:var(--acc-d);font:inherit;font-weight:700;cursor:pointer;white-space:nowrap;padding:7px 14px;border-radius:99px}
+.guide .next:hover{background:#e0e6fb}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+button.b{border:1px solid var(--line2);background:#fff;border-radius:8px;padding:7px 13px;font-size:14px;cursor:pointer;font-family:inherit;color:var(--ink)}
+button.b:hover{background:var(--bg);border-color:#b7bfca}
+button.b.pri{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+button.b.pri:hover{background:var(--acc-d)}
+button.b.sm{padding:3px 9px;font-size:12.5px;border-radius:6px}
+button.b.danger{color:var(--bad)}
+button.b.big{padding:10px 18px;font-size:15px}
+.vsep{width:1px;height:22px;background:var(--line2);margin:0 4px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 12px;color:var(--ink2)}
+.stat b{font-size:17px;color:var(--acc-d)}
+.pref{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 10px;color:var(--ink2);font-size:13px}
+.pref input{accent-color:var(--acc)}
+.warnbox{background:var(--warn-l);border:1px solid #f5cf9a;border-radius:var(--r);padding:8px 14px;margin-bottom:12px;max-height:130px;overflow:auto;line-height:1.7}
+.warnbox.ok{background:var(--ok-l);border-color:#bfe5d3;color:var(--ok)}
+.warnbox div.err{color:var(--bad)}.warnbox div.warn{color:var(--warn)}
 .scroll{overflow-x:auto}
 table.board{border-collapse:collapse;background:#fff;margin-bottom:18px;width:100%}
-table.board th,table.board td{border:1px solid #9ca3af;vertical-align:top;padding:4px}
-table.board th{background:#e5e7eb;font-size:13px;white-space:nowrap}
-table.board th small{font-weight:normal;color:#4b5563}
-td.sh{background:#e5e7eb;width:118px;min-width:118px;text-align:center}
+table.board th,table.board td{border:1px solid var(--line2);vertical-align:top;padding:5px}
+table.board th{background:#eef0f3;font-size:13px;white-space:nowrap;padding:7px 5px}
+table.board th small{font-weight:normal;color:var(--mute)}
+td.sh{background:#f3f4f7;width:118px;min-width:118px;text-align:center}
 td.sh .sub{font-size:17px;font-weight:bold}
-td.sh .tm{font-size:12px;color:#374151}
-td.sh .ex{font-size:12px;color:#b45309}
+td.sh .tm{font-size:12px;color:var(--ink2)}
+td.sh .ex{font-size:12px;color:var(--warn)}
 td.cell{min-width:118px;height:56px;position:relative}
-td.cell.over{outline:3px solid #2563eb;outline-offset:-3px;background:#eff6ff}
+td.cell.over{outline:3px solid var(--acc);outline-offset:-3px;background:var(--acc-l)}
 td.cell.bad{background:#fef2f2}
 td.cell.un{background:#fffbeb}
-.ch{font-size:12px;color:#6b7280;display:flex;justify-content:space-between;flex-wrap:wrap;gap:0 8px}
-.ch .n.full{color:#b91c1c;font-weight:bold}
-.gl{font-size:12px;font-weight:bold;margin-top:3px;color:#374151}
+.ch{font-size:12px;color:var(--mute);display:flex;justify-content:space-between;flex-wrap:wrap;gap:0 8px}
+.ch .n.full{color:var(--bad);font-weight:bold}
+.gl{font-size:12px;font-weight:bold;margin-top:3px;color:var(--ink2)}
 .chip{display:inline-block;border-radius:10px;padding:1px 7px;margin:1px;font-size:13px;cursor:grab;border:1px solid transparent;white-space:nowrap;user-select:none}
 .chip.g7{background:#dcfce7;border-color:#86efac}.chip.g8{background:#dbeafe;border-color:#93c5fd}.chip.g9{background:#ffedd5;border-color:#fdba74}.chip.g0{background:#eee;border-color:#ccc}
 .chip.pin{border-color:#111;border-width:2px}
 .chip.hl{box-shadow:0 0 0 3px #facc15}
 .chip.wt{opacity:.55;cursor:default;border-style:dashed}
-.cm{font-size:12px;color:#b91c1c;margin-top:2px}
-.cm.warn{color:#b45309}
+.cm{font-size:12px;color:var(--bad);margin-top:2px}
+.cm.warn{color:var(--warn)}
 .cf{margin-top:4px;display:flex;gap:3px;flex-wrap:wrap}
-.cf select,.cf input{font-size:12px;font-family:inherit;max-width:100%;border:1px solid #d1d5db;border-radius:3px;padding:1px 2px}
+.cf select,.cf input{font-size:12px;font-family:inherit;max-width:100%;border:1px solid var(--line2);border-radius:4px;padding:1px 2px}
 .cf input{width:100%}
 .hint{font-size:12px;color:#9ca3af;text-align:center;padding-top:14px}
-.legend{font-size:12px;color:#4b5563}
-table.ed{border-collapse:collapse;background:#fff;margin-bottom:8px}
-table.ed th,table.ed td{border:1px solid #d1d5db;padding:3px 5px;font-size:13px}
-table.ed th{background:#e5e7eb}
-table.ed input[type=text],table.ed input[type=number],table.ed input[type=time],table.ed select{font-family:inherit;font-size:13px;border:1px solid #d1d5db;border-radius:3px;padding:2px 4px}
+.legend{font-size:12.5px;color:var(--mute);margin-bottom:10px;line-height:1.9}
+table.ed{border-collapse:collapse;background:#fff;margin-bottom:10px}
+table.ed th,table.ed td{border:1px solid var(--line);padding:5px 7px;font-size:13px}
+table.ed th{background:#eef0f3;color:var(--ink2);font-weight:600}
+table.ed input[type=text],table.ed input[type=number],table.ed input[type=time],table.ed select{font-family:inherit;font-size:13px;border:1px solid var(--line2);border-radius:5px;padding:3px 5px}
 table.ed tr.off td{background:#f3f4f6;color:#9ca3af}
-.sc{border:1px solid #d1d5db;background:#f9fafb;border-radius:4px;padding:2px 6px;min-width:44px;cursor:pointer;font-family:inherit;font-size:13px}
-.sc.has{background:#dbeafe;border-color:#60a5fa;font-weight:bold}
-#pop{position:absolute;background:#fff;border:1px solid #6b7280;border-radius:6px;padding:8px 10px;box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:50;display:none}
+.sc{border:1px solid var(--line2);background:#f9fafb;border-radius:6px;padding:3px 8px;min-width:48px;cursor:pointer;font-family:inherit;font-size:13px}
+.sc.has{background:var(--acc-l);border-color:#9fb0f0;color:var(--acc-d);font-weight:bold}
+#pop{position:absolute;background:#fff;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px rgba(16,24,40,.2);z-index:50;display:none}
 #pop label{display:block;margin:2px 0;cursor:pointer}
-h3{margin:14px 0 6px}
-.note{font-size:12.5px;color:#4b5563;margin:4px 0 10px;line-height:1.6}
-#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#111;color:#fff;padding:8px 18px;border-radius:20px;display:none;z-index:99}
+h3{margin:20px 0 6px;font-size:15px}
+.note{font-size:12.5px;color:var(--mute);margin:4px 0 10px;line-height:1.7}
+#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#18202b;color:#fff;padding:9px 18px;border-radius:99px;display:none;z-index:99;box-shadow:0 6px 20px rgba(16,24,40,.3)}
 #busy{position:fixed;inset:0;background:rgba(255,255,255,.7);display:none;align-items:center;justify-content:center;font-size:22px;z-index:98}
 table.out{border-collapse:collapse;width:100%;background:#fff;margin-bottom:14px}
 table.out th,table.out td{border:1px solid #000;padding:4px 5px;vertical-align:top;font-size:12.5px;line-height:1.45}
@@ -74,8 +99,35 @@ table.out th{background:#d9d9d9}
 table.out td.sh2{background:#d9d9d9;text-align:center;font-weight:bold;white-space:nowrap}
 table.out td.chg{background:#fff3c4}
 #outArea h2{font-size:17px;text-align:center;margin:6px 0}
+/* 對話框 */
+dialog.sheet{border:0;border-radius:14px;padding:22px 24px;width:min(560px,94vw);max-height:92vh;color:var(--ink);box-shadow:0 20px 60px rgba(16,24,40,.28)}
+dialog.sheet::backdrop{background:rgba(16,24,40,.45)}
+.sheet h2{margin:0 0 4px;font-size:19px}
+.sheet h4{margin:18px 0 6px;font-size:14px}
+.sheet .x{position:absolute;right:14px;top:12px;border:0;background:none;font-size:17px;cursor:pointer;color:var(--mute);padding:6px}
+.sheet .lead{color:var(--ink2);line-height:1.75;margin:6px 0 14px}
+.sheet .sub{color:var(--mute);font-size:12.5px;line-height:1.7;margin:6px 0 0}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin:12px 0;line-height:1.8}
+.card.ok{background:var(--ok-l);border-color:#bfe5d3}
+.card.bad{background:var(--bad-l);border-color:#f3c1bc}
+.card .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0 0 16px}
+.steps li{counter-increment:s;padding:6px 0 6px 34px;position:relative;line-height:1.65;color:var(--ink2)}
+.steps li::before{content:counter(s);position:absolute;left:0;top:7px;width:22px;height:22px;border-radius:50%;background:var(--acc-l);color:var(--acc-d);display:grid;place-items:center;font-size:12px;font-weight:700}
+.mem{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.mem:last-child{border:0}
+.mem .av{margin:0;flex:none}
+.mem .e{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag{font-size:12px;color:var(--mute);background:#eef0f3;border-radius:99px;padding:2px 8px;white-space:nowrap}
+.tag.on{background:var(--ok-l);color:var(--ok)}
+.addrow{display:flex;gap:8px;margin-top:10px}
+.addrow input,.sheet textarea{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line2);border-radius:8px;width:100%}
+.addrow input:focus,.sheet textarea:focus{outline:2px solid var(--acc);outline-offset:-1px}
+details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+details.more summary{cursor:pointer;font-size:13px;color:var(--mute)}
+details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 @media print{
-  header,.tabs,.noprint,#toast,#busy{display:none!important}
+  header,.tabs,.noprint,#toast,#busy,.guide,dialog{display:none!important}
   body{background:#fff}
   .tab{padding:0}
   @page{size:A4 landscape;margin:8mm}
@@ -85,31 +137,28 @@ table.out td.chg{background:#fff3c4}
 </style>
 </head>
 <body>
-<header class="noprint">
-  <h1>特殊試場排列機</h1>
-  <input id="title" onchange="D.title=this.value;save()">
+<header class="top noprint">
+  <div class="brand"><span class="logo">試</span><b>特殊試場排列機</b></div>
+  <input id="title" onchange="D.title=this.value;save()" placeholder="這次段考的名稱，例：115學年度第1學期 第2次段考" aria-label="段考名稱">
   <span style="flex:1"></span>
-  <span id="cloud" style="font-size:12.5px;display:flex;gap:6px;align-items:center"></span>
-  <button class="b sm" onclick="exportJson()">匯出設定檔</button>
-  <button class="b sm" onclick="document.getElementById('imp').click()">匯入設定檔</button>
-  <input type="file" id="imp" accept=".json" style="display:none" onchange="importJson(this)">
-  <button class="b sm" onclick="resetAll()">還原預設資料</button>
+  <div id="cloud"></div>
 </header>
-<div class="tabs noprint">
-  <button data-tab="board" class="on">① 排考場</button>
-  <button data-tab="stu">② 學生與服務</button>
-  <button data-tab="set">③ 節次／教室／監考</button>
-  <button data-tab="out">④ 輸出表格</button>
-  <button data-tab="notice">⑤ 學生通知單</button>
-</div>
+<nav class="tabs noprint">
+  <button data-tab="stu"><i>1</i>學生名單</button><span class="sep">›</span>
+  <button data-tab="set"><i>2</i>考程與教室</button><span class="sep">›</span>
+  <button data-tab="board" class="on"><i>3</i>排考場</button><span class="sep">›</span>
+  <button data-tab="out"><i>4</i>服務表</button><span class="sep">›</span>
+  <button data-tab="notice"><i>5</i>學生通知單</button>
+</nav>
 
 <div class="tab on" id="tab-board">
+  <div class="guide"><span class="g"><b>步驟 3｜排考場</b>　按「自動排列」就會排好；不滿意可以直接拖曳學生換教室，或按「換一組解」。</span><button class="next" onclick="showTab('out')">下一步：服務表 →</button></div>
   <div class="bar">
     <button class="b pri" onclick="runSolve('all')">⚙ 自動排列</button>
     <button class="b" onclick="runSolve('fill')">只補排「未排入」</button>
     <button class="b" onclick="runSolve('next')">換一組解</button>
     <span class="pref">少用考場 <input type="range" id="pref" min="0" max="100" step="10" onchange="setPref(this.value)"> 少換教室</span>
-    <button class="b" onclick="undo()">↶ 復原</button>
+    <span class="vsep"></span><button class="b" onclick="undo()">↶ 復原</button>
     <button class="b" onclick="unpinAll()">全部解鎖</button>
     <button class="b" onclick="autoProctor()">自動分配監考</button>
     <span id="stats"></span>
@@ -122,13 +171,15 @@ table.out td.chg{background:#fff3c4}
 </div>
 
 <div class="tab" id="tab-stu">
-  <div class="bar"><button class="b" onclick="addStu()">＋ 新增學生</button>
-  <span class="note">點服務欄位可選「全科」或指定科目。取消「排入」＝這次不排（例如確定不來考的學生），資料會保留。</span></div>
+  <div class="guide"><span class="g"><b>步驟 1｜學生名單</b>　列出這次需要考評服務的學生，再點各服務欄位選「全科」或指定科目。</span><button class="next" onclick="showTab('set')">下一步：考程與教室 →</button></div>
+  <div class="bar"><button class="b pri" onclick="pasteStu()">貼上名單</button><button class="b" onclick="addStu()">＋ 新增一位</button>
+  <span class="note" style="margin:0">取消「排入」＝這次不排（例如確定不來考的學生），資料會保留。</span></div>
   <div id="stuTable" class="scroll"></div>
 </div>
 
 <div class="tab" id="tab-set">
-  <h3>考試節次</h3>
+  <div class="guide"><span class="g"><b>步驟 2｜考程與教室</b>　確認這次段考的節次與時間、可以用的教室、監考老師。通常只要改日期。</span><button class="next" onclick="showTab('board')">下一步：排考場 →</button></div>
+  <h3 style="margin-top:0">考試節次</h3>
   <div class="note">「延長方向」：提早開始（例：英文 10:45 先發延長卷）或延後結束（例：數學考到 10:20）。「分年級」：同一間只放同年級（英文聽力）。「口頭上限」：每間最多幾位口頭回答學生。「口頭獨立一間」：口頭學生不和其他學生同一間（作文、國文）。<br>
   「補考節」：同科目的第二個時段（例：作文補），口頭學生在正考排不下時會自動排到補考節，正考時段在自習等候教室。「不計誦讀」：該科只有誦讀服務的學生不進特殊試場（例：作文）。</div>
   <div id="sesTable" class="scroll"></div>
@@ -145,15 +196,14 @@ table.out td.chg{background:#fff3c4}
 </div>
 
 <div class="tab" id="tab-out">
+  <div class="guide"><span class="g"><b>步驟 4｜服務表</b>　給監考老師與行政用的總表，可以列印、複製到 Word／Google 文件。</span><button class="next" onclick="showTab('notice')">下一步：學生通知單 →</button></div>
   <div class="bar noprint">
     <button class="b on" id="ov1" onclick="showOut('svc')">段考服務表</button>
     <button class="b" id="ov2" onclick="showOut('itin')">學生動線表</button>
-    <span style="width:20px"></span>
+    <span class="vsep"></span>
     <button class="b pri" onclick="window.print()">🖨 列印／存 PDF</button>
     <button class="b" onclick="copyOut()">複製表格（貼到 Word／Google 文件）</button>
     <button class="b" onclick="downloadDoc()">下載 Word 檔</button>
-    <span style="width:20px"></span>
-    <button class="b pri" onclick="openNotice()" title="依目前排好的結果，產生每位學生一張的特殊考場通知單">✉ 產生學生通知單</button>
   </div>
   <div id="outArea"></div>
 </div>
@@ -162,6 +212,9 @@ table.out td.chg{background:#fff3c4}
   <iframe id="noticeFrame" title="學生通知單" style="width:100%;border:0;display:block"></iframe>
 </div>
 
+<dialog id="share" class="sheet"></dialog>
+<dialog id="paste" class="sheet"></dialog>
+<input type="file" id="imp" accept=".json" style="display:none" onchange="importJson(this)">
 <div id="pop"></div><div id="toast"></div><div id="busy">排列中…</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -545,6 +598,20 @@ function renderStu(){
   $('stuTable').innerHTML=h+'</table>';
 }
 function addStu(){D.students.push({id:'n'+Date.now().toString(36),cls:'',seat:'',name:'',sv:{},memo:'',on:true});dataChanged();renderStu();window.scrollTo(0,document.body.scrollHeight);}
+function pasteStu(){
+  const d=$('paste');
+  d.innerHTML='<button class="x" onclick="$(\'paste\').close()" aria-label="關閉">✕</button><h2>貼上學生名單</h2><p class="lead">一行一位，寫成「班級 座號 姓名」，例如 <b>903 15 楊小明</b> 或 <b>903-15 楊小明</b>。也可以從 Excel 直接複製三欄貼上。</p><textarea id="pasteTa" rows="10" placeholder="903 15 楊小明&#10;804 04 李小華"></textarea><div class="card row" style="border:0;padding:0;justify-content:flex-end;display:flex;gap:8px"><button class="b" onclick="$(\'paste\').close()">取消</button><button class="b pri" onclick="pasteStuOk()">加入名單</button></div>';
+  d.showModal();$('pasteTa').focus();
+}
+function pasteStuOk(){
+  let n=0,skip=0;
+  $('pasteTa').value.split('\n').forEach(l=>{l=l.trim();if(!l)return;
+    const m=l.match(/^(\d{3,4})\s*[-－\s,\t]\s*(\d{1,2})\s*[,\t\s]*\s*(.+)$/)||l.match(/^(\d{3,4})()\s*(.+)$/);
+    const s=m?{cls:m[1],seat:m[2]?m[2].padStart(2,'0'):'',name:m[3].trim()}:{cls:'',seat:'',name:l};
+    if(D.students.some(x=>x.cls===s.cls&&x.seat===s.seat&&x.name===s.name)){skip++;return;}
+    D.students.push(Object.assign({id:'n'+Date.now().toString(36)+n,sv:{},memo:'',on:true},s));n++;});
+  $('paste').close();dataChanged();renderStu();toast('已加入 '+n+' 位'+(skip?'（'+skip+' 位已在名單中，略過）':'')+'，接著幫每位勾選服務');
+}
 function delStu(i){if(!confirm('確定刪除 '+D.students[i].cls+' '+D.students[i].name+'？'))return;D.students.splice(i,1);dataChanged();renderStu();}
 function openScope(ev,i,sv){
   ev.stopPropagation();const s=D.students[i],sc=s.sv[sv],subs=subjects(),pop=$('pop');
@@ -649,9 +716,21 @@ function downloadDoc(){
   const css='body{font-family:"Microsoft JhengHei"}table{border-collapse:collapse;width:100%}th,td{border:1px solid #000;padding:3px 4px;vertical-align:top;font-size:10pt}th,td.sh2{background:#d9d9d9;text-align:center}td.chg{background:#fff3c4}h2{text-align:center;font-size:14pt}@page{size:29.7cm 21cm;margin:1cm}';
   dl((D.title||'段考服務表')+(outMode==='itin'?'_學生動線':'')+'.doc','﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+$('outArea').innerHTML+'</body></html>','application/msword');
 }
-function exportJson(){dl('特殊試場設定_'+(D.title||'')+'.json',JSON.stringify(D,null,1),'application/json');}
-function importJson(inp){const f=inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const o=JSON.parse(rd.result);if(!o.students||!o.sessions||!o.rooms)throw 0;D=normalize(o);save();rebuild();init2();toast('已匯入');}catch(e){alert('這不是有效的設定檔');}inp.value='';};rd.readAsText(f);}
-function resetAll(){if(!confirm('確定還原成預設資料？目前的名單、設定與排法都會被清掉。'))return;D=defaultData();rebuild();save();init2();runSolve('all');}
+const NKEY='exam-notice-v1'; // 學生通知單（notice.html）自己補的資料：全名、注意事項、導師…
+function exportJson(){const o=Object.assign({},D);try{o._notice=JSON.parse(localStorage.getItem(NKEY));}catch(e){}
+  const t=new Date();dl('特殊試場_設定檔備份_'+(D.title||'')+'_'+(t.getMonth()+1)+'-'+t.getDate()+'.json',JSON.stringify(o,null,1),'application/json');toast('已下載備份檔');}
+function importJson(inp){const f=inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{inp.value='';let o;
+  try{o=JSON.parse(rd.result);}catch(e){alert('這個檔案讀不懂，請選之前下載的備份檔（.json）。');return;}
+  if(o&&o.head&&o.periods&&!o.sessions){ // 只有通知單資料的舊檔
+    if(!confirm('這是學生通知單的資料檔，要用它取代目前通知單的內容嗎？'))return;
+    localStorage.setItem(NKEY,JSON.stringify(o));noticeReload();noticePush();toast('已還原通知單資料');return;}
+  if(!o||!o.students||!o.sessions||!o.rooms){alert('這不是排列機的備份檔。');return;}
+  if(!confirm('要用這個備份檔取代目前的名單、考程與排法嗎？'+(cloudState==='on'?'\n（共用中的其他老師也會一起被換掉）':'')))return;
+  const n=o._notice;delete o._notice;D=normalize(o);
+  if(n){localStorage.setItem(NKEY,JSON.stringify(n));noticeReload();noticePush();}
+  save();rebuild();init2();if($('share').open)$('share').close();toast('已還原');};rd.readAsText(f);}
+function resetAll(){if(!confirm('確定清空，回到範例資料？\n目前的名單、考程與排法都會被清掉'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。'))return;D=defaultData();rebuild();save();init2();runSolve('all');if($('share').open)$('share').close();}
+function noticeReload(){try{const w=$('noticeFrame').contentWindow;w&&w.reloadData&&w.reloadData();}catch(e){}}
 function normalize(o){const d=defaultData();o.settings=Object.assign(d.settings,o.settings||{});o.assign=o.assign||{};o.proctorOf=o.proctorOf||{};o.notes=o.notes||{};o.proctors=o.proctors||[];o.students.forEach(s=>{s.sv=s.sv||{};});return o;}
 
 /* ---------- 啟動 ---------- */
@@ -661,43 +740,102 @@ function showTab(n){curTab=n;document.querySelectorAll('.tabs button').forEach(b
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 function init2(){$('title').value=D.title||'';showTab('board');}
 
-/* ---------- 雲端同步（Firebase，可有可無） ---------- */
-let CLOUD=null,cloudTimer=null,lastPushed='',cloudReady=false;
+/* ---------- 共用與協作（Firebase；沒有設定檔時就是單機模式） ---------- */
+let CLOUD=null,cloudTimer=null,lastPushed='',cloudReady=false,cloudState='local',lastPushedN='',nTimer=null,presTimer=null;
+const who=e=>String(e||'').split('@')[0];
+const p2=n=>String(n).padStart(2,'0');
+function fmtAt(ts){if(!ts)return '';const d=ts.toDate?ts.toDate():new Date(ts);return (d.getMonth()+1)+'/'+d.getDate()+' '+p2(d.getHours())+':'+p2(d.getMinutes());}
+function onlineList(){const now=Date.now(),p=(CLOUD&&CLOUD.presence)||{};return Object.values(p).filter(x=>x&&x.email&&now-(x.at||0)<150000).sort((a,b)=>a.email.localeCompare(b.email));}
+function avatar(x){const nm=x.name||who(x.email);return '<span class="av" title="'+esc(nm+'（'+x.email+'）')+'">'+esc(nm.slice(0,1).toUpperCase())+'</span>';}
 function setCloudUI(state){
-  const el=$('cloud'),u=CLOUD&&CLOUD.user,em=u?esc(u.email):'';
-  if(state==='local')el.innerHTML='💾 本機模式（資料只存在這個瀏覽器）';
-  else if(state==='out')el.innerHTML='☁ 尚未登入，資料只存在這個瀏覽器 <button class="b sm" onclick="cloudLogin()">Google 登入以同步</button>';
-  else if(state==='wait')el.innerHTML='☁ 連線中…';
-  else if(state==='denied')el.innerHTML='⚠ '+em+' 不在共用名單內，請管理者加入 <button class="b sm" onclick="CLOUD.auth.signOut()">登出</button>';
-  else el.innerHTML='☁ 已同步・'+em+(CLOUD.access&&CLOUD.access.admin===u.email?' <button class="b sm" onclick="cloudMembers()">共用名單</button>':'')+' <button class="b sm" onclick="CLOUD.auth.signOut()">登出</button>';
+  cloudState=state;const el=$('cloud');
+  if(state==='local')el.innerHTML='<span class="pill">只存在這台電腦</span><button class="b" onclick="openShare()">備份</button>';
+  else if(state==='out')el.innerHTML='<span class="pill">只存在這台電腦</span><button class="b pri" onclick="openShare()">👥 與其他老師共用</button>';
+  else if(state==='wait')el.innerHTML='<span class="pill">連線中…</span>';
+  else if(state==='denied')el.innerHTML='<span class="pill bad">尚未加入共用</span><button class="b" onclick="openShare()">👥 共用</button>';
+  else{const on=onlineList(),L=CLOUD.last;
+    el.innerHTML='<span class="avs" title="現在在線上的老師">'+on.map(avatar).join('')+'</span><span class="pill ok" title="'+esc(L&&L.by?'最後更新：'+who(L.by)+'　'+fmtAt(L.at):'所有修改都會自動存到雲端')+'">已同步</span><button class="b" onclick="openShare()">👥 共用（'+((CLOUD.access&&CLOUD.access.emails)||[]).length+' 人）</button>';}
+  if($('share').open)renderShare();
 }
+function backupHtml(){return '<details class="more"><summary>備份與還原</summary><p class="sub">平常不需要用到：資料會自動儲存'+(cloudState==='on'?'並同步給共用的老師':'在這台電腦')+'。換電腦又不想登入，或想留一份存檔時再用。備份檔含學生姓名，請自行保管。</p><div class="row"><button class="b" onclick="exportJson()">下載備份檔</button><button class="b" onclick="$(\'imp\').click()">從備份檔還原</button><button class="b danger" onclick="resetAll()">清空，回到範例</button></div></details>';}
+function renderShare(){
+  const st=cloudState,u=CLOUD&&CLOUD.user;
+  let h='<button class="x" onclick="$(\'share\').close()" aria-label="關閉">✕</button>';
+  if(st==='local')h+='<h2>備份</h2><p class="lead">這個版本沒有連接雲端，資料只存在這台電腦的這個瀏覽器。</p>';
+  else if(st==='out')h+='<h2>與其他老師共用</h2><p class="lead">登入後，幾位老師可以<b>同時打開同一份考場</b>：任何人改名單、拖學生、補通知單，其他人的畫面都會立刻跟著變，不用互傳檔案。</p>'+
+    '<ol class="steps"><li>用你的 Google 帳號登入（第一位登入的人是管理者）。</li><li>在這裡輸入其他老師的 Gmail，把他們加進來。</li><li>把這個網址傳給他們，他們登入後就會看到同一份。</li></ol>'+
+    '<button class="b pri big" onclick="cloudLogin()">用 Google 帳號登入</button><p class="sub">目前還沒登入，資料只存在這台電腦。登入後會改用雲端上大家共用的那一份。</p>';
+  else if(st==='wait')h+='<h2>共用與協作</h2><p class="lead">連線中…</p>';
+  else if(st==='denied')h+='<h2>還沒被加入共用</h2><div class="card bad">你登入的帳號 <b>'+esc(u?u.email:'')+'</b> 不在共用名單裡，所以看不到大家共用的那一份。</div>'+
+    '<ol class="steps"><li>把上面這個信箱傳給管理這份考場的老師。</li><li>請對方按右上角「共用」，把你的信箱加進去。</li><li>加好之後回來重新整理這一頁。</li></ol>'+
+    '<div class="card row" style="border:0;padding:0;display:flex;gap:8px"><button class="b pri" onclick="copyText(\''+esc(u?u.email:'')+'\',\'已複製信箱\')">複製我的信箱</button><button class="b" onclick="location.reload()">重新整理</button><button class="b" onclick="cloudLogout()">換一個帳號</button></div>';
+  else{
+    const A=CLOUD.access||{},emails=A.emails||[],admin=A.admin===u.email,on=onlineList(),onSet=new Set(on.map(x=>x.email)),L=CLOUD.last;
+    h+='<h2>共用與協作</h2>';
+    h+='<div class="card ok"><div class="row"><b>✓ 已同步</b><span style="flex:1"></span><span>'+esc(u.email)+'</span><button class="b sm" onclick="cloudLogout()">登出</button></div>'+
+       '<div>所有修改都會自動儲存，名單內的老師會即時看到。'+(L&&L.by?'<br>最後更新：<b>'+esc(who(L.by))+'</b>　'+fmtAt(L.at):'')+'</div></div>';
+    h+='<h4>可以一起編輯的老師（'+emails.length+' 人）</h4><div>'+emails.map(e=>'<div class="mem">'+avatar({email:e})+'<span class="e">'+esc(e)+(e===u.email?'（我）':'')+'</span>'+(onSet.has(e)?'<span class="tag on">在線上</span>':'')+(e===A.admin?'<span class="tag">管理者</span>':(admin?'<button class="b sm danger" onclick="removeMember(\''+esc(e)+'\')">移除</button>':''))+'</div>').join('')+'</div>';
+    if(admin)h+='<div class="addrow"><input id="memIn" type="email" placeholder="輸入老師的 Gmail，例：teacher@gmail.com" onkeydown="if(event.key===\'Enter\')addMember()"><button class="b pri" onclick="addMember()">加入</button></div>'+
+       '<p class="sub">加入後把網址傳給對方，對方按「與其他老師共用」用同一個 Gmail 登入就可以了。</p><div class="card row" style="border:0;padding:0;display:flex;gap:8px;margin-bottom:0"><button class="b" onclick="copyText(location.href.split(\'#\')[0],\'已複製網址，貼給老師就可以了\')">🔗 複製網址</button></div>';
+    else h+='<p class="sub">要增減老師，請找管理者 '+esc(A.admin||'')+'。</p>';
+    h+='<p class="sub">兩位老師同時改同一個地方時，以最後存檔的人為準；右上角的圓形頭像是現在也開著這一頁的老師。</p>';
+  }
+  $('share').innerHTML=h+backupHtml();
+}
+function openShare(){renderShare();if(!$('share').open)$('share').showModal();
+  if(cloudState==='on')CLOUD.db.doc('config/access').get().then(a=>{if(a.exists){CLOUD.access=a.data();setCloudUI('on');}}).catch(()=>{});}
+function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
+async function setMembers(emails,msg){try{await CLOUD.db.doc('config/access').update({emails});CLOUD.access.emails=emails;setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
+function addMember(){const el=$('memIn'),v=el.value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){toast('請輸入完整的信箱，例如 teacher@gmail.com');el.focus();return;}
+  const cur=CLOUD.access.emails||[];if(cur.includes(v)){toast('這位老師已經在名單裡了');return;}
+  setMembers(cur.concat([v]),'已加入 '+v+'，把網址傳給對方就可以了');}
+function removeMember(e){if(!confirm('確定把 '+e+' 移出共用名單？對方之後就看不到這份考場了。'))return;setMembers((CLOUD.access.emails||[]).filter(x=>x!==e),'已移除 '+e);}
 function cloudLogin(){CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast('登入失敗：'+(e.code||e.message)));}
+function presBeat(gone){if(!CLOUD||!CLOUD.user||!CLOUD.access)return Promise.resolve();const u=CLOUD.user;
+  return CLOUD.db.doc('exams/presence').set({[u.uid]:gone?firebase.firestore.FieldValue.delete():{email:u.email,name:u.displayName||'',at:Date.now()}},{merge:true}).catch(()=>{});}
+function cloudLogout(){presBeat(true).then(()=>CLOUD.auth.signOut());}
+function cloudStop(){['unsub','unsubN','unsubP'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);cloudReady=false;lastPushed='';lastPushedN='';CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;}
 function cloudInit(){
   if(typeof firebase==='undefined'||!window.FIREBASE_CONFIG){setCloudUI('local');return;}
   firebase.initializeApp(window.FIREBASE_CONFIG);
-  CLOUD={auth:firebase.auth(),db:firebase.firestore(),user:null,unsub:null,access:null};
-  CLOUD.auth.onAuthStateChanged(u=>{CLOUD.user=u;if(CLOUD.unsub){CLOUD.unsub();CLOUD.unsub=null;}cloudReady=false;lastPushed='';
+  CLOUD={auth:firebase.auth(),db:firebase.firestore(),user:null,unsub:null,unsubN:null,unsubP:null,access:null,presence:{},last:null};
+  CLOUD.auth.onAuthStateChanged(u=>{cloudStop();CLOUD.user=u;
     if(!u){setCloudUI('out');return;}setCloudUI('wait');cloudConnect();});
+  window.addEventListener('pagehide',()=>{presBeat(true);});
 }
 async function cloudConnect(){
   const db=CLOUD.db,user=CLOUD.user,acc=db.doc('config/access');
   try{
     let a=await acc.get();
     if(!a.exists){
-      if(!confirm('雲端還沒有管理者。要讓 '+user.email+' 成為管理者嗎？（之後由你決定哪些老師可以共用）')){setCloudUI('denied');return;}
+      if(!confirm('這份考場還沒有管理者。\n要讓 '+user.email+' 成為管理者嗎？（之後由你決定哪些老師可以一起編輯）')){setCloudUI('denied');return;}
       await acc.set({admin:user.email,emails:[user.email]});a=await acc.get();
     }
     CLOUD.access=a.data();
   }catch(e){setCloudUI('denied');return;}
+  // 考場資料
   CLOUD.unsub=db.doc('exams/main').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites)return;
     if(!snap.exists){cloudReady=true;setCloudUI('on');cloudPush();return;}
-    const json=snap.data().json;cloudReady=true;setCloudUI('on');
+    const x=snap.data(),json=x.json;cloudReady=true;CLOUD.last={by:x.by,at:x.at};setCloudUI('on');
     if(json===lastPushed||json===JSON.stringify(D)){lastPushed=json;return;}
     try{D=normalize(JSON.parse(json));}catch(e){return;}
-    lastPushed=json;localSave();rebuild();$('title').value=D.title||'';showTab(curTab);
-    toast('已載入雲端最新資料'+(snap.data().by?'（'+snap.data().by+' 更新）':''));
+    lastPushed=json;localSave();rebuild();$('title').value=D.title||'';
+    if(curTab==='notice')noticeReload();else showTab(curTab);
+    toast(x.by&&x.by!==user.email?who(x.by)+' 更新了內容':'已載入雲端最新資料');
   },()=>setCloudUI('denied'));
+  // 學生通知單補的資料（全名、注意事項…）也一起共用
+  CLOUD.unsubN=db.doc('exams/notice').onSnapshot(snap=>{
+    if(snap.metadata.hasPendingWrites)return;
+    if(!snap.exists){noticePush();return;}
+    const json=snap.data().json;
+    if(json===lastPushedN||json===localStorage.getItem(NKEY)){lastPushedN=json;return;}
+    lastPushedN=json;try{localStorage.setItem(NKEY,json);}catch(e){}noticeReload();
+  },()=>{});
+  // 誰在線上
+  CLOUD.unsubP=db.doc('exams/presence').onSnapshot(snap=>{CLOUD.presence=snap.data()||{};if(cloudState==='on')setCloudUI('on');},()=>{});
+  presBeat();presTimer=setInterval(()=>{presBeat();if(cloudState==='on')setCloudUI('on');},60000);
 }
 function cloudPush(){
   if(!CLOUD||!CLOUD.user||!cloudReady)return;
@@ -705,12 +843,14 @@ function cloudPush(){
   cloudTimer=setTimeout(()=>{const json=JSON.stringify(D);if(json===lastPushed)return;lastPushed=json;
     CLOUD.db.doc('exams/main').set({json,by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(e=>toast('雲端儲存失敗：'+(e.code||e.message)));},800);
 }
-async function cloudMembers(){
-  const v=prompt('可以共用的 Google 帳號（用逗號或空白分開）：',(CLOUD.access.emails||[]).join(', '));
-  if(v==null)return;
-  const emails=[...new Set(v.split(/[\s,;]+/).map(x=>x.trim().toLowerCase()).filter(x=>x.includes('@')).concat([CLOUD.user.email]))];
-  try{await CLOUD.db.doc('config/access').update({emails});CLOUD.access.emails=emails;toast('共用名單已更新（'+emails.length+' 人）');}catch(e){toast('更新失敗：'+(e.code||e.message));}
+function noticePush(){
+  if(!CLOUD||!CLOUD.user||!cloudReady)return;
+  clearTimeout(nTimer);
+  nTimer=setTimeout(()=>{const json=localStorage.getItem(NKEY)||'';if(!json||json===lastPushedN)return;lastPushedN=json;
+    CLOUD.db.doc('exams/notice').set({json,by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(e=>toast('通知單雲端儲存失敗：'+(e.code||e.message)));},1200);
 }
+// 通知單分頁（iframe）一存檔，這裡就收到並推上雲端
+window.addEventListener('storage',e=>{if(e.key===NKEY)noticePush();});
 
 const saved=load();D=saved?normalize(saved):defaultData();rebuild();init2();
 if(!saved)runSolve('all');

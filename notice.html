@@ -40,29 +40,29 @@
 /* ---------- 操作介面 ---------- */
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:14px;color:#1f2933;background:#eef1f4}
+body{margin:0;font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px;color:#1f2933;background:#f5f6f8}
 #app{display:grid;grid-template-columns:minmax(380px,470px) 1fr;height:100vh}
-#side{background:#fff;border-right:1px solid #d5dbe1;display:flex;flex-direction:column;min-height:0}
+#side{background:#fff;border-right:1px solid #e2e5ea;display:flex;flex-direction:column;min-height:0}
 #side header{padding:12px 16px 0}
 #side h1{font-size:18px;margin:0 0 2px}
 #side header small{color:#66727f}
-.tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid #d5dbe1}
-.tabs button{border:1px solid #d5dbe1;border-bottom:0;background:#f4f6f8;padding:7px 14px;border-radius:6px 6px 0 0;cursor:pointer;font:inherit;color:#44505c}
-.tabs button.on{background:#fff;color:#0b5cab;font-weight:bold;position:relative;top:1px}
+.tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid #e2e5ea}
+.tabs button{border:1px solid #e2e5ea;border-bottom:0;background:#f4f6f8;padding:7px 14px;border-radius:6px 6px 0 0;cursor:pointer;font:inherit;color:#44505c}
+.tabs button.on{background:#fff;color:#3451d1;font-weight:bold;position:relative;top:1px}
 #ed{overflow:auto;padding:14px 16px 40px;flex:1;min-height:0}
 #ed h3{font-size:14px;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid #e3e7eb;color:#27323d}
 #ed h3:first-child{margin-top:0}
 label.f{display:block;margin:0 0 8px;color:#44505c;font-size:13px}
 label.f>input,label.f>textarea{display:block;width:100%;margin-top:3px}
 input[type=text],textarea,select{font:inherit;padding:5px 7px;border:1px solid #c3cbd3;border-radius:4px;background:#fff;color:inherit;min-width:0}
-input[type=text]:focus,textarea:focus{outline:2px solid #7fb2e6;outline-offset:-1px}
+input[type=text]:focus,textarea:focus{outline:2px solid #3451d1;outline-offset:-1px}
 textarea{resize:vertical;line-height:1.5}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .row>label.f{flex:1;min-width:90px}
-button.b{font:inherit;padding:6px 12px;border:1px solid #b6c0ca;border-radius:5px;background:#fff;cursor:pointer;color:#27323d}
+button.b{font:inherit;padding:7px 13px;border:1px solid #cdd3db;border-radius:8px;background:#fff;cursor:pointer;color:#27323d}
 button.b:hover{background:#f1f4f7}
-button.b.pri{background:#0b5cab;border-color:#0b5cab;color:#fff}
-button.b.pri:hover{background:#094d90}
+button.b.pri{background:#3451d1;border-color:#3451d1;color:#fff}
+button.b.pri:hover{background:#2a41ab}
 button.b.warn{color:#b3261e;border-color:#e2b6b3}
 table.g{border-collapse:collapse;width:100%;font-size:13px}
 table.g th{font-weight:normal;color:#66727f;text-align:left;padding:2px 3px;font-size:12px}
@@ -72,14 +72,14 @@ table.g input[type=text]{width:100%;padding:4px 5px}
 table.g input.t{width:54px;text-align:center}
 table.g tr.sep td{border-top:1px dashed #cfd6dd;padding-top:6px}
 .hint{color:#66727f;font-size:12px;line-height:1.6;margin:4px 0 10px}
-.hint code{background:#eef1f4;padding:0 4px;border-radius:3px;font-family:Consolas,monospace}
+.hint code{background:#f5f6f8;padding:0 4px;border-radius:3px;font-family:Consolas,monospace}
 #stuList{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
 #stuList button{font:inherit;font-size:13px;padding:4px 9px;border:1px solid #c3cbd3;border-radius:14px;background:#fff;cursor:pointer}
-#stuList button.on{background:#0b5cab;border-color:#0b5cab;color:#fff}
+#stuList button.on{background:#3451d1;border-color:#3451d1;color:#fff}
 .day{font-weight:bold;color:#27323d;margin:12px 0 4px}
 .chk{display:inline-flex;gap:5px;align-items:center;color:#44505c;font-size:13px;cursor:pointer}
 #main{display:flex;flex-direction:column;min-width:0;min-height:0}
-#bar{display:flex;gap:8px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid #d5dbe1;flex-wrap:wrap}
+#bar{display:flex;gap:8px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid #e2e5ea;flex-wrap:wrap}
 #bar .sp{flex:1}
 #bar .who{font-weight:bold}
 #lk{font-size:12px;color:#1a7f37}
@@ -111,7 +111,7 @@ dialog h3{margin:0 0 8px}
     <div class="tabs">
       <button data-tab="stu" class="on">學生</button>
       <button data-tab="exam">考試設定</button>
-      <button data-tab="data">連動／匯出</button>
+      <button data-tab="data" id="tabData">連動／匯出</button>
     </div>
     <div id="ed"></div>
   </div>
@@ -324,6 +324,14 @@ function edExam(){
   return h;
 }
 function edData(){
+  if(EMB){ // 在排列機裡：連動是自動的，備份與共用都在右上角「共用」
+    const n=D.students.filter(s=>s.pid).length;
+    return '<h3>自動帶入</h3><div class="hint lk">🔗 日期、考科、時間、每位學生的考試地點與延長時間，都是從「排考場」自動帶過來的，排法一改這裡就跟著變。'+(n?'目前 '+n+' 位學生。':'')+'</div>'+
+      '<div class="hint">你在這裡補的<b>全名、注意事項、導師姓名、手動改過的格子</b>會被保留；登入共用後，其他老師也會看到。</div>'+
+      '<h3>整理</h3><div class="row"><button class="b" data-act="clearManual">清掉手動改過的格子（全部照排考場）</button></div>'+
+      '<div class="row" style="margin-top:8px"><button class="b warn" data-act="reset">通知單全部重來</button></div>'+
+      '<div class="hint" style="margin-top:8px">「全部重來」會清掉補過的全名與注意事項，再依排考場重新產生。</div>';
+  }
   const n=D.students.filter(s=>s.pid).length;
   let h='<h3>與「特殊試場排列機」連動</h3>';
   h+='<label class="chk" style="margin-bottom:6px"><input type="checkbox" data-k="link" data-keep="1" data-re="1"'+(D.link?' checked':'')+'> <b>自動連動</b>（建議開著）</label>';
@@ -379,7 +387,7 @@ $('ed').addEventListener('click',e=>{
   else if(act==='imp'){$('impFile').click();return;}
   else if(act==='exp'){const b=new Blob([JSON.stringify(D,null,1)],{type:'application/json'}),x=document.createElement('a');x.href=URL.createObjectURL(b);x.download='通知單設定_'+D.head.line1+'.json';document.body.appendChild(x);x.click();setTimeout(()=>{URL.revokeObjectURL(x.href);x.remove();},500);return;}
   else if(act==='clearStu'){if(!confirm('確定清空全部 '+D.students.length+' 位學生？考試設定會保留。'))return;D.students=[];cur=0;}
-  else if(act==='reset'){if(!confirm('確定全部還原成範例？目前的名單與設定都會被清掉。'))return;D=normalize(defaultData());cur=0;}
+  else if(act==='reset'){if(!confirm(EMB?'確定通知單全部重來？補過的全名、注意事項與手動修改都會被清掉。':'確定全部還原成範例？目前的名單與設定都會被清掉。'))return;D=normalize(defaultData());cur=0;if(EMB){save();if(!autoSync('已重新產生'))renderAll();return;}}
   save();renderAll();
 });
 function pasteDialog(){
@@ -461,6 +469,10 @@ function syncPlanner(P,quiet,msg){
   if(msg)toast(msg+'：'+seen.size+' 位學生'+(add?'（新增 '+add+'）':'')+(gone?'（移除 '+gone+'）':''));
   return true;
 }
+// 其他老師改了通知單（由外層頁面從雲端寫進來）→ 重新讀取
+function reloadData(){const me=D.students[cur],id=me&&(me.pid||stuId(me));D=load();const i=D.students.findIndex(s=>(s.pid||stuId(s))===id);cur=i<0?0:i;renderAll();}
+window.addEventListener('storage',e=>{if(e.key===KEY)reloadData();});
+if(EMB)document.addEventListener('DOMContentLoaded',()=>{const b=document.getElementById('tabData');if(b)b.textContent='其他';});
 // 排列機一存檔，這裡立刻跟著更新
 window.addEventListener('storage',e=>{if(e.key===PLANNER_KEY)autoSync('排列機有變動，已更新');});
 
