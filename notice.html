@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>特殊考場通知單生成器</title>
+<style>
+/* ---------- 通知單本體（尺寸照原 Word 檔：A4、邊界 1.27cm、標楷體） ---------- */
+.page{width:210mm;height:296.8mm;box-sizing:border-box;padding:12.7mm;position:relative;overflow:hidden;background:#fff;color:#000;
+  font-family:"Times New Roman","標楷體","DFKai-SB","BiauKaiTC","BiauKai","Kaiti TC","AR PL UKai TW",serif;font-size:12pt;line-height:18pt;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;font-kerning:none;text-autospace:normal}
+.page p{margin:0}
+.page .t1,.page .t2{text-align:center;font-weight:bold;font-size:18pt;line-height:36pt}
+.page .t1{margin-bottom:9pt}
+.page .label{position:absolute;left:15.9mm;top:5.7mm;width:43.2mm;height:16.7mm;box-sizing:border-box;border:.5pt solid #000;background:#fff;
+  padding:1.27mm 2.54mm;font-family:"Times New Roman","新細明體","PMingLiU","Songti TC",serif;font-weight:bold;font-size:26pt;line-height:36pt;white-space:nowrap;overflow:hidden;text-align:left}
+.page .who{font-weight:bold;font-size:18pt;line-height:36pt}
+.page .who u{text-decoration-thickness:1pt;text-underline-offset:2pt}
+.page .intro{font-size:16pt;line-height:36pt;text-indent:8.6mm;position:relative}
+.page .intro .big{font-size:20pt}
+.page .intro .dbl{font-weight:bold;text-decoration:underline double;text-decoration-thickness:.75pt;text-underline-offset:2.5pt}
+.page .stamp{position:absolute;left:135.2mm;top:21.2mm;width:49.7mm;height:35.4mm;z-index:2;pointer-events:none}
+.page .gap1{height:30pt}.page .gap2{height:18pt}
+.page table.nt{border-collapse:collapse;table-layout:fixed;width:188.84mm;margin-left:-2.17mm;font-weight:bold;font-size:14pt;line-height:17.4pt}
+.page table.nt td{border:.5pt solid #000;padding:0 1.9mm;text-align:center;vertical-align:middle;word-break:break-all;overflow:hidden}
+.page table.nt td.name{background:#e6e6e6;text-align:left;font-size:16pt;line-height:20pt;height:38pt;padding:0 2.4mm}
+.page table.nt td.name u{font-size:14pt;text-underline-offset:2pt}
+.page table.nt tr.date td{height:30.9pt}
+.page table.nt tr.hd td,.page table.nt tr.pr td{height:35.7pt}
+.page table.nt tr.noon td{height:29.7pt}
+.page .m{font-size:12pt}.page .s{font-size:9pt}
+.page .sh{background:#d9d9d9}
+.page .bx{border:.5pt solid #000}
+.page .tm .bx{padding:0 .3mm}
+.page .notes{font-weight:bold;font-size:14pt;line-height:30pt;white-space:pre-wrap}
+.page .notes p.n2{text-indent:15mm;margin-bottom:9pt}
+.page .notes u{text-underline-offset:2pt}
+.page .notes .bx{padding:1pt 0}
+
+/* ---------- 操作介面 ---------- */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",system-ui,sans-serif;font-size:14px;color:#1f2933;background:#eef1f4}
+#app{display:grid;grid-template-columns:minmax(380px,470px) 1fr;height:100vh}
+#side{background:#fff;border-right:1px solid #d5dbe1;display:flex;flex-direction:column;min-height:0}
+#side header{padding:12px 16px 0}
+#side h1{font-size:18px;margin:0 0 2px}
+#side header small{color:#66727f}
+.tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid #d5dbe1}
+.tabs button{border:1px solid #d5dbe1;border-bottom:0;background:#f4f6f8;padding:7px 14px;border-radius:6px 6px 0 0;cursor:pointer;font:inherit;color:#44505c}
+.tabs button.on{background:#fff;color:#0b5cab;font-weight:bold;position:relative;top:1px}
+#ed{overflow:auto;padding:14px 16px 40px;flex:1;min-height:0}
+#ed h3{font-size:14px;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid #e3e7eb;color:#27323d}
+#ed h3:first-child{margin-top:0}
+label.f{display:block;margin:0 0 8px;color:#44505c;font-size:13px}
+label.f>input,label.f>textarea{display:block;width:100%;margin-top:3px}
+input[type=text],textarea,select{font:inherit;padding:5px 7px;border:1px solid #c3cbd3;border-radius:4px;background:#fff;color:inherit;min-width:0}
+input[type=text]:focus,textarea:focus{outline:2px solid #7fb2e6;outline-offset:-1px}
+textarea{resize:vertical;line-height:1.5}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>label.f{flex:1;min-width:90px}
+button.b{font:inherit;padding:6px 12px;border:1px solid #b6c0ca;border-radius:5px;background:#fff;cursor:pointer;color:#27323d}
+button.b:hover{background:#f1f4f7}
+button.b.pri{background:#0b5cab;border-color:#0b5cab;color:#fff}
+button.b.pri:hover{background:#094d90}
+button.b.warn{color:#b3261e;border-color:#e2b6b3}
+table.g{border-collapse:collapse;width:100%;font-size:13px}
+table.g th{font-weight:normal;color:#66727f;text-align:left;padding:2px 3px;font-size:12px}
+table.g td{padding:2px 3px;vertical-align:middle}
+table.g td.n{width:22px;text-align:center;color:#66727f;font-weight:bold}
+table.g input[type=text]{width:100%;padding:4px 5px}
+table.g input.t{width:54px;text-align:center}
+table.g tr.sep td{border-top:1px dashed #cfd6dd;padding-top:6px}
+.hint{color:#66727f;font-size:12px;line-height:1.6;margin:4px 0 10px}
+.hint code{background:#eef1f4;padding:0 4px;border-radius:3px;font-family:Consolas,monospace}
+#stuList{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+#stuList button{font:inherit;font-size:13px;padding:4px 9px;border:1px solid #c3cbd3;border-radius:14px;background:#fff;cursor:pointer}
+#stuList button.on{background:#0b5cab;border-color:#0b5cab;color:#fff}
+.day{font-weight:bold;color:#27323d;margin:12px 0 4px}
+.chk{display:inline-flex;gap:5px;align-items:center;color:#44505c;font-size:13px;cursor:pointer}
+#main{display:flex;flex-direction:column;min-width:0;min-height:0}
+#bar{display:flex;gap:8px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid #d5dbe1;flex-wrap:wrap}
+#bar .sp{flex:1}
+#bar .who{font-weight:bold}
+#lk{font-size:12px;color:#1a7f37}
+.hint.lk{background:#eef7f0;border:1px solid #cfe6d5;border-radius:5px;padding:6px 9px;color:#27503a}
+a.b{font:inherit;padding:6px 12px;border:1px solid #b6c0ca;border-radius:5px;background:#fff;color:#27323d;display:inline-block}
+#pv{flex:1;overflow:auto;padding:18px;min-height:0}
+#pv .page{margin:0 auto 18px;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+.emb #side header{display:none}
+.emb .tabs{padding-top:8px}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#27323d;color:#fff;padding:8px 16px;border-radius:6px;display:none;z-index:9}
+dialog{border:1px solid #b6c0ca;border-radius:8px;padding:18px;width:min(520px,92vw)}
+dialog h3{margin:0 0 8px}
+#print{display:none}
+@media (max-width:900px){#app{grid-template-columns:1fr;height:auto}#side{max-height:none}#ed{overflow:visible}#pv{overflow:visible}}
+@page{size:A4;margin:0}
+@media print{
+  html,body{height:auto;background:#fff}
+  #app,#toast,dialog{display:none!important}
+  #print{display:block}
+  #print .page{break-after:page;page-break-after:always}
+  #print .page:last-child{break-after:auto;page-break-after:auto}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <header><h1>特殊考場通知單生成器</h1><small>資料只存在這台電腦的瀏覽器，不會上傳。</small></header>
+    <div class="tabs">
+      <button data-tab="stu" class="on">學生</button>
+      <button data-tab="exam">考試設定</button>
+      <button data-tab="data">連動／匯出</button>
+    </div>
+    <div id="ed"></div>
+  </div>
+  <div id="main">
+    <div id="bar">
+      <button class="b" id="prev" title="上一位">◀</button>
+      <span class="who" id="cur"></span>
+      <button class="b" id="next" title="下一位">▶</button>
+      <label class="chk"><input type="checkbox" id="showAll"> 預覽全部</label>
+      <span id="lk"></span>
+      <span class="sp"></span>
+      <button class="b" id="printOne">只印這位</button>
+      <button class="b pri" id="printAll">列印全部／存成 PDF</button>
+    </div>
+    <div id="pv"></div>
+  </div>
+</div>
+<div id="print"></div>
+<div id="toast"></div>
+<dialog id="dlg"></dialog>
+
+<script>
+'use strict';
+const KEY='exam-notice-v1', PLANNER_KEY='special-exam-room-v1';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let D, cur=0, tab='stu';
+
+function defaultData(){
+  const P=(n,a,b)=>({n:String(n),d:[{s:a[0],e:a[1],subj:a[2]},{s:b[0],e:b[1],subj:b[2]}]});
+  return {
+    v:1,link:true,
+    head:{line1:'115學年度第1學期第1次段考',line2:'特殊考場通知單',label:'給副班長',teachers:'○○○老師、○○○老師',stampOn:true,stamp:''},
+    days:[{date:'10月14日',dow:'三',pmMerge:false,pmText:''},{date:'10月15日',dow:'四',pmMerge:true,pmText:'服務學習(回原班)'}],
+    amCount:4,
+    periods:[
+      P(1,['08:20','09:05','作文'],['08:20','09:05','自習']),
+      P(2,['09:15','10:00','數學'],['09:15','10:00','國文']),
+      P(3,['10:10','10:55','自習'],['10:10','10:55','自習']),
+      P(4,['11:05','11:50','英文'],['11:05','11:55','生物(七)/理化(八九)']),
+      P(5,['13:10','13:55','地科(九)/自習(七八)'],['','','']),
+      P(6,['14:05','14:50','自習'],['','','']),
+      P(7,['15:10','15:55','社會'],['','',''])
+    ],
+    defLoc:'原班',
+    notes:'考試兩天都要帶[[通知單]]來考試。\n檢查文具(黑筆、2B鉛筆、立可帶、橡皮擦)是否帶齊。',
+    rooms:['原班','環教中心','學習中心一','學習中心二','學習中心三','學習中心四','技藝大樓電腦教室/(特教辦公室集合)','特教辦公室','綠光教室'],
+    students:[
+      {demo:true,cls:'901',seat:'01',name:'王小明',c:{'0-0':{loc:'環教中心',shade:true,s:'08:00'},'0-1':{loc:'環教中心',shade:true,e:'10:20'},'0-3':{loc:'環教中心',shade:true,s:'10:45'},'0-6':{loc:'環教中心',shade:true,s:'14:50'},'1-1':{loc:'環教中心',shade:true,e:'10:20'},'1-3':{loc:'環教中心',shade:true,s:'10:45'}},
+        notes:'考試兩天都要帶[[通知單]]來考試。\n星期三第6節要帶==課本==來學習中心自習==(14：50考試)==\n檢查文具(黑筆、2B鉛筆、立可帶、橡皮擦)是否帶齊。'},
+      {demo:true,cls:'903',seat:'04',name:'張小安',c:{'0-0':{loc:'技藝大樓電腦教室/(特教辦公室集合)',shade:true},'1-1':{loc:'技藝大樓電腦教室/(特教辦公室集合)',shade:true}},
+        notes:'星期三作文：__7：50__先到特教辦公室集合。\n星期四國文：__9：00__先到特教辦公室集合。\n檢查文具(黑筆、2B鉛筆、立可帶、橡皮擦)是否帶齊。'},
+      {demo:true,cls:'802',seat:'06',name:'黃小傑',c:{'0-0':{loc:'學習中心三'},'0-1':{loc:'學習中心三'},'0-3':{loc:'學習中心二'},'0-6':{loc:'學習中心二'},'1-1':{loc:'學習中心三'},'1-3':{loc:'學習中心二'}},notes:null}
+    ]
+  };
+}
+function normalize(o){
+  const d=defaultData();
+  o.head=Object.assign(d.head,o.head||{});
+  o.days=(o.days&&o.days.length===2)?o.days:d.days;
+  o.periods=o.periods||d.periods;o.amCount=o.amCount||4;
+  o.periods.forEach(p=>{p.d=p.d||[{},{}];p.d.forEach(x=>{x.s=x.s||'';x.e=x.e||'';x.subj=x.subj||'';});});
+  if(o.defLoc==null)o.defLoc=d.defLoc;if(o.notes==null)o.notes=d.notes;
+  o.rooms=o.rooms||d.rooms;o.students=o.students||[];
+  if(o.link===undefined)o.link=true;
+  o.students.forEach(s=>{s.c=s.c||{};s.a=s.a||{};s.pm=s.pm||{};if(s.notes===undefined)s.notes=null;});
+  return o;
+}
+function load(){try{const s=localStorage.getItem(KEY);if(s)return normalize(JSON.parse(s));}catch(e){}return normalize(defaultData());}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){toast('儲存失敗（可能是印章圖檔太大）');}}
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2400);}
+const hm=s=>{const a=String(s||'').split(/[:：]/);return (+a[0])*60+(+a[1]||0);};
+const fmt=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const stuId=s=>(s.cls||'')+(s.seat?'-'+s.seat:'')+(s.name||'');
+
+/* ---------- 通知單 HTML ---------- */
+// 標記：__底線__  [[外框]]  ==灰底==
+function mark(s){
+  return esc(s).replace(/__(.+?)__/g,'<u>$1</u>').replace(/\[\[(.+?)\]\]/g,'<span class="bx">$1</span>').replace(/==(.+?)==/g,'<span class="sh">$1</span>');
+}
+function lines2(text,shade){ // 單行 14pt；多行：第一行 12pt、其餘 9pt
+  const a=String(text||'').split('/').map(x=>x.trim()).filter(x=>x!=='');
+  if(a.length<=1)return shade&&a[0]?'<span class="sh">'+esc(a[0])+'</span>':esc(a[0]||'');
+  return a.map((x,i)=>'<span class="'+(i?'s':'m')+'">'+esc(x)+'</span>').join('<br>');
+}
+function locHtml(text,shade){ // 單行 14pt；多行全部 12pt，灰底只加在第一行
+  const a=String(text||'').split('/').map(x=>x.trim()).filter(x=>x!=='');
+  if(!a.length)return '';
+  const f=shade?'<span class="sh">'+esc(a[0])+'</span>':esc(a[0]);
+  if(a.length===1)return f;
+  return '<span class="m">'+f+a.slice(1).map(x=>'<br>'+esc(x)).join('')+'</span>';
+}
+function timeHtml(std,c){
+  const s=(c&&c.s)||std.s,e=(c&&c.e)||std.e;
+  if(!s&&!e)return '';
+  const cs=s!==std.s,ce=e!==std.e;
+  const a=cs?'<span class="bx'+(hm(s)<hm(std.s)?' sh':'')+'">'+esc(s)+'</span>':'<span>'+esc(s)+'</span>';
+  const b=ce?'<span class="bx">'+esc(e)+'</span>':'<span>'+esc(e)+'</span>';
+  return '<div class="tm">'+a+'<br>'+b+'</div>';
+}
+const cellOf=(stu,k)=>Object.assign({},stu.a[k],stu.c[k]);
+function dayCells(stu,d,i){
+  const std=D.periods[i].d[d],c=cellOf(stu,d+'-'+i);
+  const subj=c.subj||std.subj;
+  const loc=c.loc||((subj||std.s)?D.defLoc:'');
+  return '<td>'+esc(D.periods[i].n)+'</td><td>'+timeHtml(std,c)+'</td><td>'+lines2(subj)+'</td><td>'+locHtml(loc,c.shade)+'</td>';
+}
+function noticeHtml(stu){
+  const H=D.head,id=esc(stuId(stu)),np=D.periods.length,am=Math.min(D.amCount,np),pm=np-am;
+  const stampSrc=H.stamp||'stamp.png';
+  let h='<div class="page">';
+  if(H.label)h+='<div class="label"><span class="sh">'+esc(H.label)+'</span></div>';
+  h+='<p class="t1">'+esc(H.line1)+'</p><p class="t2">'+esc(H.line2)+'</p>';
+  h+='<p class="who"><u>'+id+'</u>：</p>';
+  h+='<p class="intro">'+(H.stampOn?'<img class="stamp" src="'+esc(stampSrc)+'" alt="">':'')+
+     '請詳細閱讀通知單下方的<span class="big">【注意】</span>事項，同時<span class="dbl">注意考試地點和時間</span>，不要遲到，如有疑問，請找學習中心導師：'+esc(H.teachers)+'。</p>';
+  h+='<div class="gap1"></div><div class="gap2"></div>';
+  h+='<table class="nt"><colgroup><col style="width:9.84mm"><col style="width:9.93mm"><col style="width:19.86mm"><col style="width:20.28mm"><col style="width:39.93mm"><col style="width:10mm"><col style="width:19.79mm"><col style="width:20.28mm"><col style="width:38.93mm"></colgroup>';
+  h+='<tr><td class="name" colspan="9">學生姓名：<u>'+id+'</u></td></tr>';
+  h+='<tr class="date"><td></td>'+D.days.map(x=>'<td colspan="4">'+esc(x.date)+(x.dow?'（星期'+esc(x.dow)+'）':'')+'</td>').join('')+'</tr>';
+  const hd='<td>節次</td><td>時間</td><td>科目</td><td>考試<br>地點</td>';
+  const block=(from,n,name)=>{let r='';
+    for(let k=0;k<n;k++){const i=from+k;r+='<tr class="pr">';
+      if(k===0)r+='<td rowspan="'+(n+(from===0?1:0))+'">'+name+'</td>';
+      for(let d=0;d<2;d++){
+        if(from>0&&D.days[d].pmMerge){
+          r+='<td>'+esc(D.periods[i].n)+'</td>';
+          if(k===0)r+='<td colspan="3" rowspan="'+n+'">'+esc(stu.pm[d]!=null&&stu.pm[d]!==''?(stu.pm[d]==='-'?'':stu.pm[d]):D.days[d].pmText)+'</td>';
+        }else r+=dayCells(stu,d,i);
+      }
+      r+='</tr>';}
+    return r;};
+  h+='<tr class="hd"><td rowspan="'+(am+1)+'">上午</td>'+hd+hd+'</tr>';
+  h+=block(0,am,'').replace(/<td rowspan="\d+"><\/td>/,'');
+  if(pm>0){h+='<tr class="noon"><td colspan="9">午休時間</td></tr>'+block(am,pm,'下午');}
+  h+='</table>';
+  const notes=String(stu.notes!=null?stu.notes:D.notes).split('\n').map(x=>x.trim()).filter(x=>x);
+  h+='<div class="notes">'+notes.map((t,i)=>i===0?'<p style="margin-left:.5mm">注意：1、'+mark(t)+'</p>':'<p class="n2">'+(i+1)+'、'+mark(t)+'</p>').join('')+'</div>';
+  return h+'</div>';
+}
+
+/* ---------- 預覽 ---------- */
+function renderPreview(){
+  const pv=$('pv'),all=$('showAll').checked;
+  if(!D.students.length){pv.innerHTML='<p style="text-align:center;color:#66727f;margin-top:60px">還沒有學生。先到「① 排考場」把考場排好，這裡就會自動出現；也可以在左邊手動新增。</p>';$('cur').textContent='';return;}
+  cur=Math.max(0,Math.min(cur,D.students.length-1));
+  pv.innerHTML=(all?D.students:[D.students[cur]]).map(noticeHtml).join('');
+  $('cur').textContent=(cur+1)+' / '+D.students.length+'　'+stuId(D.students[cur]);
+  fit();
+}
+function fit(){const pv=$('pv'),w=pv.clientWidth-36,pw=793.7;const z=Math.min(1,w/pw);pv.querySelectorAll('.page').forEach(p=>p.style.zoom=z);}
+window.addEventListener('resize',fit);
+
+/* ---------- 編輯區 ---------- */
+function setPath(k,v,keep){const a=k.split('.');let o=D;for(let i=0;i<a.length-1;i++){if(o[a[i]]==null)o[a[i]]={};o=o[a[i]];}
+  if(!keep&&(v===''||v===false))delete o[a[a.length-1]];else o[a[a.length-1]]=v;}
+function setKeep(k,v){const a=k.split('.');let o=D;for(let i=0;i<a.length-1;i++)o=o[a[i]];o[a[a.length-1]]=v;}
+const inp=(k,v,ph,cls)=>'<input type="text" data-k="'+k+'" value="'+esc(v)+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+(cls?' class="'+cls+'"':'')+'>';
+
+function renderEd(){
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  $('ed').innerHTML=tab==='stu'?edStu():tab==='exam'?edExam():edData();
+}
+function edStu(){
+  let h='<h3>學生名單（'+D.students.length+' 人）</h3><div id="stuList">'+stuListHtml()+'</div>';
+  h+='<div class="row" style="margin-bottom:6px"><button class="b" data-act="add">＋新增一位</button><button class="b" data-act="paste">貼上名單</button><button class="b" data-act="sort">依班級排序</button></div>';
+  const s=D.students[cur];
+  if(!s)return h;
+  const i=cur;
+  h+='<h3>這位學生</h3><div class="row"><label class="f" style="flex:.8">班級'+inp('students.'+i+'.cls',s.cls,'903','K')+'</label><label class="f" style="flex:.6">座號'+inp('students.'+i+'.seat',s.seat,'15','K')+'</label><label class="f" style="flex:1.4">姓名'+inp('students.'+i+'.name',s.name,'','K')+'</label></div>';
+  h+=s.pid?'<div class="hint lk">🔗 這位學生來自排列機：灰色字就是排列機排的地點與時間，會自動跟著更新，不用自己打。只有想改掉它時才需要填（填了會蓋過排列機）。姓名可以在這裡補成全名，之後同步不會被改掉。</div>'
+    :'<div class="hint">地點留白＝「'+esc(D.defLoc)+'」。只填跟一般同學不一樣的地方就好；時間有改會自動加框。地點要分兩行用 <code>/</code> 隔開。</div>';
+  D.days.forEach((dy,d)=>{
+    h+='<div class="day">'+esc(dy.date)+'（'+esc(dy.dow)+'）</div><table class="g"><tr><th></th><th>考試地點</th><th>灰底</th><th>開始</th><th>結束</th><th>科目改為</th></tr>';
+    D.periods.forEach((p,pi)=>{
+      const std=p.d[d],c=s.c[d+'-'+pi]||{},a=s.a[d+'-'+pi]||{},k='students.'+i+'.c.'+d+'-'+pi+'.';
+      if(pi>=D.amCount&&dy.pmMerge)return;
+      h+='<tr'+(pi===D.amCount?' class="sep"':'')+'><td class="n">'+esc(p.n)+'</td><td><input type="text" list="rooms" data-k="'+k+'loc" value="'+esc(c.loc||'')+'" placeholder="'+esc(a.loc||((std.subj||std.s)?D.defLoc:''))+'"></td>'+
+        '<td style="text-align:center"><input type="checkbox" data-k="'+k+'shade"'+((c.shade!=null?c.shade:a.shade)?' checked':'')+'></td>'+
+        '<td>'+inp(k+'s',c.s||'',a.s||std.s,'t')+'</td><td>'+inp(k+'e',c.e||'',a.e||std.e,'t')+'</td><td>'+inp(k+'subj',c.subj||'',a.subj||std.subj)+'</td></tr>';
+    });
+    h+='</table>';
+    if(dy.pmMerge)h+='<label class="f" style="margin-top:6px">下午合併格文字（留白＝「'+esc(dy.pmText)+'」，填 <b>-</b> ＝空白）'+inp('students.'+i+'.pm.'+d,s.pm[d]||'',dy.pmText)+'</label>';
+  });
+  h+='<datalist id="rooms">'+D.rooms.map(r=>'<option value="'+esc(r)+'">').join('')+'</datalist>';
+  h+='<h3>注意事項（一行一項，自動編號）</h3><textarea data-k="students.'+i+'.notes" data-notes="1" rows="5" style="width:100%">'+esc(s.notes!=null?s.notes:D.notes)+'</textarea>';
+  h+='<div class="hint">強調寫法：<code>__底線__</code>　<code>[[外框]]</code>　<code>==灰底==</code>'+(s.notes!=null?'　<a href="#" data-act="resetNotes">改回共同注意事項</a>':'　（目前使用共同注意事項）')+'</div>';
+  h+='<div class="row" style="margin-top:14px"><button class="b" data-act="dup">複製這位</button><button class="b warn" data-act="del">刪除這位</button></div>';
+  return h;
+}
+function stuListHtml(){return D.students.map((s,i)=>'<button data-sel="'+i+'"'+(i===cur?' class="on"':'')+(s.pid?' title="來自排列機"':'')+'>'+(s.pid?'🔗 ':'')+esc(stuId(s)||'（未命名）')+'</button>').join('');}
+function edExam(){
+  const H=D.head;
+  let h='<h3>標題與文字</h3>';
+  h+='<label class="f">標題第一行'+inp('head.line1',H.line1)+'</label><label class="f">標題第二行'+inp('head.line2',H.line2)+'</label>';
+  h+='<div class="row"><label class="f">左上角方框（留白＝不顯示）'+inp('head.label',H.label)+'</label><label class="f">沒填地點時顯示'+inp('defLoc',D.defLoc)+'</label></div>';
+  h+='<label class="f">學習中心導師（會印在說明文字裡）'+inp('head.teachers',H.teachers,'王小明老師、陳小華老師')+'</label>';
+  h+='<h3>印章</h3><div class="row"><label class="chk"><input type="checkbox" data-k="head.stampOn" data-keep="1"'+(H.stampOn?' checked':'')+'> 顯示印章</label><button class="b" data-act="stamp">換一張印章圖</button>'+(H.stamp?'<button class="b" data-act="stampReset">改回原本的章</button>':'')+'</div><input type="file" id="stampFile" accept="image/*" hidden>';
+  h+='<h3>日期</h3>';
+  D.days.forEach((dy,d)=>{h+='<div class="row"><label class="f">第 '+(d+1)+' 天日期'+inp('days.'+d+'.date',dy.date,'10月14日')+'</label><label class="f" style="flex:.5">星期'+inp('days.'+d+'.dow',dy.dow,'三')+'</label></div>'+
+    '<div class="row" style="margin:-2px 0 10px"><label class="chk"><input type="checkbox" data-k="days.'+d+'.pmMerge" data-keep="1" data-re="1"'+(dy.pmMerge?' checked':'')+'> 下午合併成一格</label>'+(dy.pmMerge?'<input type="text" style="flex:1" data-k="days.'+d+'.pmText" data-keep="1" value="'+esc(dy.pmText)+'" placeholder="例：服務學習(回原班)">':'')+'</div>';});
+  h+='<h3>節次、時間與科目</h3><div class="hint">科目要分兩行（第二行小字）用 <code>/</code> 隔開，例：<code>生物(七)/理化(八九)</code></div>';
+  D.days.forEach((dy,d)=>{
+    h+='<div class="day">'+esc(dy.date)+'（'+esc(dy.dow)+'）</div><table class="g"><tr><th>節</th><th>開始</th><th>結束</th><th>科目</th></tr>';
+    D.periods.forEach((p,pi)=>{const k='periods.'+pi+'.d.'+d+'.',x=p.d[d];
+      h+='<tr'+(pi===D.amCount?' class="sep"':'')+'><td class="n">'+esc(p.n)+'</td><td><input type="text" class="t" data-keep="1" data-k="'+k+'s" value="'+esc(x.s)+'"></td><td><input type="text" class="t" data-keep="1" data-k="'+k+'e" value="'+esc(x.e)+'"></td><td><input type="text" data-keep="1" data-k="'+k+'subj" value="'+esc(x.subj)+'"></td></tr>';});
+    h+='</table>';});
+  h+='<h3>共同注意事項（一行一項）</h3><textarea data-k="notes" data-keep="1" rows="4" style="width:100%">'+esc(D.notes)+'</textarea><div class="hint">沒有另外改過注意事項的學生都會用這一份。強調寫法：<code>__底線__</code>　<code>[[外框]]</code>　<code>==灰底==</code></div>';
+  h+='<h3>常用地點（輸入時的下拉選單，一行一個）</h3><textarea id="roomsTa" rows="5" style="width:100%">'+esc(D.rooms.join('\n'))+'</textarea>';
+  return h;
+}
+function edData(){
+  const n=D.students.filter(s=>s.pid).length;
+  let h='<h3>與「特殊試場排列機」連動</h3>';
+  h+='<label class="chk" style="margin-bottom:6px"><input type="checkbox" data-k="link" data-keep="1" data-re="1"'+(D.link?' checked':'')+'> <b>自動連動</b>（建議開著）</label>';
+  h+='<div class="hint">開著時，每次打開這一頁、或排列機有任何變動，都會自動把<b>日期、考科、時間、每位學生的考試地點與延長時間</b>帶過來，不用自己打。你在這裡補的全名、注意事項、手動改過的格子都會保留。<br>目前狀態：<b>'+esc(linkMsg||'尚未連動')+'</b>'+(n?'（'+n+' 位學生來自排列機）':'')+'</div>';
+  h+='<div class="row"><button class="b pri" data-act="plLocal">立即重新同步</button>'+(EMB?'':'<a class="b" style="text-decoration:none" href="'+PLANNER_URL+'">回到排列機</a>')+'<button class="b" data-act="plFile">改用排列機設定檔（.json）</button></div><input type="file" id="plFile" accept=".json,application/json" hidden>';
+  h+='<div class="row" style="margin-top:8px"><button class="b" data-act="clearManual">清掉手動改過的格子（全部以排列機為準）</button></div>';
+  h+='<h3>這個生成器自己的設定檔</h3><div class="hint">換電腦或想備份時用。檔案裡有學生姓名，請自行保管。</div>';
+  h+='<div class="row"><button class="b" data-act="exp">匯出設定檔</button><button class="b" data-act="imp">匯入設定檔</button></div><input type="file" id="impFile" accept=".json,application/json" hidden>';
+  h+='<h3>重來</h3><div class="row"><button class="b warn" data-act="clearStu">清空學生名單</button><button class="b warn" data-act="reset">全部還原成範例</button></div>';
+  return h;
+}
+
+/* ---------- 事件 ---------- */
+document.querySelector('.tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.tab;renderEd();});
+$('ed').addEventListener('input',e=>{
+  const el=e.target;
+  if(el.id==='roomsTa'){D.rooms=el.value.split('\n').map(x=>x.trim()).filter(x=>x);save();return;}
+  const k=el.dataset.k;if(!k)return;
+  let v=el.type==='checkbox'?el.checked:el.value;
+  if(el.classList.contains('t'))v=v.replace('：',':').trim();
+  if(el.dataset.keep||el.classList.contains('K')||el.dataset.notes)setKeep(k,v);else setPath(k,typeof v==='string'?v.trim():v,el.type==='checkbox');
+  save();renderPreview();
+  if(el.classList.contains('K'))$('stuList').innerHTML=stuListHtml();
+});
+$('ed').addEventListener('change',e=>{const el=e.target;
+  if(el.dataset.k==='link'&&D.link)autoSync('已同步');
+  if(el.dataset.re||el.dataset.notes)renderEd();
+  if(el.id==='stampFile'&&el.files[0]){const f=el.files[0];if(f.size>600*1024){toast('圖檔太大，請用 600KB 以下的圖');return;}
+    const r=new FileReader();r.onload=()=>{D.head.stamp=r.result;D.head.stampOn=true;save();renderEd();renderPreview();};r.readAsDataURL(f);}
+  if(el.id==='plFile'&&el.files[0])readJson(el.files[0],o=>syncPlanner(o,false,'已從設定檔帶入'));
+  if(el.id==='impFile'&&el.files[0])readJson(el.files[0],o=>{if(!o.periods||!o.students||!o.head){alert('這不是通知單生成器的設定檔。\n如果是排列機的設定檔，請用上面的「選排列機設定檔」。');return;}D=normalize(o);cur=0;save();renderAll();toast('已匯入');});
+});
+function readJson(f,cb){const r=new FileReader();r.onload=()=>{let o;try{o=JSON.parse(r.result);}catch(e){alert('檔案讀不懂，請確認是 .json 設定檔');return;}cb(o);};r.readAsText(f);}
+$('ed').addEventListener('click',e=>{
+  const sel=e.target.closest('[data-sel]');
+  if(sel){cur=+sel.dataset.sel;renderAll();return;}
+  const a=e.target.closest('[data-act]');if(!a)return;
+  const act=a.dataset.act;if(a.tagName==='A')e.preventDefault();
+  const s=D.students[cur];
+  if(act==='add'){D.students.push({cls:'',seat:'',name:'',a:{},c:{},pm:{},notes:null});cur=D.students.length-1;}
+  else if(act==='dup'){const c=JSON.parse(JSON.stringify(s));c.name+='（複製）';delete c.pid;delete c.plName;c.c=Object.assign({},c.a,c.c);c.a={};D.students.splice(cur+1,0,c);cur++;}
+  else if(act==='del'){if(!confirm('確定刪除 '+stuId(s)+'？'))return;D.students.splice(cur,1);}
+  else if(act==='sort'){const me=s;D.students.sort((x,y)=>String(x.cls).localeCompare(String(y.cls),'zh-Hant',{numeric:true})||String(x.seat).localeCompare(String(y.seat),'zh-Hant',{numeric:true}));cur=Math.max(0,D.students.indexOf(me));}
+  else if(act==='resetNotes'){s.notes=null;}
+  else if(act==='paste'){pasteDialog();return;}
+  else if(act==='stamp'){$('stampFile').click();return;}
+  else if(act==='stampReset'){D.head.stamp='';}
+  else if(act==='plLocal'){const o=plannerData();
+    if(!o){alert('這個瀏覽器裡找不到排列機的資料。\n請先到「① 排考場」把考場排好，或改用排列機設定檔。');return;}
+    D.link=true;syncPlanner(o,false,'已同步');return;}
+  else if(act==='clearManual'){if(!confirm('確定清掉所有「來自排列機的學生」手動改過的地點、時間、科目？\n姓名與注意事項會保留。'))return;D.students.forEach(x=>{if(x.pid){x.c={};x.pm={};}});}
+  else if(act==='plFile'){$('plFile').click();return;}
+  else if(act==='imp'){$('impFile').click();return;}
+  else if(act==='exp'){const b=new Blob([JSON.stringify(D,null,1)],{type:'application/json'}),x=document.createElement('a');x.href=URL.createObjectURL(b);x.download='通知單設定_'+D.head.line1+'.json';document.body.appendChild(x);x.click();setTimeout(()=>{URL.revokeObjectURL(x.href);x.remove();},500);return;}
+  else if(act==='clearStu'){if(!confirm('確定清空全部 '+D.students.length+' 位學生？考試設定會保留。'))return;D.students=[];cur=0;}
+  else if(act==='reset'){if(!confirm('確定全部還原成範例？目前的名單與設定都會被清掉。'))return;D=normalize(defaultData());cur=0;}
+  save();renderAll();
+});
+function pasteDialog(){
+  const d=$('dlg');
+  d.innerHTML='<h3>貼上名單</h3><div class="hint">一行一位，寫法像 <code>903-15 楊明杰</code>、<code>903 15 楊明杰</code>，也可以直接從 Excel 複製「班級、座號、姓名」三欄貼上。<br>班級座號已經在名單裡的（例如排列機帶來的學生），只會把姓名換成你貼的全名，不會重複新增。</div><textarea id="pasteTa" rows="10" style="width:100%"></textarea><div class="row" style="margin-top:10px;justify-content:flex-end"><button class="b" id="pasteNo">取消</button><button class="b pri" id="pasteOk">加入</button></div>';
+  d.showModal();
+  $('pasteNo').onclick=()=>d.close();
+  $('pasteOk').onclick=()=>{let n=0,u=0;
+    $('pasteTa').value.split('\n').forEach(l=>{l=l.trim();if(!l)return;
+      const m=l.match(/^(\d{3,4})\s*[-－\s,\t]\s*(\d{1,2})\s*[,\t\s]*\s*(.+)$/)||l.match(/^(\d{3,4})()\s*(.+)$/);
+      const old=m&&m[2]&&D.students.find(x=>String(x.cls)===m[1]&&x.seat&&+x.seat===+m[2]);
+      if(old){old.name=m[3].trim();u++;return;} // 班級座號已存在：只補上姓名
+      D.students.push(m?{cls:m[1],seat:m[2]?m[2].padStart(2,'0'):'',name:m[3].trim(),a:{},c:{},pm:{},notes:null}:{cls:'',seat:'',name:l,a:{},c:{},pm:{},notes:null});n++;});
+    d.close();if(n||u){if(n)cur=D.students.length-n;save();renderAll();toast((n?'已加入 '+n+' 位　':'')+(u?'已補上 '+u+' 位的姓名':''));}};
+}
+
+/* ---------- 與排列機連動 ---------- */
+const PLANNER_URL='./';
+const EMB=window.top!==window; // 放在排列機的「⑤ 學生通知單」分頁裡
+if(EMB)document.documentElement.classList.add('emb');
+const GN={7:'七',8:'八',9:'九'};
+let linkMsg='';
+function plannerData(){try{const o=JSON.parse(localStorage.getItem(PLANNER_KEY));if(o&&o.students&&o.sessions&&o.rooms)return o;}catch(e){}return null;}
+function autoSync(msg){if(!D.link)return false;const o=plannerData();if(!o)return false;return syncPlanner(o,true,msg);}
+function syncPlanner(P,quiet,msg){
+  if(!P||!P.students||!P.sessions||!P.rooms){if(!quiet)alert('這不是排列機的設定檔。');return false;}
+  const me=D.students[cur];
+  const tm=String(P.title||'').match(/(\d+)\s*學年度\s*第\s*(\d)\s*學期.*?第\s*(\d)\s*次段考/);
+  if(tm)D.head.line1=tm[1]+'學年度第'+tm[2]+'學期第'+tm[3]+'次段考';
+  const dates=[...new Set(P.sessions.map(s=>s.date))];
+  if(dates.length>2&&!quiet)alert('排列機裡有 '+dates.length+' 個考試日，通知單只放得下兩天，會帶入前兩天。');
+  const pidx=s=>{const m=String(s.period).match(/\d+/);return m?D.periods.findIndex(p=>String(p.n)===m[0]):-1;};
+  dates.slice(0,2).forEach((dt,d)=>{const s=P.sessions.find(x=>x.date===dt),m=String(dt).match(/(\d+)\D+(\d+)/);
+    D.days[d].date=m?(+m[1])+'月'+(+m[2])+'日':dt;if(s.dow)D.days[d].dow=s.dow;});
+  // 考科與時間：排列機有的節次以排列機為準；上次帶入、這次已不存在的改回自習
+  const allG=[...new Set([].concat(...P.sessions.map(s=>s.grades||[])))].sort();
+  if(!D.periods.some(p=>p.d.some(x=>x.pl)))D.periods.forEach(p=>p.d.forEach(x=>{if(x.s)x.subj='自習';})); // 第一次連動：先清掉範例考科
+  D.periods.forEach(p=>p.d.forEach(x=>{if(x.pl)x.pl=2;}));
+  P.sessions.forEach(s=>{const d=dates.indexOf(s.date),i=pidx(s);if(d<0||d>1||i<0||s.makeup)return;
+    if(i>=D.amCount)D.days[d].pmMerge=false;
+    const x=D.periods[i].d[d],g=s.grades||[],rest=allG.filter(y=>!g.includes(y));
+    x.s=fmt(hm(s.start));x.e=fmt(hm(s.end));x.pl=1;
+    const ns=(g.length&&rest.length)?s.subject+'('+g.map(y=>GN[y]||y).join('')+')/自習('+rest.map(y=>GN[y]||y).join('')+')':s.subject;
+    if(x.plSubj===undefined||x.subj===x.plSubj)x.subj=ns; // 在「考試設定」改過科目寫法的，保留你的寫法
+    x.plSubj=ns;});
+  D.periods.forEach(p=>p.d.forEach(x=>{if(x.pl===2){delete x.pl;delete x.plSubj;x.subj='自習';}}));
+  // 沒排考試、但那天下午沒合併的節次補上時間與「自習」
+  D.periods.forEach((p,i)=>p.d.forEach((x,d)=>{if(i>=D.amCount&&!D.days[d].pmMerge&&!x.s){const o=p.d[1-d];x.s=o.s;x.e=o.e;if(!x.subj)x.subj='自習';}}));
+  // 學生
+  const sesById={},roomById={};P.sessions.forEach(s=>sesById[s.id]=s);P.rooms.forEach(r=>{roomById[r.id]=r;if(r.name&&!D.rooms.includes(r.name))D.rooms.push(r.name);});
+  D.students=D.students.filter(s=>!s.demo);
+  const seen=new Set();let add=0,gone=0;
+  const sameName=(a,b)=>a&&b&&(a===b||a.endsWith(b)||b.endsWith(a));
+  P.students.forEach(ps=>{if(ps.on===false)return;const cells={};
+    for(const k in (P.assign||{})){const sep=k.lastIndexOf('|');if(k.slice(0,sep)!==ps.id)continue;
+      const subj=k.slice(sep+1),a=P.assign[k],s=sesById[a.ses],r=roomById[a.room];if(!s||!r)continue;
+      const d=dates.indexOf(s.date),i=pidx(s);if(d<0||d>1||i<0)continue;
+      const has=v=>{const sc=ps.sv&&ps.sv[v];return sc==='*'||(Array.isArray(sc)&&sc.includes(subj));};
+      const c={loc:r.name},e=+s.extMin||0;
+      if(has('ext')||has('pc'))c.shade=true;
+      if(has('ext')&&e){if(s.extMode==='before')c.s=fmt(hm(s.start)-e);else c.e=fmt(hm(s.end)+e);}
+      if(s.makeup)c.subj=subj+'(補考)';
+      cells[d+'-'+i]=c;}
+    if(!Object.keys(cells).length)return;
+    let st=D.students.find(x=>x.pid===ps.id&&!seen.has(x))||
+           D.students.find(x=>!x.pid&&!seen.has(x)&&String(x.cls)===String(ps.cls)&&(!x.seat||!ps.seat||+x.seat===+ps.seat)&&sameName(x.name,ps.name));
+    if(st){if(st.pid&&st.name===st.plName)st.name=ps.name||'';
+      st.cls=ps.cls||st.cls;st.seat=ps.seat||st.seat;}
+    else{st={cls:ps.cls||'',seat:ps.seat||'',name:ps.name||'',a:{},c:{},pm:{},notes:null};D.students.push(st);add++;}
+    st.pid=ps.id;st.plName=ps.name||'';st.a=cells;seen.add(st);
+  });
+  // 排列機已經沒有的學生：沒手動改過就移除，有改過就留下來變成手動學生
+  D.students=D.students.filter(s=>{if(!s.pid||seen.has(s))return true;
+    if(Object.keys(s.c).length||s.notes!=null){delete s.pid;delete s.plName;s.a={};return true;}gone++;return false;});
+  D.students.sort((x,y)=>String(x.cls).localeCompare(String(y.cls),'zh-Hant',{numeric:true})||String(x.seat).localeCompare(String(y.seat),'zh-Hant',{numeric:true}));
+  cur=Math.max(0,D.students.indexOf(me));
+  const t=new Date();linkMsg='已連動排列機（'+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')+' 更新）';
+  save();renderAll();
+  if(msg)toast(msg+'：'+seen.size+' 位學生'+(add?'（新增 '+add+'）':'')+(gone?'（移除 '+gone+'）':''));
+  return true;
+}
+// 排列機一存檔，這裡立刻跟著更新
+window.addEventListener('storage',e=>{if(e.key===PLANNER_KEY)autoSync('排列機有變動，已更新');});
+
+/* ---------- 列印 ---------- */
+function doPrint(list){if(!list.length){toast('沒有學生可以印');return;}
+  $('print').innerHTML=list.map(noticeHtml).join('');
+  const imgs=[...$('print').querySelectorAll('img')];
+  Promise.all(imgs.map(im=>im.complete?1:new Promise(r=>{im.onload=im.onerror=r;}))).then(()=>window.print());}
+$('printAll').onclick=()=>doPrint(D.students);
+$('printOne').onclick=()=>doPrint(D.students[cur]?[D.students[cur]]:[]);
+$('prev').onclick=()=>{cur=(cur-1+D.students.length)%Math.max(1,D.students.length);renderAll();};
+$('next').onclick=()=>{cur=(cur+1)%Math.max(1,D.students.length);renderAll();};
+$('showAll').onchange=renderPreview;
+
+function renderAll(){cur=Math.max(0,Math.min(cur,D.students.length-1));renderEd();renderPreview();$('lk').textContent=D.link&&linkMsg?'🔗 '+linkMsg:'';}
+D=load();
+if(!autoSync())renderAll();
+</script>
+</body>
+</html>

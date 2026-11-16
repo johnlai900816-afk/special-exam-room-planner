@@ -100,6 +100,7 @@ table.out td.chg{background:#fff3c4}
   <button data-tab="stu">② 學生與服務</button>
   <button data-tab="set">③ 節次／教室／監考</button>
   <button data-tab="out">④ 輸出表格</button>
+  <button data-tab="notice">⑤ 學生通知單</button>
 </div>
 
 <div class="tab on" id="tab-board">
@@ -155,6 +156,10 @@ table.out td.chg{background:#fff3c4}
     <button class="b pri" onclick="openNotice()" title="依目前排好的結果，產生每位學生一張的特殊考場通知單">✉ 產生學生通知單</button>
   </div>
   <div id="outArea"></div>
+</div>
+
+<div class="tab" id="tab-notice" style="padding:0">
+  <iframe id="noticeFrame" title="學生通知單" style="width:100%;border:0;display:block"></iframe>
 </div>
 
 <div id="pop"></div><div id="toast"></div><div id="busy">排列中…</div>
@@ -389,13 +394,14 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
 function localSave(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
-function save(){localSave();cloudPush();noticePush();}
-// 通知單生成器：開新分頁並把目前的排法傳過去，之後每次存檔都會跟著更新
-const NOTICE_URL='https://johnlai900816-afk.github.io/exam-notice-generator/';
-let noticeWin=null;
-function noticePush(){try{if(noticeWin&&!noticeWin.closed)noticeWin.postMessage({type:'planner-data',data:JSON.stringify(D)},'*');}catch(e){}}
-function openNotice(){D.assign=fromState(M,ST);localSave();noticeWin=window.open(NOTICE_URL,'exam-notice');if(!noticeWin)toast('瀏覽器擋住了新分頁，請允許彈出視窗');}
-window.addEventListener('message',e=>{if(e.data&&e.data.type==='notice-ready'&&noticeWin&&e.source===noticeWin)noticePush();});
+function save(){localSave();cloudPush();}
+// ⑤ 學生通知單（notice.html）：讀同一份瀏覽器資料，這裡每次存檔它都會自動跟著更新
+function openNotice(){showTab('notice');}
+function sizeNotice(){const f=$('noticeFrame');f.style.height=Math.max(400,window.innerHeight-f.getBoundingClientRect().top)+'px';}
+function showNotice(){const f=$('noticeFrame');try{D.assign=fromState(M,ST);}catch(e){}localSave();
+  if(!f.getAttribute('src'))f.src='notice.html';else{try{f.contentWindow.autoSync&&f.contentWindow.autoSync();}catch(e){}}
+  sizeNotice();}
+window.addEventListener('resize',()=>{if(curTab==='notice')sizeNotice();});
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2200);}
 function rebuild(){M=compile(D);ST=toState(M,D);}
 function commit(){D.assign=fromState(M,ST);save();renderBoard();}
@@ -651,7 +657,7 @@ function normalize(o){const d=defaultData();o.settings=Object.assign(d.settings,
 /* ---------- 啟動 ---------- */
 function showTab(n){curTab=n;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===n));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.id==='tab-'+n));
-  if(n==='board')renderBoard();else if(n==='stu')renderStu();else if(n==='set')renderSet();else showOut(outMode);}
+  if(n==='board')renderBoard();else if(n==='stu')renderStu();else if(n==='set')renderSet();else if(n==='notice')showNotice();else showOut(outMode);}
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 function init2(){$('title').value=D.title||'';showTab('board');}
 
