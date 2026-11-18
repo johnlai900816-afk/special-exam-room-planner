@@ -19,6 +19,13 @@ service cloud.firestore {
     match /exams/presence {
       allow read, write: if member();
     }
+    // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），知道鑰匙才讀得到單一文件，不能列出；
+    // 只有主持人與編輯能寫，而且只能寫到主持人目前開啟的那一把鑰匙
+    match /view/{t} {
+      allow get: if true;
+      allow write: if editor() && access().get('link', '') != ''
+        && (t == access().link || t == access().link + '_n');
+    }
     // 考場資料：名單內都可讀；只有主持人與編輯可寫
     match /exams/{id} {
       allow read: if member();
