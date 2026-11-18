@@ -104,7 +104,10 @@ table.svt th,table.svt td{border:1px solid #8a93a6}
 table.svt th.dayh{background:#1f2a44;color:#fff;font-size:15px;text-align:left;padding:6px 12px;letter-spacing:1px}
 table.svt th{background:#e4e8f2;font-size:13px;padding:5px 4px}
 table.svt .c0{width:84px}
-table.svt td.sh2{background:#f1f3f9;vertical-align:middle;line-height:1.5}
+table.svt td.sh2{background:#f1f3f9;vertical-align:middle;line-height:1.5;white-space:normal}
+table.out th,table.out td{overflow-wrap:anywhere;word-break:break-word}
+table.svt .tg2{white-space:nowrap}
+.pg .rep{display:none}
 table.svt .sj{font-size:16px}
 table.svt .pd,table.svt .tm{font-weight:normal;font-size:12px;color:#333}
 table.svt .tx{font-weight:bold;font-size:12px;color:#b45309}
@@ -117,12 +120,13 @@ table.svt .t-r,.lg .t-r{color:#1d4ed8;border-color:#b0c4f5;background:#eef3ff}
 table.svt .t-p,.lg .t-p{color:#7e22ce;border-color:#d3b5f0;background:#f7efff}
 table.svt .t-s,.lg .t-s{color:#475569;border-color:#c5ccd6;background:#f3f4f6}
 table.svt .ft{margin-top:4px;padding-top:3px;border-top:1px dashed #8a93a6;font-size:12px;line-height:1.5}
-table.svt .ft b{margin-right:8px;white-space:nowrap}
+table.svt .ft b{margin-right:8px;display:inline-block}
 table.svt .ft .sp{color:#0f766e}
-table.svt .ft span{color:#555;white-space:nowrap}
+table.svt .ft span{color:#555;display:inline-block}
 table.svt .nt{font-size:11.5px;color:#555}
 .lg{font-size:12px;color:#555;text-align:center;margin:0 0 8px}
 .lg .tg2{display:inline-block;font-size:11px;font-weight:bold;border-radius:4px;padding:0 4px;margin:0 3px 0 10px;border:1px solid #999}
+table.out th small{display:block;font-weight:normal}
 table.pm td.sup,table.out td.sup{background:#e6f6f3;color:#0f766e}
 .cell .cf select[data-sk]{color:#0f766e}
 /* 對話框 */
@@ -239,8 +243,15 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .tab{padding:0}
   @page{size:A4 landscape;margin:8mm}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  table.out{page-break-inside:auto}
+  html,body{margin:0!important;padding:0!important}
+  .tab,#outArea,#findOut{margin:0!important;padding:0!important;box-shadow:none!important;border:0!important;overflow:visible!important}
+  table.out{page-break-inside:auto;margin-bottom:0}
   table.out tr{page-break-inside:avoid}
+  table.out thead{display:table-header-group}
+  .pg{page-break-after:always;break-after:page;page-break-inside:avoid;break-inside:avoid;overflow:hidden}
+  .pg:last-child{page-break-after:auto;break-after:auto}
+  .pg .rep{display:block}
+  #outArea h2{margin:0 0 4px}
 }
 </style>
 </head>
@@ -1198,19 +1209,32 @@ function renderFind(bar){
   $('findOut').innerHTML=h+'</table>';
 }
 
+/* ---------- 列印：服務表每天一頁，內容太多就自動縮小到剛好一頁 ---------- */
+const PGW=1056,PGH=716; // A4 橫向、邊界 8mm 的可用範圍（px）
+function fitPrint(){if(curTab!=='out')return;
+  document.querySelectorAll('#outArea .pg').forEach(el=>{el.style.zoom='';
+    const fits=z=>{el.style.width=(PGW/z)+'px';return el.offsetHeight*z<=PGH;};
+    let z=1;if(!fits(1)){let lo=0.4,hi=1;if(fits(lo)){for(let i=0;i<9;i++){const m=(lo+hi)/2;if(fits(m))lo=m;else hi=m;}}z=lo;}
+    el.style.width=(PGW/z)+'px';el.style.zoom=z;});}
+function unfitPrint(){document.querySelectorAll('#outArea .pg').forEach(el=>{el.style.zoom='';el.style.width='';});}
+window.addEventListener('beforeprint',fitPrint);window.addEventListener('afterprint',unfitPrint);
+
 /* ---------- 輸出 ---------- */
 function showOut(m){outMode=m;$('ov1').classList.toggle('pri',m==='svc');$('ov2').classList.toggle('pri',m==='itin');$('ov3').classList.toggle('pri',m==='proc');renderOut();}
-function renderOut(){$('outArea').innerHTML=outMode==='svc'?svcHtml():outMode==='proc'?'<h2>'+esc(D.title)+'｜監考分配表</h2>'+procMatrix('out'):itinHtml();}
+function renderOut(){$('outArea').innerHTML=outMode==='svc'?svcHtml():outMode==='proc'?'<div class="pg"><h2>'+esc(D.title)+'｜監考分配表</h2>'+procMatrix('out')+'</div>':itinHtml();}
 const SVT={'延長':'x','口頭':'o','誦讀':'r','電腦':'p','獨立':'s'};
 const svTags=l=>l.split('+').map(t=>'<span class="tg2 t-'+(SVT[t]||'s')+'">'+esc(t)+'</span>').join('');
 function svcHtml(){
   evaluate(M,ST);const cells=cellMap(),waits=waitMap(),waitRoom=M.rooms.findIndex(r=>r.type==='wait');
   const usedRoom=M.rooms.filter((R,r)=>M.ses.some(T=>(cells[T.i+'|'+r]||[]).length||(r===waitRoom&&(waits[T.i]||[]).length)));
   const dates=[...new Set(M.ses.map(s=>s.date))],tr=(a,b)=>fmt(a)+'–'+fmt(b),names=l=>l.map(p=>esc(shortName(M.parts[p].stu))).join('、');
-  let h='<h2>'+esc(D.title)+'</h2><div class="lg">'+Object.keys(SVT).map(svTags).join('')+'　｜　橘色時間＝延長後的考試時間　｜　每格下方：主監考、支援、人數</div>';
+  // 欄寬依人數：人多的試場寬一點，整張表比較矮、字可以比較大
+  const cw_={};let cwSum=0;usedRoom.forEach(R=>{let m=0;M.ses.forEach(T=>{m=Math.max(m,(cells[T.i+'|'+R.i]||[]).length,R.i===waitRoom?(waits[T.i]||[]).length:0);});cw_[R.i]=Math.min(11,Math.max(4,m));cwSum+=cw_[R.i];});
+  const head=k=>'<h2'+(k?' class="rep"':'')+'>'+esc(D.title)+'</h2><div class="lg'+(k?' rep':'')+'">'+Object.keys(SVT).map(svTags).join('')+'　｜　橘色時間＝延長後的考試時間　｜　每格下方：主監考、支援、人數</div>';
+  let h='';
   for(const d of dates){
     const list=M.ses.filter(s=>s.date===d).sort((a,b)=>a.key-b.key);
-    h+='<table class="out svt"><colgroup><col style="width:108px">'+usedRoom.map(()=>'<col>').join('')+'</colgroup><tr><th class="dayh" colspan="'+(usedRoom.length+1)+'">'+esc(d)+'（星期'+esc(list[0].ref.dow||'')+'）</th></tr><tr><th class="c0">科目</th>'+usedRoom.map(R=>'<th>'+esc(R.name)+'</th>').join('')+'</tr>';
+    h+='<div class="pg">'+head(dates.indexOf(d))+'<table class="out svt"><colgroup><col style="width:108px">'+usedRoom.map(R=>'<col style="width:'+(cw_[R.i]/cwSum*91).toFixed(2)+'%">').join('')+'</colgroup><tr><th class="dayh" colspan="'+(usedRoom.length+1)+'">'+esc(d)+'（星期'+esc(list[0].ref.dow||'')+'）</th></tr><tr><th class="c0">科目</th>'+usedRoom.map(R=>'<th>'+esc(R.name)+'</th>').join('')+'</tr>';
     for(const T of list){const hasE=T.est!==T.st||T.een!==T.en;
       h+='<tr><td class="sh2 c0"><div class="sj">'+esc(sesLabel(T))+'</div><div class="pd">'+esc(T.ref.period||'')+'</div><div class="tm">'+tr(T.st,T.en)+'</div>'+(hasE?'<div class="tx">延長 '+tr(T.est,T.een)+'</div>':'')+'</td>';
       for(const R of usedRoom){const l=cells[T.i+'|'+R.i]||[],w=R.i===waitRoom?(waits[T.i]||[]):[],key=T.id+'|'+R.id;
@@ -1228,7 +1252,7 @@ function svcHtml(){
         h+='</td>';}
       h+='</tr>';
     }
-    h+='</table>';
+    h+='</table></div>';
   }
   return h;
 }
