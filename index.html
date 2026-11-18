@@ -172,6 +172,12 @@ details.tip{margin:0 0 8px;font-size:13px;color:var(--ink2)}
 details.tip summary{cursor:pointer;color:var(--mute)}
 details.tip div{margin-top:6px;line-height:1.7}
 .qv{font-weight:700;color:var(--acc-d)}
+body.ro .tab:not(#tab-out):not(#tab-notice) :is(input,select,textarea,button:not(.next)),body.ro #title,body.ro .chip{pointer-events:none}
+body.ro .tab:not(#tab-out):not(#tab-notice) :is(input,select,button:not(.next)){opacity:.6}
+#roBar{display:none;background:var(--warn-l);color:var(--warn);padding:7px 16px;font-size:13.5px;text-align:center}
+body.ro #roBar{display:block}
+.mem select{border:1px solid var(--line2);border-radius:8px;padding:3px 6px;font:inherit;font-size:13px;background:#fff}
+.addrow select{border:1px solid var(--line2);border-radius:8px;padding:0 8px;font:inherit;background:#fff}
 details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
 details.more summary{cursor:pointer;font-size:13px;color:var(--mute)}
 details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -192,7 +198,8 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   <span style="flex:1"></span>
   <div id="cloud"></div>
 </header>
-<nav class="tabs noprint">
+<div id="roBar" class="noprint">👁 你是「檢視」權限：可以看、列印，不能修改。需要修改請找主持人開「編輯」權限。</div>
+<nav class="tabs">
   <button data-tab="stu"><i>1</i>學生名單</button><span class="sep">›</span>
   <button data-tab="set"><i>2</i>考程與教室</button><span class="sep">›</span>
   <button data-tab="board" class="on"><i>3</i>排考場</button><span class="sep">›</span>
@@ -501,7 +508,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
 function localSave(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
-function save(){localSave();cloudPush();}
+function save(){if(isRO()){clearTimeout(save.h);save.h=setTimeout(roRevert,0);return;}localSave();cloudPush();}
 // ⑤ 學生通知單（notice.html）：讀同一份瀏覽器資料，這裡每次存檔它都會自動跟著更新
 function openNotice(){showTab('notice');}
 function sizeNotice(){const f=$('noticeFrame');f.style.height=Math.max(400,window.innerHeight-f.getBoundingClientRect().top)+'px';}
@@ -1118,6 +1125,10 @@ function init2(){$('title').value=D.title||'';showTab('board');}
 /* ---------- 共用與協作（Firebase；沒有設定檔時就是單機模式） ---------- */
 let CLOUD=null,cloudTimer=null,lastPushed='',cloudReady=false,cloudState='local',lastPushedN='',nTimer=null,presTimer=null;
 const who=e=>String(e||'').split('@')[0];
+// 權限：主持人（admin）、編輯、檢視。emails＝全部成員；viewers＝其中只能檢視的人
+const viewersOf=()=>(CLOUD&&CLOUD.access&&CLOUD.access.viewers)||[];
+function isRO(){return cloudState==='on'&&!!CLOUD.user&&viewersOf().includes(CLOUD.user.email);}
+function roRevert(){if(!lastPushed)return;try{D=normalize(JSON.parse(lastPushed));}catch(e){return;}rebuild();$('title').value=D.title||'';if(curTab!=='notice')showTab(curTab);toast('你是「檢視」權限，不能修改');}
 const p2=n=>String(n).padStart(2,'0');
 function fmtAt(ts){if(!ts)return '';const d=ts.toDate?ts.toDate():new Date(ts);return (d.getMonth()+1)+'/'+d.getDate()+' '+p2(d.getHours())+':'+p2(d.getMinutes());}
 function onlineList(){const now=Date.now(),p=(CLOUD&&CLOUD.presence)||{};return Object.values(p).filter(x=>x&&x.email&&now-(x.at||0)<150000).sort((a,b)=>a.email.localeCompare(b.email));}
@@ -1129,7 +1140,8 @@ function setCloudUI(state){
   else if(state==='wait')el.innerHTML='<span class="pill">連線中…</span>';
   else if(state==='denied')el.innerHTML='<span class="pill bad">尚未加入共用</span><button class="b" onclick="openShare()">👥 共用</button>';
   else{const on=onlineList(),L=CLOUD.last;
-    el.innerHTML='<span class="avs" title="現在在線上的老師">'+on.map(avatar).join('')+'</span><span class="pill ok" title="'+esc(L&&L.by?'最後更新：'+who(L.by)+'　'+fmtAt(L.at):'所有修改都會自動存到雲端')+'">已同步</span><button class="b" onclick="openShare()">👥 共用（'+((CLOUD.access&&CLOUD.access.emails)||[]).length+' 人）</button>';}
+    el.innerHTML='<span class="avs" title="現在在線上的老師">'+on.map(avatar).join('')+'</span>'+(isRO()?'<span class="pill">👁 檢視</span>':'')+'<span class="pill ok" title="'+esc(L&&L.by?'最後更新：'+who(L.by)+'　'+fmtAt(L.at):'所有修改都會自動存到雲端')+'">已同步</span><button class="b" onclick="openShare()">👥 共用（'+((CLOUD.access&&CLOUD.access.emails)||[]).length+' 人）</button>';}
+  document.body.classList.toggle('ro',isRO());
   if($('share').open)renderShare();
 }
 function backupHtml(){return '<details class="more"><summary>備份與還原</summary><p class="sub">平常不需要用到：資料會自動儲存'+(cloudState==='on'?'並同步給共用的老師':'在這台電腦')+'。換電腦又不想登入，或想留一份存檔時再用。備份檔含學生姓名，請自行保管。</p><div class="row"><button class="b" onclick="exportJson()">下載備份檔</button><button class="b" onclick="$(\'imp\').click()">從備份檔還原</button><button class="b danger" onclick="resetAll()">清空，回到範例</button></div></details>';}
@@ -1138,39 +1150,42 @@ function renderShare(){
   let h='<button class="x" onclick="$(\'share\').close()" aria-label="關閉">✕</button>';
   if(st==='local')h+='<h2>備份</h2><p class="lead">這個版本沒有連接雲端，資料只存在這台電腦的這個瀏覽器。</p>';
   else if(st==='out')h+='<h2>與其他老師共用</h2><p class="lead">登入後，幾位老師可以<b>同時打開同一份考場</b>：任何人改名單、拖學生、補通知單，其他人的畫面都會立刻跟著變，不用互傳檔案。</p>'+
-    '<ol class="steps"><li>用你的 Google 帳號登入（第一位登入的人是管理者）。</li><li>在這裡輸入其他老師的 Gmail，把他們加進來。</li><li>把這個網址傳給他們，他們登入後就會看到同一份。</li></ol>'+
+    '<ol class="steps"><li>用你的 Google 帳號登入（第一位登入的人是主持人）。</li><li>主持人輸入其他老師的 Gmail，選「可以編輯」或「只能檢視」。</li><li>把這個網址傳給他們，他們登入後就會看到同一份。</li></ol>'+
     '<button class="b pri big" onclick="cloudLogin()">用 Google 帳號登入</button><p class="sub">目前還沒登入，資料只存在這台電腦。登入後會改用雲端上大家共用的那一份。</p>';
   else if(st==='wait')h+='<h2>共用與協作</h2><p class="lead">連線中…</p>';
   else if(st==='denied')h+='<h2>還沒被加入共用</h2><div class="card bad">你登入的帳號 <b>'+esc(u?u.email:'')+'</b> 不在共用名單裡，所以看不到大家共用的那一份。</div>'+
-    '<ol class="steps"><li>把上面這個信箱傳給管理這份考場的老師。</li><li>請對方按右上角「共用」，把你的信箱加進去。</li><li>加好之後回來重新整理這一頁。</li></ol>'+
+    '<ol class="steps"><li>把上面這個信箱傳給這份考場的主持人。</li><li>請主持人按右上角「共用」，把你的信箱加進去。</li><li>加好之後回來重新整理這一頁。</li></ol>'+
     '<div class="card row" style="border:0;padding:0;display:flex;gap:8px"><button class="b pri" onclick="copyText(\''+esc(u?u.email:'')+'\',\'已複製信箱\')">複製我的信箱</button><button class="b" onclick="location.reload()">重新整理</button><button class="b" onclick="cloudLogout()">換一個帳號</button></div>';
   else{
     const A=CLOUD.access||{},emails=A.emails||[],admin=A.admin===u.email,on=onlineList(),onSet=new Set(on.map(x=>x.email)),L=CLOUD.last;
     h+='<h2>共用與協作</h2>';
     h+='<div class="card ok"><div class="row"><b>✓ 已同步</b><span style="flex:1"></span><span>'+esc(u.email)+'</span><button class="b sm" onclick="cloudLogout()">登出</button></div>'+
-       '<div>所有修改都會自動儲存，名單內的老師會即時看到。'+(L&&L.by?'<br>最後更新：<b>'+esc(who(L.by))+'</b>　'+fmtAt(L.at):'')+'</div></div>';
-    h+='<h4>可以一起編輯的老師（'+emails.length+' 人）</h4><div>'+emails.map(e=>'<div class="mem">'+avatar({email:e})+'<span class="e">'+esc(e)+(e===u.email?'（我）':'')+'</span>'+(onSet.has(e)?'<span class="tag on">在線上</span>':'')+(e===A.admin?'<span class="tag">管理者</span>':(admin?'<button class="b sm danger" onclick="removeMember(\''+esc(e)+'\')">移除</button>':''))+'</div>').join('')+'</div>';
-    if(admin)h+='<div class="addrow"><input id="memIn" type="email" placeholder="輸入老師的 Gmail，例：teacher@gmail.com" onkeydown="if(event.key===\'Enter\')addMember()"><button class="b pri" onclick="addMember()">加入</button></div>'+
-       '<p class="sub">加入後把網址傳給對方，對方按「與其他老師共用」用同一個 Gmail 登入就可以了。</p><div class="card row" style="border:0;padding:0;display:flex;gap:8px;margin-bottom:0"><button class="b" onclick="copyText(location.href.split(\'#\')[0],\'已複製網址，貼給老師就可以了\')">🔗 複製網址</button></div>';
-    else h+='<p class="sub">要增減老師，請找管理者 '+esc(A.admin||'')+'。</p>';
+       '<div>'+(isRO()?'主持人和編輯的老師一改，你的畫面會即時更新。':'所有修改都會自動儲存，名單內的老師會即時看到。')+''+(L&&L.by?'<br>最後更新：<b>'+esc(who(L.by))+'</b>　'+fmtAt(L.at):'')+'</div></div>';
+    const V=A.viewers||[],roleSel=(e)=>'<select onchange="setRole(\''+esc(e)+'\',this.value)"><option value="e"'+(V.includes(e)?'':' selected')+'>可以編輯</option><option value="v"'+(V.includes(e)?' selected':'')+'>只能檢視</option></select>';
+    if(isRO())h+='<div class="card bad">你是「檢視」權限：可以看、列印，不能修改。</div>';
+    h+='<h4>共用名單（'+emails.length+' 人）</h4><div>'+emails.map(e=>'<div class="mem">'+avatar({email:e})+'<span class="e">'+esc(e)+(e===u.email?'（我）':'')+'</span>'+(onSet.has(e)?'<span class="tag on">在線上</span>':'')+
+      (e===A.admin?'<span class="tag">主持人</span>':admin?roleSel(e)+'<button class="b sm danger" onclick="removeMember(\''+esc(e)+'\')">移除</button>':'<span class="tag">'+(V.includes(e)?'檢視':'編輯')+'</span>')+'</div>').join('')+'</div>';
+    if(admin)h+='<div class="addrow"><input id="memIn" type="email" placeholder="輸入老師的 Gmail，例：teacher@gmail.com" onkeydown="if(event.key===\'Enter\')addMember()"><select id="memRole"><option value="e">可以編輯</option><option value="v">只能檢視</option></select><button class="b pri" onclick="addMember()">加入</button></div>'+
+       '<p class="sub">加入後把網址傳給對方，對方用同一個 Gmail 登入就可以了。權限隨時可以改，對方的畫面會立刻跟著變。</p><div class="card row" style="border:0;padding:0;display:flex;gap:8px;margin-bottom:0"><button class="b" onclick="copyText(location.href.split(\'#\')[0],\'已複製網址，貼給老師就可以了\')">🔗 複製網址</button></div>';
+    else h+='<p class="sub">要增減老師或改權限，請找主持人 '+esc(A.admin||'')+'。</p>';
     h+='<p class="sub">兩位老師同時改同一個地方時，以最後存檔的人為準；右上角的圓形頭像是現在也開著這一頁的老師。</p>';
   }
   $('share').innerHTML=h+backupHtml();
 }
-function openShare(){renderShare();if(!$('share').open)$('share').showModal();
-  if(cloudState==='on')CLOUD.db.doc('config/access').get().then(a=>{if(a.exists){CLOUD.access=a.data();setCloudUI('on');}}).catch(()=>{});}
+function openShare(){renderShare();if(!$('share').open)$('share').showModal();}
 function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
-async function setMembers(emails,msg){try{await CLOUD.db.doc('config/access').update({emails});CLOUD.access.emails=emails;setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
+async function setMembers(emails,viewers,msg){viewers=viewers.filter(e=>emails.includes(e)&&e!==CLOUD.access.admin);try{await CLOUD.db.doc('config/access').update({emails,viewers});CLOUD.access.emails=emails;CLOUD.access.viewers=viewers;setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
+function setRole(e,r){const v=viewersOf().filter(x=>x!==e);if(r==='v')v.push(e);setMembers(CLOUD.access.emails||[],v,e+' 已改成「'+(r==='v'?'只能檢視':'可以編輯')+'」');}
 function addMember(){const el=$('memIn'),v=el.value.trim().toLowerCase();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){toast('請輸入完整的信箱，例如 teacher@gmail.com');el.focus();return;}
   const cur=CLOUD.access.emails||[];if(cur.includes(v)){toast('這位老師已經在名單裡了');return;}
-  setMembers(cur.concat([v]),'已加入 '+v+'，把網址傳給對方就可以了');}
-function removeMember(e){if(!confirm('確定把 '+e+' 移出共用名單？對方之後就看不到這份考場了。'))return;setMembers((CLOUD.access.emails||[]).filter(x=>x!==e),'已移除 '+e);}
+  const ro=$('memRole').value==='v';setMembers(cur.concat([v]),viewersOf().concat(ro?[v]:[]),'已加入 '+v+'（'+(ro?'只能檢視':'可以編輯')+'），把網址傳給對方就可以了');}
+function removeMember(e){if(!confirm('確定把 '+e+' 移出共用名單？對方之後就看不到這份考場了。'))return;setMembers((CLOUD.access.emails||[]).filter(x=>x!==e),viewersOf(),'已移除 '+e);}
 function cloudLogin(){CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast('登入失敗：'+(e.code||e.message)));}
 function presBeat(gone){if(!CLOUD||!CLOUD.user||!CLOUD.access)return Promise.resolve();const u=CLOUD.user;
   return CLOUD.db.doc('exams/presence').set({[u.uid]:gone?firebase.firestore.FieldValue.delete():{email:u.email,name:u.displayName||'',at:Date.now()}},{merge:true}).catch(()=>{});}
 function cloudLogout(){presBeat(true).then(()=>CLOUD.auth.signOut());}
-function cloudStop(){['unsub','unsubN','unsubP'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);cloudReady=false;lastPushed='';lastPushedN='';CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;}
+function cloudStop(){['unsub','unsubN','unsubP','unsubA'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);cloudReady=false;lastPushed='';lastPushedN='';CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;}
 function cloudInit(){
   if(typeof firebase==='undefined'||!window.FIREBASE_CONFIG){setCloudUI('local');return;}
   firebase.initializeApp(window.FIREBASE_CONFIG);
@@ -1184,15 +1199,17 @@ async function cloudConnect(){
   try{
     let a=await acc.get();
     if(!a.exists){
-      if(!confirm('這份考場還沒有管理者。\n要讓 '+user.email+' 成為管理者嗎？（之後由你決定哪些老師可以一起編輯）')){setCloudUI('denied');return;}
-      await acc.set({admin:user.email,emails:[user.email]});a=await acc.get();
+      if(!confirm('這份考場還沒有主持人。\n要讓 '+user.email+' 成為主持人嗎？（之後由你決定哪些老師可以編輯、哪些只能檢視）')){setCloudUI('denied');return;}
+      await acc.set({admin:user.email,emails:[user.email],viewers:[]});a=await acc.get();
     }
     CLOUD.access=a.data();
   }catch(e){setCloudUI('denied');return;}
+  // 名單與權限：主持人一改，大家的畫面立刻跟著變；被移除就看不到
+  CLOUD.unsubA=acc.onSnapshot(a=>{if(!a.exists)return;const was=isRO();CLOUD.access=a.data();if(cloudState==='on'){setCloudUI('on');if(was!==isRO())toast(isRO()?'主持人把你改成「檢視」權限':'主持人把你改成「編輯」權限');}},()=>{cloudStop();setCloudUI('denied');});
   // 考場資料
   CLOUD.unsub=db.doc('exams/main').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites)return;
-    if(!snap.exists){cloudReady=true;setCloudUI('on');cloudPush();return;}
+    if(!snap.exists){cloudReady=true;setCloudUI('on');if(!isRO())cloudPush();return;}
     const x=snap.data(),json=x.json;cloudReady=true;CLOUD.last={by:x.by,at:x.at};setCloudUI('on');
     if(json===lastPushed||json===JSON.stringify(D)){lastPushed=json;return;}
     try{D=normalize(JSON.parse(json));}catch(e){return;}
@@ -1203,7 +1220,7 @@ async function cloudConnect(){
   // 學生通知單補的資料（全名、注意事項…）也一起共用
   CLOUD.unsubN=db.doc('exams/notice').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites)return;
-    if(!snap.exists){noticePush();return;}
+    if(!snap.exists){if(!isRO())noticePush();return;}
     const json=snap.data().json;
     if(json===lastPushedN||json===localStorage.getItem(NKEY)){lastPushedN=json;return;}
     lastPushedN=json;try{localStorage.setItem(NKEY,json);}catch(e){}noticeReload();
@@ -1213,13 +1230,13 @@ async function cloudConnect(){
   presBeat();presTimer=setInterval(()=>{presBeat();if(cloudState==='on')setCloudUI('on');},60000);
 }
 function cloudPush(){
-  if(!CLOUD||!CLOUD.user||!cloudReady)return;
+  if(!CLOUD||!CLOUD.user||!cloudReady||isRO())return;
   clearTimeout(cloudTimer);
   cloudTimer=setTimeout(()=>{const json=JSON.stringify(D);if(json===lastPushed)return;lastPushed=json;
     CLOUD.db.doc('exams/main').set({json,by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(e=>toast('雲端儲存失敗：'+(e.code||e.message)));},800);
 }
 function noticePush(){
-  if(!CLOUD||!CLOUD.user||!cloudReady)return;
+  if(!CLOUD||!CLOUD.user||!cloudReady||isRO())return;
   clearTimeout(nTimer);
   nTimer=setTimeout(()=>{const json=localStorage.getItem(NKEY)||'';if(!json||json===lastPushedN)return;lastPushedN=json;
     CLOUD.db.doc('exams/notice').set({json,by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(e=>toast('通知單雲端儲存失敗：'+(e.code||e.message)));},1200);

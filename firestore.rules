@@ -4,16 +4,25 @@ service cloud.firestore {
     function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
     function email() { return request.auth.token.email; }
     function access() { return get(/databases/$(database)/documents/config/access).data; }
+    function member() { return signedIn() && email() in access().emails; }
+    function editor() { return member() && !(email() in access().get('viewers', [])); }
 
-    // 共用名單：第一位登入者成為管理者，之後只有管理者能改
+    // 共用名單：第一位登入者成為主持人，之後只有主持人能改名單與權限
+    // emails＝全部成員；viewers＝其中只能檢視的人（主持人不能被設成檢視）
     match /config/access {
       allow get: if signedIn() && (resource == null || email() in resource.data.emails);
       allow create: if signedIn() && request.resource.data.admin == email() && request.resource.data.emails == [email()];
-      allow update: if signedIn() && resource.data.admin == email() && request.resource.data.admin == email() && email() in request.resource.data.emails;
+      allow update: if signedIn() && resource.data.admin == email() && request.resource.data.admin == email()
+        && email() in request.resource.data.emails && !(email() in request.resource.data.get('viewers', []));
     }
-    // 考場資料：只有共用名單內的帳號可讀寫
+    // 誰在線上：名單內的人都可以寫
+    match /exams/presence {
+      allow read, write: if member();
+    }
+    // 考場資料：名單內都可讀；只有主持人與編輯可寫
     match /exams/{id} {
-      allow read, write: if signedIn() && email() in access().emails;
+      allow read: if member();
+      allow write: if editor();
     }
   }
 }
