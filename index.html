@@ -197,6 +197,13 @@ table.find td.room{font-weight:700;color:var(--acc-d)}
 table.find tr.top td{border-top:2px solid #9aa3b2}
 table.find .tg{display:inline-block;font-size:12px;border-radius:99px;padding:0 7px;margin-left:4px;background:var(--warn-l);color:var(--warn)}
 table.find small{color:var(--mute)}
+table.find td.l{text-align:left;line-height:1.9}
+table.find td.room,table.find td.room+td{white-space:nowrap}
+table.find .st{display:inline-block;white-space:nowrap;margin-right:12px}
+table.find .sv{font-size:12px;color:var(--mute)}
+.linkrow select{border:1px solid var(--line2);border-radius:8px;padding:0 6px;font:inherit;font-size:13px;background:#fff;max-width:150px}
+#lkQR{text-align:center;margin:8px 0}#lkQR img,#lkQR canvas{margin:0 auto}
+@media print{.fbar{display:none!important}}
 details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
 details.more summary{cursor:pointer;font-size:13px;color:var(--mute)}
 details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -288,7 +295,7 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 </div>
 
 <div class="tab" id="tab-find">
-  <div class="guide"><span class="g"><b>查考場</b>　給導師和任課老師用：選年級、班級、科目，或直接打學生的名字，就會列出他每一科在哪一間、幾點考、誰監考。</span></div>
+  <div class="guide"><span class="g"><b>查考場</b>　選年級、班級、科目，或直接打學生的名字，就會列出每一科在哪一間、幾點考、誰監考。「依試場」可以看每一間有哪些學生。</span></div>
   <div class="fbar noprint" id="findBar"></div>
   <div id="findOut"></div>
 </div>
@@ -1094,40 +1101,64 @@ function addSes(){const l=D.sessions[D.sessions.length-1]||{};D.sessions.push({i
 function addRoom(){D.rooms.push({id:'r'+Date.now().toString(36),name:'新教室',cap:8,type:'normal'});dataChanged();renderSet();}
 
 /* ---------- 查考場：給導師、任課老師查學生在哪裡考 ---------- */
-const FD={g:'',cls:new URLSearchParams(location.search).get('c')||'',subj:'',date:'',q:''};
+const FD={g:'',cls:new URLSearchParams(location.search).get('c')||'',subj:'',date:'',q:'',mode:'stu',proc:''};
 function findSet(k,v){FD[k]=v;if(k==='g')FD.cls='';renderFind(true);}
 let VR=null; // 用檢視連結打開時，雲端給的考場清單
-function findRowsAll(){ // 每位學生每一科：哪一天、幾點、哪一間、誰監考（不含服務內容與備註）
-  const a=[];M.parts.forEach((P,p)=>{const x=P.stu,T=M.ses[ST.ses[p]],r=ST.room[p],R=r>=0?M.rooms[r]:null,ext=!!(P.ext&&(T.est!==T.st||T.een!==T.en));
+function findRowsAll(){ // 每位學生每一科：哪一天、幾點、哪一間、誰監考；svc、memo 只給組內（登入）看，不放進檢視連結
+  const a=[];M.parts.forEach((P,p)=>{const x=P.stu,T=M.ses[ST.ses[p]],r=ST.room[p],R=r>=0?M.rooms[r]:null,ext=!!(P.ext&&(T.est!==T.st||T.een!==T.en)),lb=labelOf(P);
     a.push({si:P.si,cls:String(x.cls),seat:String(x.seat||''),name:x.name||'',date:T.date,dow:T.ref.dow||'',subj:P.subject,lab:sesLabel(T),per:T.ref.period||'',k:T.key,
-      t:ext?fmt(T.est)+'～'+fmt(T.een):fmt(T.st)+'～'+fmt(T.en),ext,room:R?R.name:'',proc:R?(D.proctorOf[T.id+'|'+R.id]||''):''});});
+      t:ext?fmt(T.est)+'～'+fmt(T.een):fmt(T.st)+'～'+fmt(T.en),ext,room:R?R.name:'',proc:R?(D.proctorOf[T.id+'|'+R.id]||''):'',
+      svc:lb+(P.small&&lb!=='獨立'?'、人數調整':''),memo:x.memo||''});});
   return a;}
+function findRows(){const all=VR?VR.rows:findRowsAll(),q=FD.q.trim().toLowerCase();
+  return {all,rows:all.filter(r=>(!FD.g||r.cls[0]===FD.g)&&(!FD.cls||r.cls===FD.cls)&&(!FD.subj||r.subj===FD.subj)&&(!FD.date||r.date===FD.date)&&(!FD.proc||r.proc===FD.proc)&&
+    (!q||r.name.toLowerCase().includes(q)||(r.cls+'-'+r.seat).includes(q)||(r.cls+r.seat).includes(q)))};}
+const fWho=r=>r.cls+(r.seat?'-'+r.seat:'')+' '+r.name,fDay=r=>r.date+(r.dow?'（'+r.dow+'）':'');
+function findRooms(rows){ // 依試場：同一節、同一間的學生放一起
+  const g={};rows.filter(r=>r.room).forEach(r=>{const key=r.k+'|'+r.lab+'|'+r.room;(g[key]=g[key]||{k:r.k,r0:r,list:[]}).list.push(r);});
+  return Object.values(g).sort((a,b)=>a.k-b.k||a.r0.lab.localeCompare(b.r0.lab)||a.r0.room.localeCompare(b.r0.room));}
+function findCopy(){const {rows}=findRows(),L=[(VR?VR.title:D.title)||'特殊試場'];
+  if(!rows.length){toast('目前沒有可以複製的內容');return;}
+  if(FD.mode==='room')findRooms(rows).forEach(G=>{const r=G.r0;L.push('','【'+fDay(r)+' '+r.lab+'】'+r.room+(r.proc?'｜監考 '+r.proc:''));
+      G.list.sort((a,b)=>a.cls.localeCompare(b.cls)||(+a.seat||0)-(+b.seat||0)).forEach(x=>L.push('　'+fWho(x)+'　'+x.t+(x.ext?'（延長）':'')));});
+  else{const st=rows.slice().sort((a,b)=>a.cls.localeCompare(b.cls)||(+a.seat||0)-(+b.seat||0)||a.si-b.si||a.k-b.k);let last=null;
+    st.forEach(r=>{if(r.si!==last){L.push('','■ '+fWho(r));last=r.si;}L.push('　'+fDay(r)+' '+r.lab+'　'+r.t+(r.ext?'（延長）':'')+'　'+(r.room||'尚未排入'));});}
+  copyText(L.join('\n'),'已複製文字，可以直接貼到 LINE');}
 function renderFind(bar){
-  const all=VR?VR.rows:findRowsAll(),uniq=f=>[...new Set(all.map(f))];
+  const {all,rows:flt}=findRows(),uniq=f=>[...new Set(all.map(f))],inGrp=!VR; // 組內（登入或本機）看得到服務內容
   const clsAll=uniq(r=>r.cls).sort(),cls=clsAll.filter(c=>!FD.g||c[0]===FD.g);
-  if(FD.cls&&all.length&&!clsAll.includes(FD.cls))FD.cls='';
-  const subs=uniq(r=>r.subj),dates=uniq(r=>r.date);
-  if(bar){const opt=(v,t,cur)=>'<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(t)+'</option>';
-    $('findBar').innerHTML='<span class="seg">'+[['','全部'],['7','七年級'],['8','八年級'],['9','九年級']].map(a=>'<button class="'+(FD.g===a[0]?'on':'')+'" onclick="findSet(\'g\',\''+a[0]+'\')">'+a[1]+'</button>').join('')+'</span>'+
+  if(FD.cls&&all.length&&!clsAll.includes(FD.cls)){FD.cls='';return renderFind(bar);}
+  const subs=uniq(r=>r.subj),dates=uniq(r=>r.date),procs=uniq(r=>r.proc).filter(Boolean).sort();
+  if(bar){const opt=(v,t,cur)=>'<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(t)+'</option>',seg=(k,list)=>'<span class="seg">'+list.map(a=>'<button class="'+(FD[k]===a[0]?'on':'')+'" onclick="findSet(\''+k+'\',\''+a[0]+'\')">'+a[1]+'</button>').join('')+'</span>';
+    $('findBar').innerHTML=seg('mode',[['stu','依學生'],['room','依試場']])+seg('g',[['','全部'],['7','七年級'],['8','八年級'],['9','九年級']])+
       '<select onchange="findSet(\'cls\',this.value)">'+opt('','全部班級',FD.cls)+cls.map(c=>opt(c,c+' 班',FD.cls)).join('')+'</select>'+
       '<select onchange="findSet(\'subj\',this.value)">'+opt('','全部科目',FD.subj)+subs.map(x=>opt(x,x,FD.subj)).join('')+'</select>'+
       (dates.length>1?'<select onchange="findSet(\'date\',this.value)">'+opt('','全部日期',FD.date)+dates.map(x=>opt(x,x,FD.date)).join('')+'</select>':'')+
+      (procs.length?'<select onchange="findSet(\'proc\',this.value)">'+opt('','全部監考老師',FD.proc)+procs.map(x=>opt(x,'監考：'+x,FD.proc)).join('')+'</select>':'')+
       '<input type="search" placeholder="🔍 打學生姓名或座號，例：王小明、801-12" value="'+esc(FD.q)+'" oninput="FD.q=this.value;renderFind()">'+
-      '<button class="b" onclick="window.print()">🖨 列印</button>';}
-  const q=FD.q.trim().toLowerCase();
-  const rows=all.filter(r=>(!FD.g||r.cls[0]===FD.g)&&(!FD.cls||r.cls===FD.cls)&&(!FD.subj||r.subj===FD.subj)&&(!FD.date||r.date===FD.date)&&
-    (!q||r.name.toLowerCase().includes(q)||(r.cls+'-'+r.seat).includes(q)||(r.cls+r.seat).includes(q)))
-    .sort((a,b)=>a.cls.localeCompare(b.cls)||(+a.seat||0)-(+b.seat||0)||a.si-b.si||a.k-b.k);
+      '<button class="b" onclick="findCopy()">📋 複製文字</button><button class="b" onclick="window.print()">🖨 列印</button>';}
+  const rows=flt.slice().sort((a,b)=>a.cls.localeCompare(b.cls)||(+a.seat||0)-(+b.seat||0)||a.si-b.si||a.k-b.k);
   const n=new Set(rows.map(r=>r.si)).size;
   if(!rows.length){$('findOut').innerHTML='<div class="note">'+(all.length?'沒有符合的學生。換個條件，或把搜尋的字清掉試試。':'目前還沒有排考場的資料。')+'</div>';return;}
-  let h='<div class="note" style="margin-top:0">共 <b>'+n+'</b> 位學生、'+rows.length+' 場考試。名單上沒有的學生＝在原班考。</div><table class="find"><tr><th>班級座號</th><th>姓名</th><th>日期</th><th>科目</th><th>時間</th><th>試場</th><th>監考</th></tr>';
-  for(let i=0;i<rows.length;){let j=i;while(j<rows.length&&rows[j].si===rows[i].si)j++;
-    for(let k=i;k<j;k++){const r=rows[k];
-      h+='<tr'+(k===i?' class="top"':'')+'>'+(k===i?'<td class="who" rowspan="'+(j-i)+'">'+esc(r.cls+(r.seat?'-'+r.seat:''))+'</td><td class="who" rowspan="'+(j-i)+'">'+esc(r.name)+'</td>':'')+
-        '<td>'+esc(r.date)+(r.dow?'（'+esc(r.dow)+'）':'')+'</td><td>'+esc(r.lab)+'<br><small>'+esc(r.per)+'</small></td>'+
-        '<td>'+esc(r.t)+(r.ext?'<span class="tg">延長</span>':'')+'</td>'+
-        (r.room?'<td class="room">'+esc(r.room)+'</td><td>'+esc(r.proc)+'</td>':'<td colspan="2" style="color:var(--bad)">尚未排入</td>')+'</tr>';}
-    i=j;}
+  let h='<div class="note" style="margin-top:0">共 <b>'+n+'</b> 位學生、'+rows.length+' 場考試。名單上沒有的學生＝在原班考。</div>';
+  if(FD.mode==='room'){const G=findRooms(rows);
+    h+='<table class="find"><tr><th>日期</th><th>科目</th><th>試場</th><th>監考</th><th>人數</th><th>學生</th></tr>';
+    for(let i=0;i<G.length;){let j=i;while(j<G.length&&G[j].k===G[i].k&&G[j].r0.lab===G[i].r0.lab)j++;
+      for(let k=i;k<j;k++){const r=G[k].r0,L=G[k].list.sort((a,b)=>a.cls.localeCompare(b.cls)||(+a.seat||0)-(+b.seat||0));
+        h+='<tr'+(k===i?' class="top"':'')+'>'+(k===i?'<td class="who" rowspan="'+(j-i)+'">'+esc(fDay(r))+'</td><td class="who" rowspan="'+(j-i)+'">'+esc(r.lab)+'<br><small>'+esc(r.per)+'</small></td>':'')+
+          '<td class="room">'+esc(r.room)+'</td><td>'+esc(r.proc)+'</td><td>'+L.length+'</td><td class="l">'+L.map(x=>'<span class="st">'+esc(fWho(x))+(x.ext?'<span class="tg">延長 '+esc(x.t)+'</span>':'')+(inGrp&&x.svc?' <span class="sv">'+esc(x.svc)+'</span>':'')+'</span>').join('')+'</td></tr>';}
+      i=j;}
+    if(rows.some(r=>!r.room))h+='<tr class="top"><td colspan="6" style="color:var(--bad)">尚未排入：'+esc(rows.filter(r=>!r.room).map(r=>fWho(r)+'（'+r.lab+'）').join('、'))+'</td></tr>';
+  }else{
+    h+='<table class="find"><tr><th>班級座號</th><th>姓名</th><th>日期</th><th>科目</th><th>時間</th><th>試場</th><th>監考</th>'+(inGrp?'<th>服務</th>':'')+'</tr>';
+    for(let i=0;i<rows.length;){let j=i;while(j<rows.length&&rows[j].si===rows[i].si)j++;
+      for(let k=i;k<j;k++){const r=rows[k];
+        h+='<tr'+(k===i?' class="top"':'')+'>'+(k===i?'<td class="who" rowspan="'+(j-i)+'">'+esc(r.cls+(r.seat?'-'+r.seat:''))+'</td><td class="who" rowspan="'+(j-i)+'">'+esc(r.name)+(inGrp&&r.memo?'<br><small style="font-weight:normal;white-space:normal">'+esc(r.memo)+'</small>':'')+'</td>':'')+
+          '<td>'+esc(fDay(r))+'</td><td>'+esc(r.lab)+'<br><small>'+esc(r.per)+'</small></td>'+
+          '<td>'+esc(r.t)+(r.ext?'<span class="tg">延長</span>':'')+'</td>'+
+          (r.room?'<td class="room">'+esc(r.room)+'</td><td>'+esc(r.proc)+'</td>':'<td colspan="2" style="color:var(--bad)">尚未排入</td>')+(inGrp?'<td class="sv">'+esc(r.svc||'')+'</td>':'')+'</tr>';}
+      i=j;}
+  }
   $('findOut').innerHTML=h+'</table>';
 }
 
@@ -1252,18 +1283,19 @@ function renderShare(){
     h+='<h2>共用與協作</h2>';
     h+='<div class="card ok"><div class="row"><b>✓ 已同步</b><span style="flex:1"></span><span>'+esc(u.email)+'</span><button class="b sm" onclick="cloudLogout()">登出</button></div>'+
        '<div>'+(isRO()?'主持人和編輯的老師一改，你的畫面會即時更新。':'所有修改都會自動儲存，名單內的老師會即時看到。')+''+(L&&L.by?'<br>最後更新：<b>'+esc(who(L.by))+'</b>　'+fmtAt(L.at):'')+'</div></div>';
-    const V=A.viewers||[],roleSel=(e)=>'<select onchange="setRole(\''+esc(e)+'\',this.value)"><option value="e"'+(V.includes(e)?'':' selected')+'>可以編輯</option><option value="v"'+(V.includes(e)?' selected':'')+'>只能檢視</option></select>';
+    const V=A.viewers||[],roleSel=(e)=>'<select onchange="setRole(\''+esc(e)+'\',this.value)"><option value="e"'+(V.includes(e)?'':' selected')+'>編輯</option><option value="v"'+(V.includes(e)?' selected':'')+'>檢視（全部可看）</option></select>';
     if(isRO())h+='<div class="card bad">你是「檢視」權限：可以看、列印，不能修改。</div>';
-    h+='<h4>共用名單（'+emails.length+' 人）</h4><div>'+emails.map(e=>'<div class="mem">'+avatar({email:e})+'<span class="e">'+esc(e)+(e===u.email?'（我）':'')+'</span>'+(onSet.has(e)?'<span class="tag on">在線上</span>':'')+
+    h+='<h4>組內老師（用 Google 登入，'+emails.length+' 人）</h4><p class="sub" style="margin-top:0">編輯＝可以改；檢視＝每一頁都看得到（含服務內容、通知單），但不能改。</p><div>'+emails.map(e=>'<div class="mem">'+avatar({email:e})+'<span class="e">'+esc(e)+(e===u.email?'（我）':'')+'</span>'+(onSet.has(e)?'<span class="tag on">在線上</span>':'')+
       (e===A.admin?'<span class="tag">主持人</span>':admin?roleSel(e)+'<button class="b sm danger" onclick="removeMember(\''+esc(e)+'\')">移除</button>':'<span class="tag">'+(V.includes(e)?'檢視':'編輯')+'</span>')+'</div>').join('')+'</div>';
-    if(admin)h+='<div class="addrow"><input id="memIn" type="email" placeholder="輸入老師的 Gmail，例：teacher@gmail.com" onkeydown="if(event.key===\'Enter\')addMember()"><select id="memRole"><option value="e">可以編輯</option><option value="v">只能檢視</option></select><button class="b pri" onclick="addMember()">加入</button></div>'+
+    if(admin)h+='<div class="addrow"><input id="memIn" type="email" placeholder="輸入老師的 Gmail，例：teacher@gmail.com" onkeydown="if(event.key===\'Enter\')addMember()"><select id="memRole"><option value="e">編輯</option><option value="v">檢視（全部可看）</option></select><button class="b pri" onclick="addMember()">加入</button></div>'+
        '<p class="sub">加入後把網址傳給對方，對方用同一個 Gmail 登入就可以了。權限隨時可以改，對方的畫面會立刻跟著變。</p><div class="card row" style="border:0;padding:0;display:flex;gap:8px;margin-bottom:0"><button class="b" onclick="copyText(location.href.split(\'#\')[0],\'已複製網址，貼給老師就可以了\')">🔗 複製網址</button></div>';
     else h+='<p class="sub">要增減老師或改權限，請找主持人 '+esc(A.admin||'')+'。</p>';
-    const lk=A.link||'',url=location.href.split(/[?#]/)[0]+'?v='+lk;
-    h+='<h4>免登入的檢視連結</h4>';
-    if(lk)h+='<div class="linkrow"><input readonly value="'+esc(url)+'" onclick="this.select()"><button class="b pri" onclick="copyText(\''+esc(url)+'\',\'已複製檢視連結\')">複製</button></div><p class="sub">給導師可以在連結最後加上班級，例如 <b>&amp;c=801</b>，打開就只看那一班。</p><p class="sub">拿到這個連結的人<b>不用登入</b>就能用「查考場」查每位學生在哪裡考；只有這一頁，看不到服務內容、通知單和其他頁面，內容會即時更新。連結就是鑰匙，請只傳給校內需要的老師，不要貼在公開的地方。</p>'+
-      (admin?'<div class="row" style="display:flex;gap:8px"><button class="b" onclick="setLink(true)">換一個新連結（舊的失效）</button><button class="b danger" onclick="setLink(false)">關閉檢視連結</button></div>':'');
-    else h+=admin?'<p class="sub">開啟後會產生一個連結，拿到連結的人不用登入就能看（不能改）。隨時可以關閉或換新。</p><button class="b" onclick="setLink(true)">開啟檢視連結</button>':'<p class="sub">主持人還沒開啟。</p>';
+    const lk=A.link||'',clsL=[...new Set(D.students.filter(x=>x.on!==false&&x.cls).map(x=>String(x.cls)))].sort();
+    h+='<h4>組外老師（導師、任課老師）：免登入，只能查考場</h4>';
+    if(lk)h+='<div class="linkrow"><select id="lkCls" onchange="lkUpd()"><option value="">全校</option>'+clsL.map(c=>'<option value="'+esc(c)+'">'+esc(c)+' 班專用</option>').join('')+'</select><input id="lkUrl" readonly value="'+esc(lkBase())+'" onclick="this.select()"><button class="b pri" onclick="copyText($(\'lkUrl\').value,\'已複製連結\')">複製</button><button class="b" onclick="lkQR(true)">QR Code</button></div><div id="lkQR"></div>'+
+      '<p class="sub">拿到連結的人<b>不用登入</b>，只能用「查考場」查學生每一科在哪一間、幾點考、誰監考；看不到服務內容、通知單和其他頁面。選「某班專用」會產生打開就只看那一班的連結，方便分別傳給各班導師。連結就是鑰匙，請只傳給校內老師。</p>'+
+      (admin?'<div class="row" style="display:flex;gap:8px"><button class="b" onclick="setLink(true)">換一個新連結（舊的失效）</button><button class="b danger" onclick="setLink(false)">關閉連結</button></div>':'');
+    else h+=admin?'<p class="sub">開啟後會產生一個連結，拿到連結的人不用登入，只能查學生在哪裡考。隨時可以關閉或換新。</p><button class="b" onclick="setLink(true)">開啟查考場連結</button>':'<p class="sub">主持人還沒開啟。</p>';
     h+='<p class="sub">兩位老師同時改同一個地方時，以最後存檔的人為準；右上角的圓形頭像是現在也開著這一頁的老師。</p>';
   }
   $('share').innerHTML=h+backupHtml();
@@ -1271,6 +1303,11 @@ function renderShare(){
 function openShare(){renderShare();if(!$('share').open)$('share').showModal();}
 function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
 async function setMembers(emails,viewers,msg){viewers=viewers.filter(e=>emails.includes(e)&&e!==CLOUD.access.admin);try{await CLOUD.db.doc('config/access').update({emails,viewers});CLOUD.access.emails=emails;CLOUD.access.viewers=viewers;setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
+const lkBase=()=>location.href.split(/[?#]/)[0]+'?v='+((CLOUD.access||{}).link||'');
+function lkUpd(){const c=$('lkCls').value;$('lkUrl').value=lkBase()+(c?'&c='+encodeURIComponent(c):'');if($('lkQR').innerHTML)lkQR();}
+function lkQR(tog){const el=$('lkQR');if(tog&&el.innerHTML){el.innerHTML='';return;}
+  (window.QRCode?Promise.resolve():loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js')).then(()=>{el.innerHTML='';new QRCode(el,{text:$('lkUrl').value,width:180,height:180});
+    const c=$('lkCls').value;el.insertAdjacentHTML('beforeend','<div class="sub">'+(c?esc(c)+' 班專用':'全校')+'・手機掃描就能查考場</div>');}).catch(()=>toast('QR Code 元件載入失敗，請確認網路連線'));}
 async function setLink(on){const acc=CLOUD.db.doc('config/access'),old=CLOUD.access.link||'';
   if(old&&!confirm(on?'換新連結後，舊連結馬上失效，已經拿到舊連結的人要重新給。確定嗎？':'關閉後，拿到連結的人就看不到了。確定嗎？'))return;
   try{
@@ -1280,7 +1317,7 @@ async function setLink(on){const acc=CLOUD.db.doc('config/access'),old=CLOUD.acc
   }catch(e){toast('設定失敗：'+(e.code||e.message));}}
 // 檢視連結看的是另外一份副本：編輯的人一存檔就跟著更新
 function linkPush(now){const k=CLOUD&&CLOUD.access&&CLOUD.access.link;if(!k||!CLOUD.user||!cloudReady||isRO())return;clearTimeout(lTimer);
-  lTimer=setTimeout(()=>{CLOUD.db.doc('view/'+k).set({v:2,title:D.title||'',rows:JSON.stringify(findRowsAll()),by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+  lTimer=setTimeout(()=>{CLOUD.db.doc('view/'+k).set({v:2,title:D.title||'',rows:JSON.stringify(findRowsAll().map(r=>{const o=Object.assign({},r);delete o.svc;delete o.memo;return o;})),by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
     CLOUD.db.doc('view/'+k+'_n').delete().catch(()=>{});},now?0:1500);}
 function viewConnect(){ // 用檢視連結打開：不用登入，只有「查考場」
   const show=()=>{$('title').value=VR.title||'';$('title').readOnly=true;showTab('find');};
