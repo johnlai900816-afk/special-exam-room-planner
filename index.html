@@ -172,15 +172,17 @@ details.tip{margin:0 0 8px;font-size:13px;color:var(--ink2)}
 details.tip summary{cursor:pointer;color:var(--mute)}
 details.tip div{margin-top:6px;line-height:1.7}
 .qv{font-weight:700;color:var(--acc-d)}
-body.ro .tab:not(#tab-out):not(#tab-notice) :is(input,select,textarea,button:not(.next)),body.ro #title,body.ro .chip{pointer-events:none}
-body.ro .tab:not(#tab-out):not(#tab-notice) :is(input,select,button:not(.next)){opacity:.6}
+body.ro .tab:not(#tab-out):not(#tab-notice):not(#tab-find) :is(input,select,textarea,button:not(.next)),body.ro #title,body.ro .chip{pointer-events:none}
+body.ro .tab:not(#tab-out):not(#tab-notice):not(#tab-find) :is(input,select,button:not(.next)){opacity:.6}
 #roBar{display:none;background:var(--warn-l);color:var(--warn);padding:7px 16px;font-size:13.5px;text-align:center}
 body.ro #roBar{display:block}
 .linkrow{display:flex;gap:6px;margin:6px 0}.linkrow input{flex:1;min-width:0;border:1px solid var(--line2);border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px;color:var(--ink2);background:#fafbfc}
 .mem select{border:1px solid var(--line2);border-radius:8px;padding:3px 6px;font:inherit;font-size:13px;background:#fff}
 .addrow select{border:1px solid var(--line2);border-radius:8px;padding:0 8px;font:inherit;background:#fff}
 .offs.sup label.on{background:var(--ok-l);border-color:#b7dfc5;color:var(--ok)}
-body.vw .tabs :is([data-tab=stu],[data-tab=set],[data-tab=board]),body.vw .tabs :is([data-tab=stu],[data-tab=set],[data-tab=board])+.sep,body.vw .tabs .sep.f{display:none}
+body.vw .tabs,body.vw #roBar{display:none!important}
+body.vw .tab:not(#tab-find){display:none!important}
+body.vw #tab-find{display:block!important}
 .fbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
 .fbar .seg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:#fff}
 .fbar .seg button{border:0;background:none;padding:7px 14px;font:inherit;cursor:pointer;color:var(--ink2)}
@@ -531,8 +533,8 @@ let D,M,ST,undoStack=[],outMode='svc',curTab='board';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
-function localSave(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
-function save(){if(isRO()){clearTimeout(save.h);save.h=setTimeout(roRevert,0);return;}localSave();cloudPush();}
+function localSave(){if(location.search.includes('v='))return;try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
+function save(){if(VIEWK)return;if(isRO()){clearTimeout(save.h);save.h=setTimeout(roRevert,0);return;}localSave();cloudPush();}
 // ⑤ 學生通知單（notice.html）：讀同一份瀏覽器資料，這裡每次存檔它都會自動跟著更新
 function openNotice(){showTab('notice');}
 function sizeNotice(){const f=$('noticeFrame');f.style.height=Math.max(400,window.innerHeight-f.getBoundingClientRect().top)+'px';}
@@ -1094,11 +1096,17 @@ function addRoom(){D.rooms.push({id:'r'+Date.now().toString(36),name:'新教室'
 /* ---------- 查考場：給導師、任課老師查學生在哪裡考 ---------- */
 const FD={g:'',cls:new URLSearchParams(location.search).get('c')||'',subj:'',date:'',q:''};
 function findSet(k,v){FD[k]=v;if(k==='g')FD.cls='';renderFind(true);}
+let VR=null; // 用檢視連結打開時，雲端給的考場清單
+function findRowsAll(){ // 每位學生每一科：哪一天、幾點、哪一間、誰監考（不含服務內容與備註）
+  const a=[];M.parts.forEach((P,p)=>{const x=P.stu,T=M.ses[ST.ses[p]],r=ST.room[p],R=r>=0?M.rooms[r]:null,ext=!!(P.ext&&(T.est!==T.st||T.een!==T.en));
+    a.push({si:P.si,cls:String(x.cls),seat:String(x.seat||''),name:x.name||'',date:T.date,dow:T.ref.dow||'',subj:P.subject,lab:sesLabel(T),per:T.ref.period||'',k:T.key,
+      t:ext?fmt(T.est)+'～'+fmt(T.een):fmt(T.st)+'～'+fmt(T.en),ext,room:R?R.name:'',proc:R?(D.proctorOf[T.id+'|'+R.id]||''):''});});
+  return a;}
 function renderFind(bar){
-  const studs=[...new Set(M.parts.map(P=>P.stu))];
-  const clsAll=[...new Set(studs.map(x=>String(x.cls)))].sort(),cls=clsAll.filter(c=>!FD.g||c[0]===FD.g);
-  if(FD.cls&&!clsAll.includes(FD.cls))FD.cls='';
-  const subs=[...new Set(M.ses.map(T=>T.subject))],dates=[...new Set(M.ses.map(T=>T.date))];
+  const all=VR?VR.rows:findRowsAll(),uniq=f=>[...new Set(all.map(f))];
+  const clsAll=uniq(r=>r.cls).sort(),cls=clsAll.filter(c=>!FD.g||c[0]===FD.g);
+  if(FD.cls&&all.length&&!clsAll.includes(FD.cls))FD.cls='';
+  const subs=uniq(r=>r.subj),dates=uniq(r=>r.date);
   if(bar){const opt=(v,t,cur)=>'<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(t)+'</option>';
     $('findBar').innerHTML='<span class="seg">'+[['','全部'],['7','七年級'],['8','八年級'],['9','九年級']].map(a=>'<button class="'+(FD.g===a[0]?'on':'')+'" onclick="findSet(\'g\',\''+a[0]+'\')">'+a[1]+'</button>').join('')+'</span>'+
       '<select onchange="findSet(\'cls\',this.value)">'+opt('','全部班級',FD.cls)+cls.map(c=>opt(c,c+' 班',FD.cls)).join('')+'</select>'+
@@ -1106,21 +1114,19 @@ function renderFind(bar){
       (dates.length>1?'<select onchange="findSet(\'date\',this.value)">'+opt('','全部日期',FD.date)+dates.map(x=>opt(x,x,FD.date)).join('')+'</select>':'')+
       '<input type="search" placeholder="🔍 打學生姓名或座號，例：王小明、801-12" value="'+esc(FD.q)+'" oninput="FD.q=this.value;renderFind()">'+
       '<button class="b" onclick="window.print()">🖨 列印</button>';}
-  const q=FD.q.trim().toLowerCase(),rows=[];
-  M.parts.forEach((P,p)=>{const x=P.stu,c=String(x.cls),T=M.ses[ST.ses[p]],r=ST.room[p];
-    if(FD.g&&c[0]!==FD.g)return;if(FD.cls&&c!==FD.cls)return;if(FD.subj&&P.subject!==FD.subj)return;if(FD.date&&T.date!==FD.date)return;
-    if(q&&!(String(x.name||'').toLowerCase().includes(q)||(c+'-'+(x.seat||'')).includes(q)||(c+(x.seat||'')).includes(q)))return;
-    rows.push({P,x,T,R:r>=0?M.rooms[r]:null});});
-  rows.sort((a,b)=>String(a.x.cls).localeCompare(b.x.cls)||(+a.x.seat||0)-(+b.x.seat||0)||a.P.si-b.P.si||a.T.key-b.T.key);
-  const n=new Set(rows.map(r=>r.P.si)).size;
-  if(!rows.length){$('findOut').innerHTML='<div class="note">'+(M.parts.length?'沒有符合的學生。換個條件，或把搜尋的字清掉試試。':'目前還沒有排考場的資料。')+'</div>';return;}
+  const q=FD.q.trim().toLowerCase();
+  const rows=all.filter(r=>(!FD.g||r.cls[0]===FD.g)&&(!FD.cls||r.cls===FD.cls)&&(!FD.subj||r.subj===FD.subj)&&(!FD.date||r.date===FD.date)&&
+    (!q||r.name.toLowerCase().includes(q)||(r.cls+'-'+r.seat).includes(q)||(r.cls+r.seat).includes(q)))
+    .sort((a,b)=>a.cls.localeCompare(b.cls)||(+a.seat||0)-(+b.seat||0)||a.si-b.si||a.k-b.k);
+  const n=new Set(rows.map(r=>r.si)).size;
+  if(!rows.length){$('findOut').innerHTML='<div class="note">'+(all.length?'沒有符合的學生。換個條件，或把搜尋的字清掉試試。':'目前還沒有排考場的資料。')+'</div>';return;}
   let h='<div class="note" style="margin-top:0">共 <b>'+n+'</b> 位學生、'+rows.length+' 場考試。名單上沒有的學生＝在原班考。</div><table class="find"><tr><th>班級座號</th><th>姓名</th><th>日期</th><th>科目</th><th>時間</th><th>試場</th><th>監考</th></tr>';
-  for(let i=0;i<rows.length;){let j=i;while(j<rows.length&&rows[j].P.si===rows[i].P.si)j++;
-    for(let k=i;k<j;k++){const {P,x,T,R}=rows[k],ext=P.ext&&(T.est!==T.st||T.een!==T.en);
-      h+='<tr'+(k===i?' class="top"':'')+'>'+(k===i?'<td class="who" rowspan="'+(j-i)+'">'+esc(x.cls+(x.seat?'-'+x.seat:''))+'</td><td class="who" rowspan="'+(j-i)+'">'+esc(x.name)+'</td>':'')+
-        '<td>'+esc(T.date)+(T.ref.dow?'（'+esc(T.ref.dow)+'）':'')+'</td><td>'+esc(sesLabel(T))+'<br><small>'+esc(T.ref.period||'')+'</small></td>'+
-        '<td>'+(ext?fmt(T.est)+'～'+fmt(T.een)+'<span class="tg">延長</span>':fmt(T.st)+'～'+fmt(T.en))+'</td>'+
-        (R?'<td class="room">'+esc(R.name)+'</td><td>'+esc(D.proctorOf[T.id+'|'+R.id]||'')+'</td>':'<td colspan="2" style="color:var(--bad)">尚未排入</td>')+'</tr>';}
+  for(let i=0;i<rows.length;){let j=i;while(j<rows.length&&rows[j].si===rows[i].si)j++;
+    for(let k=i;k<j;k++){const r=rows[k];
+      h+='<tr'+(k===i?' class="top"':'')+'>'+(k===i?'<td class="who" rowspan="'+(j-i)+'">'+esc(r.cls+(r.seat?'-'+r.seat:''))+'</td><td class="who" rowspan="'+(j-i)+'">'+esc(r.name)+'</td>':'')+
+        '<td>'+esc(r.date)+(r.dow?'（'+esc(r.dow)+'）':'')+'</td><td>'+esc(r.lab)+'<br><small>'+esc(r.per)+'</small></td>'+
+        '<td>'+esc(r.t)+(r.ext?'<span class="tg">延長</span>':'')+'</td>'+
+        (r.room?'<td class="room">'+esc(r.room)+'</td><td>'+esc(r.proc)+'</td>':'<td colspan="2" style="color:var(--bad)">尚未排入</td>')+'</tr>';}
     i=j;}
   $('findOut').innerHTML=h+'</table>';
 }
@@ -1237,7 +1243,7 @@ function renderShare(){
     '<ol class="steps"><li>用你的 Google 帳號登入（第一位登入的人是主持人）。</li><li>主持人輸入其他老師的 Gmail，選「可以編輯」或「只能檢視」。</li><li>把這個網址傳給他們，他們登入後就會看到同一份。</li></ol>'+
     '<button class="b pri big" onclick="cloudLogin()">用 Google 帳號登入</button><p class="sub">目前還沒登入，資料只存在這台電腦。登入後會改用雲端上大家共用的那一份。</p>';
   else if(st==='wait')h+='<h2>共用與協作</h2><p class="lead">連線中…</p>';
-  else if(st==='view'||st==='vbad'){$('share').innerHTML=h+'<h2>檢視連結</h2><p class="lead">'+(st==='view'?'你是用檢視連結打開的：可以看、列印，不能修改。':'這個連結已經失效，請向主持人要新的連結。')+'</p>';return;}
+  else if(st==='view'||st==='vbad'){$('share').innerHTML=h+'<h2>檢視連結</h2><p class="lead">'+(st==='view'?'你是用檢視連結打開的：可以查學生在哪裡考、列印，內容會即時更新。':'這個連結已經失效，請向主持人要新的連結。')+'</p>';return;}
   else if(st==='denied')h+='<h2>還沒被加入共用</h2><div class="card bad">你登入的帳號 <b>'+esc(u?u.email:'')+'</b> 不在共用名單裡，所以看不到大家共用的那一份。</div>'+
     '<ol class="steps"><li>把上面這個信箱傳給這份考場的主持人。</li><li>請主持人按右上角「共用」，把你的信箱加進去。</li><li>加好之後回來重新整理這一頁。</li></ol>'+
     '<div class="card row" style="border:0;padding:0;display:flex;gap:8px"><button class="b pri" onclick="copyText(\''+esc(u?u.email:'')+'\',\'已複製信箱\')">複製我的信箱</button><button class="b" onclick="location.reload()">重新整理</button><button class="b" onclick="cloudLogout()">換一個帳號</button></div>';
@@ -1255,7 +1261,7 @@ function renderShare(){
     else h+='<p class="sub">要增減老師或改權限，請找主持人 '+esc(A.admin||'')+'。</p>';
     const lk=A.link||'',url=location.href.split(/[?#]/)[0]+'?v='+lk;
     h+='<h4>免登入的檢視連結</h4>';
-    if(lk)h+='<div class="linkrow"><input readonly value="'+esc(url)+'" onclick="this.select()"><button class="b pri" onclick="copyText(\''+esc(url)+'\',\'已複製檢視連結\')">複製</button></div><p class="sub">給導師可以在連結最後加上班級，例如 <b>&amp;c=801</b>，打開就只看那一班。</p><p class="sub">拿到這個連結的人<b>不用登入</b>就能查每位學生在哪裡考，也看得到服務表和通知單（不能改），內容會即時更新。連結就是鑰匙，請只傳給校內需要的老師，不要貼在公開的地方。</p>'+
+    if(lk)h+='<div class="linkrow"><input readonly value="'+esc(url)+'" onclick="this.select()"><button class="b pri" onclick="copyText(\''+esc(url)+'\',\'已複製檢視連結\')">複製</button></div><p class="sub">給導師可以在連結最後加上班級，例如 <b>&amp;c=801</b>，打開就只看那一班。</p><p class="sub">拿到這個連結的人<b>不用登入</b>就能用「查考場」查每位學生在哪裡考；只有這一頁，看不到服務內容、通知單和其他頁面，內容會即時更新。連結就是鑰匙，請只傳給校內需要的老師，不要貼在公開的地方。</p>'+
       (admin?'<div class="row" style="display:flex;gap:8px"><button class="b" onclick="setLink(true)">換一個新連結（舊的失效）</button><button class="b danger" onclick="setLink(false)">關閉檢視連結</button></div>':'');
     else h+=admin?'<p class="sub">開啟後會產生一個連結，拿到連結的人不用登入就能看（不能改）。隨時可以關閉或換新。</p><button class="b" onclick="setLink(true)">開啟檢視連結</button>':'<p class="sub">主持人還沒開啟。</p>';
     h+='<p class="sub">兩位老師同時改同一個地方時，以最後存檔的人為準；右上角的圓形頭像是現在也開著這一頁的老師。</p>';
@@ -1274,16 +1280,18 @@ async function setLink(on){const acc=CLOUD.db.doc('config/access'),old=CLOUD.acc
   }catch(e){toast('設定失敗：'+(e.code||e.message));}}
 // 檢視連結看的是另外一份副本：編輯的人一存檔就跟著更新
 function linkPush(now){const k=CLOUD&&CLOUD.access&&CLOUD.access.link;if(!k||!CLOUD.user||!cloudReady||isRO())return;clearTimeout(lTimer);
-  lTimer=setTimeout(()=>{const at=firebase.firestore.FieldValue.serverTimestamp(),by=CLOUD.user.email,n=localStorage.getItem(NKEY)||'';
-    CLOUD.db.doc('view/'+k).set({json:JSON.stringify(D),by,at}).catch(()=>{});if(n)CLOUD.db.doc('view/'+k+'_n').set({json:n,by,at}).catch(()=>{});},now?0:1500);}
-function viewConnect(){ // 用檢視連結打開：不用登入，只讀
-  const fail=()=>{try{localStorage.removeItem(KEY);localStorage.removeItem(NKEY);}catch(e){}lastPushed='';D=defaultData();D.students=[];rebuild();$('title').value='';setCloudUI('vbad');showTab('find');noticeReload();openShare();};
-  setCloudUI('wait');
-  CLOUD.db.doc('view/'+VIEWK+'_n').onSnapshot(snap=>{if(!snap.exists)return;try{localStorage.setItem(NKEY,snap.data().json);}catch(e){}noticeReload();},()=>{});
+  lTimer=setTimeout(()=>{CLOUD.db.doc('view/'+k).set({v:2,title:D.title||'',rows:JSON.stringify(findRowsAll()),by:CLOUD.user.email,at:firebase.firestore.FieldValue.serverTimestamp()}).catch(()=>{});
+    CLOUD.db.doc('view/'+k+'_n').delete().catch(()=>{});},now?0:1500);}
+function viewConnect(){ // 用檢視連結打開：不用登入，只有「查考場」
+  const show=()=>{$('title').value=VR.title||'';$('title').readOnly=true;showTab('find');};
+  try{localStorage.removeItem(KEY);localStorage.removeItem(NKEY);}catch(e){} // 這台電腦不留學生資料
+  VR={title:'',rows:[]};setCloudUI('wait');show();
+  const fail=()=>{VR={title:'',rows:[]};setCloudUI('vbad');show();$('findOut').innerHTML='<div class="note">這個連結已經失效，請向主持人要新的連結。</div>';};
   CLOUD.db.doc('view/'+VIEWK).onSnapshot(snap=>{if(!snap.exists){fail();return;}const x=snap.data();
-    try{D=normalize(JSON.parse(x.json));}catch(e){return;}
-    lastPushed=x.json;CLOUD.last={by:x.by,at:x.at};localSave();rebuild();$('title').value=D.title||'';setCloudUI('view');
-    if(curTab==='notice')showNotice();else showTab(curTab);},fail);}
+    try{if(x.rows)VR={title:x.title||'',rows:JSON.parse(x.rows)};
+      else{D=normalize(JSON.parse(x.json));rebuild();VR={title:D.title||'',rows:findRowsAll()};} // 舊版連結的資料
+    }catch(e){fail();return;}
+    CLOUD.last={by:x.by,at:x.at};setCloudUI('view');show();},fail);}
 function setRole(e,r){const v=viewersOf().filter(x=>x!==e);if(r==='v')v.push(e);setMembers(CLOUD.access.emails||[],v,e+' 已改成「'+(r==='v'?'只能檢視':'可以編輯')+'」');}
 function addMember(){const el=$('memIn'),v=el.value.trim().toLowerCase();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){toast('請輸入完整的信箱，例如 teacher@gmail.com');el.focus();return;}
@@ -1294,7 +1302,7 @@ function cloudLogin(){CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthPro
 function presBeat(gone){if(!CLOUD||!CLOUD.user||!CLOUD.access)return Promise.resolve();const u=CLOUD.user;
   return CLOUD.db.doc('exams/presence').set({[u.uid]:gone?firebase.firestore.FieldValue.delete():{email:u.email,name:u.displayName||'',at:Date.now()}},{merge:true}).catch(()=>{});}
 function cloudLogout(){presBeat(true).then(()=>CLOUD.auth.signOut());}
-function cloudStop(){['unsub','unsubN','unsubP','unsubA'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);cloudReady=false;lastPushed='';lastPushedN='';CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;}
+function cloudStop(){['unsub','unsubN','unsubP','unsubA'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);cloudReady=false;lastPushed='';lastPushedN='';CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;CLOUD.lp=0;}
 function cloudInit(){
   if(typeof firebase==='undefined'||!window.FIREBASE_CONFIG){setCloudUI('local');return;}
   firebase.initializeApp(window.FIREBASE_CONFIG);
@@ -1320,7 +1328,7 @@ async function cloudConnect(){
   CLOUD.unsub=db.doc('exams/main').onSnapshot(snap=>{
     if(snap.metadata.hasPendingWrites)return;
     if(!snap.exists){cloudReady=true;setCloudUI('on');if(!isRO())cloudPush();return;}
-    const x=snap.data(),json=x.json;cloudReady=true;CLOUD.last={by:x.by,at:x.at};setCloudUI('on');
+    const x=snap.data(),json=x.json;cloudReady=true;CLOUD.last={by:x.by,at:x.at};setCloudUI('on');if(!CLOUD.lp){CLOUD.lp=1;setTimeout(()=>linkPush(),2500);}
     if(json===lastPushed||json===JSON.stringify(D)){lastPushed=json;return;}
     try{D=normalize(JSON.parse(json));}catch(e){return;}
     lastPushed=json;localSave();rebuild();$('title').value=D.title||'';
