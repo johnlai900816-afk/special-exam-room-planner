@@ -159,6 +159,19 @@ table.pm th{background:#eef0f3;font-weight:600}
 table.pm th small{display:block;font-weight:normal;color:var(--mute)}
 table.pm td.off{background:repeating-linear-gradient(45deg,#f3f4f6,#f3f4f6 4px,#e5e7eb 4px,#e5e7eb 8px);color:#9ca3af}
 table.pm td.on{background:var(--acc-l);color:var(--acc-d);font-weight:700}
+.sec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+.sec>h3{margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.sec>h3 i{font-style:normal;display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;font-size:13px;align-items:center;justify-content:center}
+.sec>h3 small{font-weight:normal;color:var(--mute);font-size:12.5px}
+.days{display:flex;gap:10px;flex-wrap:wrap}
+.day{display:flex;align-items:center;gap:8px;border:1px solid var(--line2);border-radius:10px;padding:8px 12px;background:#fafbfc}
+.day span{color:var(--mute);font-size:12.5px}
+.day b{color:var(--acc-d)}
+.day small{color:var(--mute)}
+details.tip{margin:0 0 8px;font-size:13px;color:var(--ink2)}
+details.tip summary{cursor:pointer;color:var(--mute)}
+details.tip div{margin-top:6px;line-height:1.7}
+.qv{font-weight:700;color:var(--acc-d)}
 details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
 details.more summary{cursor:pointer;font-size:13px;color:var(--mute)}
 details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -188,7 +201,7 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 </nav>
 
 <div class="tab on" id="tab-board">
-  <div class="guide"><span class="g"><b>步驟 3｜排考場</b>　按「自動排列」排學生，再按「自動分配監考」照老師的監考節數排監考；都可以再手動調整。</span><button class="next" onclick="showTab('out')">下一步：服務表 →</button></div>
+  <div class="guide"><span class="g"><b>步驟 3｜排考場</b>　按「自動排列」，學生和監考老師會一起排好；再拖曳學生、改監考老師微調。</span><button class="next" onclick="showTab('out')">下一步：服務表 →</button></div>
   <div class="bar">
     <button class="b pri" onclick="runSolve('all')">⚙ 自動排列</button>
     <button class="b" onclick="runSolve('fill')">只補排「未排入」</button>
@@ -196,7 +209,7 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
     <span class="pref">少用考場 <input type="range" id="pref" min="0" max="100" step="10" onchange="setPref(this.value)"> 少換教室</span>
     <span class="vsep"></span><button class="b" onclick="undo()">↶ 復原</button>
     <button class="b" onclick="unpinAll()">全部解鎖</button>
-    <button class="b" onclick="autoProctor()">自動分配監考</button>
+    <button class="b" onclick="pushUndo();autoProctor()">重新分配監考</button>
     <span id="stats"></span>
   </div>
   <div class="legend">拖曳學生可換教室（拖過的會自動上鎖 <b>粗框</b>，自動排列時不會被動到）；點一下學生可上鎖／解鎖；滑鼠移到學生上會標出他每一節在哪裡。
@@ -214,22 +227,23 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 </div>
 
 <div class="tab" id="tab-set">
-  <div class="guide"><span class="g"><b>步驟 2｜考程與教室</b>　確認這次段考的節次與時間、可以用的教室、監考老師。通常只要改日期。</span><button class="next" onclick="showTab('board')">下一步：排考場 →</button></div>
-  <h3 style="margin-top:0">考試節次</h3>
-  <div class="note">「延長方向」：提早開始（例：英文 10:45 先發延長卷）或延後結束（例：數學考到 10:20）。「分年級」：同一間只放同年級（英文聽力）。「口頭上限」：每間最多幾位口頭回答學生。「口頭獨立一間」：口頭學生不和其他學生同一間（作文、國文）。<br>
-  「補考節」：同科目的第二個時段（例：作文補），口頭學生在正考排不下時會自動排到補考節，正考時段在自習等候教室。「不計誦讀」：該科只有誦讀服務的學生不進特殊試場（例：作文）。</div>
-  <div id="sesTable" class="scroll"></div>
-  <button class="b" onclick="addSes()">＋ 新增節次</button>
-  <h3>教室</h3>
-  <div class="note">類型：一般／電腦教室（只放電腦作答）／備用（盡量不用）／自習等候（補考學生正考時段待的地方）。</div>
-  <div id="roomTable"></div>
-  <button class="b" onclick="addRoom()">＋ 新增教室</button>
-  <h3>其他規則</h3>
-  <div>有「人數調整（獨立）」學生的試場，人數上限 <input type="number" id="smallMax" style="width:60px" onchange="D.settings.smallMax=+this.value;dataChanged()"> 人</div>
-  <h3>監考老師</h3>
-  <div class="note">填每位老師這次要監考幾節，以及哪些時段不排。「3 排考場」的「自動分配監考」會照這張表排：不超過節數、避開不排的時段、同一時間不會排兩間。監考節數留白＝由系統平均分。</div>
-  <div class="bar" style="margin-bottom:6px"><button class="b" onclick="pasteProc()">貼上老師表</button><button class="b" onclick="addProctor()">＋ 新增老師</button></div>
-  <div id="procTable" class="scroll"></div>
+  <div class="guide"><span class="g"><b>步驟 2｜考程與教室</b>　每次段考通常只要改 ① 考試日期，確認 ② 監考老師；③④ 沿用上次就好。</span><button class="next" onclick="showTab('board')">下一步：排考場 →</button></div>
+  <div class="sec"><h3><i>1</i>考試日期</h3><div id="dayBar"></div></div>
+  <div class="sec"><h3><i>2</i>監考老師 <small>填「應授課節數」就好，監考節數由系統按比例算</small></h3>
+    <div class="bar" style="margin-bottom:6px"><button class="b" onclick="pasteProc()">貼上老師表</button><button class="b" onclick="addProctor()">＋ 新增老師</button></div>
+    <div id="procTable" class="scroll"></div>
+  </div>
+  <div class="sec"><h3><i>3</i>考試節次 <small>科目、時間、延長方式</small></h3>
+    <details class="tip"><summary>欄位說明</summary><div>「延長方向」：提早開始（例：英文 10:45 先發延長卷）或延後結束（例：數學考到 10:20）。<br>「分年級」：同一間只放同年級（英文聽力）。「口頭上限」：每間最多幾位口頭回答學生。「口頭獨立一間」：口頭學生不和其他學生同一間（作文、國文）。<br>
+    「補考節」：同科目的第二個時段（例：作文補），口頭學生在正考排不下時會自動排到補考節，正考時段在自習等候教室。「不計誦讀」：該科只有誦讀服務的學生不進特殊試場（例：作文）。</div></details>
+    <div id="sesTable" class="scroll"></div>
+    <button class="b" onclick="addSes()">＋ 新增節次</button>
+  </div>
+  <div class="sec"><h3><i>4</i>教室 <small>一般／電腦教室（只放電腦作答）／備用（盡量不用）／自習等候（補考學生正考時段待的地方）</small></h3>
+    <div id="roomTable"></div>
+    <button class="b" onclick="addRoom()">＋ 新增教室</button>
+    <div style="margin-top:10px">有「人數調整（獨立）」學生的試場，人數上限 <input type="number" id="smallMax" style="width:60px" onchange="D.settings.smallMax=+this.value;dataChanged()"> 人</div>
+  </div>
 </div>
 
 <div class="tab" id="tab-out">
@@ -312,7 +326,7 @@ function defaultData(){
       {id:'H',name:'綠光教室',cap:30,type:'wait'}
     ],
     proctors:['老師A','老師B','老師C','老師D','老師E','老師F'],
-    settings:{smallMax:20,pref:50,seed:1},
+    settings:{smallMax:20,pref:50,seed:1,pv:2},
     assign:{},proctorOf:{},proctorInfo:{},notes:{}
   };
 }
@@ -499,8 +513,8 @@ function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';cle
 function rebuild(){M=compile(D);ST=toState(M,D);}
 function commit(){D.assign=fromState(M,ST);save();renderBoard();}
 function dataChanged(){save();rebuild();}
-function pushUndo(){undoStack.push(JSON.stringify(D.assign));if(undoStack.length>40)undoStack.shift();}
-function undo(){if(!undoStack.length){toast('沒有可復原的動作');return;}D.assign=JSON.parse(undoStack.pop());rebuild();save();renderBoard();}
+function pushUndo(){undoStack.push(JSON.stringify({a:D.assign,p:D.proctorOf}));if(undoStack.length>40)undoStack.shift();}
+function undo(){if(!undoStack.length){toast('沒有可復原的動作');return;}const o=JSON.parse(undoStack.pop());D.assign=o.a;D.proctorOf=o.p||{};rebuild();save();renderBoard();}
 function unpinAll(){pushUndo();ST.pin.fill(0);commit();}
 function setPref(v){D.settings.pref=+v;M.W=weights(D.settings.pref);save();renderBoard();toast('已調整偏好，按「自動排列」套用');}
 
@@ -514,7 +528,7 @@ function runSolve(mode){
       if(mode==='fill'){const pin=new Uint8Array(ST.pin.length);for(let p=0;p<pin.length;p++)pin[p]=ST.room[p]>=0?1:0;S0={ses:ST.ses,room:ST.room,pin};}
       const R=solve(M,S0,{seed:D.settings.seed||1,iters:60000,restarts:4});
       ST={ses:R.ses,room:R.room,pin:ST.pin};
-      commit();
+      commit();autoProctor(mode==='fill',true);
     }finally{$('busy').style.display='none';}
   },30);
 }
@@ -585,37 +599,44 @@ function usedCells(cells,waits,waitRoom){
     a.push({T,R,key:T.id+'|'+R.id,s:ext?T.est:T.st,e:ext?T.een:T.en,ext});}));
   return a.sort((x,y)=>x.T.key-y.T.key||x.R.i-y.R.i);
 }
-/* ---------- 監考：每位老師的節數、不排時段，照表自動分配 ---------- */
+/* ---------- 監考：按應授課節數比例分配；延長場算 1.5 節；不排時段記「星期幾上午／下午」，跟著段考日期走 ---------- */
+const EXTW=1.5,DOW='日一二三四五六';
 const pinfo=n=>D.proctorInfo[n]||(D.proctorInfo[n]={});
 const pOff=n=>(D.proctorInfo[n]&&D.proctorInfo[n].off)||[];
-function procSlot(T){return T.date+'|'+(T.st>=720?'pm':'am');}
+const cw=c=>c.ext?EXTW:1;
+const f1=x=>String(Math.round(x*10)/10);
+function procSlot(T){return (T.ref.dow||T.date)+'|'+(T.st>=720?'pm':'am');}
 function procSlots(){ // 這次段考有哪些「某天上午／下午」
   const seen={},a=[];M.ses.slice().sort((x,y)=>x.key-y.key).forEach(T=>{const k=procSlot(T);if(seen[k])return;seen[k]=1;a.push({k,date:T.date,dow:T.ref.dow||'',pm:T.st>=720});});return a;}
-function procQuota(total){ // 每位老師這次應該監考幾場；沒填的平均分剩下的
-  const q={},blank=[];let sum=0;
-  D.proctors.forEach(n=>{const v=(D.proctorInfo[n]||{}).quota;if(v===''||v==null||isNaN(+v))blank.push(n);else{q[n]=+v;sum+=+v;}});
-  if(blank.length){const rest=Math.max(0,total-sum),base=Math.floor(rest/blank.length);let ex=rest-base*blank.length;blank.forEach(n=>{q[n]=base+(ex-->0?1:0);});}
-  return {q,sum,blank:blank.length};}
+function procQuota(used){ // 每位老師這次應監考幾節：總節數（延長場 1.5）按應授課節數比例分，以 0.5 節為單位
+  const W=used.reduce((a,c)=>a+cw(c),0),q={},auto=[];let fixed=0;
+  D.proctors.forEach(n=>{const v=(D.proctorInfo[n]||{}).quota;if(v===''||v==null||isNaN(+v))auto.push(n);else{q[n]=+v;fixed+=+v;}});
+  const tv=auto.map(n=>+((D.proctorInfo[n]||{}).teach)||0),known=tv.filter(x=>x>0);
+  const avg=known.length?known.reduce((a,b)=>a+b,0)/known.length:1,w=tv.map(x=>x>0?x:avg),ws=w.reduce((a,b)=>a+b,0);
+  const units=Math.max(0,Math.round((W-fixed)*2)),raw=w.map(x=>ws?units*x/ws:0),fl=raw.map(Math.floor);
+  let left=units-fl.reduce((a,b)=>a+b,0);
+  raw.map((x,i)=>({i,r:x-fl[i]})).sort((a,b)=>b.r-a.r||a.i-b.i).forEach(o=>{if(left-->0)fl[o.i]++;});
+  auto.forEach((n,i)=>{q[n]=fl[i]/2;});
+  return {q,W,fixed,used:used.length,auto:auto.length,noTeach:tv.filter(x=>!(x>0)).length,ext:used.filter(c=>c.ext).length};}
 function usedNow(){return usedCells(cellMap(),waitMap(),M.rooms.findIndex(r=>r.type==='wait'));}
 function renderTally(cells,waits,waitRoom){
-  const used=usedCells(cells,waits,waitRoom),cnt={},extc={},conf=[];
-  D.proctors.forEach(n=>{cnt[n]=0;extc[n]=0;});
-  used.forEach(c=>{const n=D.proctorOf[c.key];if(!n)return;cnt[n]=(cnt[n]||0)+1;if(c.ext)extc[n]=(extc[n]||0)+1;
+  const used=usedCells(cells,waits,waitRoom),cnt={},num={},extc={},conf=[];
+  D.proctors.forEach(n=>{cnt[n]=0;num[n]=0;extc[n]=0;});
+  used.forEach(c=>{const n=D.proctorOf[c.key];if(!n||cnt[n]==null)return;cnt[n]+=cw(c);num[n]++;if(c.ext)extc[n]++;
     if(pOff(n).includes(procSlot(c.T)))conf.push(n+'：'+c.T.date+' '+sesLabel(c.T)+c.R.name+' 排在他不排監考的時段');});
   for(let i=0;i<used.length;i++)for(let j=i+1;j<used.length;j++){const a=used[i],b=used[j],n=D.proctorOf[a.key];
     if(n&&n===D.proctorOf[b.key]&&a.T.date===b.T.date&&a.s<b.e&&b.s<a.e)conf.push(n+'：'+a.T.date+' '+sesLabel(a.T)+a.R.name+' 與 '+sesLabel(b.T)+b.R.name+' 時間重疊');}
-  const miss=used.filter(c=>!D.proctorOf[c.key]).length,Q=procQuota(used.length),names=Object.keys(cnt);
-  const row=(t,f)=>'<tr><th>'+t+'</th>'+names.map(f).join('')+'</tr>';
-  let h='<h3>監考統計（共 '+used.length+' 場'+(miss?'，尚有 '+miss+' 場未指定':'')+'）</h3>';
+  const miss=used.filter(c=>cnt[D.proctorOf[c.key]]==null).length,Q=procQuota(used),names=D.proctors;
+  const row=(t,f)=>'<tr><th>'+t+'</th>'+names.map(f).join('')+'</tr>',ce='<td style="text-align:center"';
+  let h='<h3>監考統計　<small style="font-weight:normal;color:var(--mute)">共 '+used.length+' 場'+(Q.ext?'，其中延長 '+Q.ext+' 場（每場算 '+EXTW+' 節）':'')+'＝ '+f1(Q.W)+' 節，按應授課節數比例分配</small></h3>';
   if(!names.length)h+='<div class="note">還沒有監考老師，請到「2 考程與教室」填寫。</div>';
   else{
-    if(!Q.blank&&Q.sum!==used.length)h+='<div class="qsum bad">老師的監考節數合計 '+Q.sum+' 節，這次實際需要 '+used.length+' 場'+(Q.sum<used.length?'，會有老師多排':'，會有老師少排')+'。</div>';
-    h+='<table class="ed">'+row('老師',n=>'<td style="text-align:center"><b>'+esc(n)+'</b></td>')+
-      row('個別需求',n=>'<td style="text-align:center;font-size:12px;color:var(--mute)">'+esc((D.proctorInfo[n]||{}).note||'')+'</td>')+
-      row('應授課節數',n=>'<td style="text-align:center">'+esc((D.proctorInfo[n]||{}).teach||'')+'</td>')+
-      row('監考節數',n=>'<td style="text-align:center">'+Q.q[n]+((D.proctorInfo[n]||{}).quota===''||(D.proctorInfo[n]||{}).quota==null?'<small style="color:var(--mute)">（平均）</small>':'')+'</td>')+
-      row('已排場次',n=>'<td style="text-align:center" class="'+(cnt[n]===Q.q[n]?'q-ok':'q-bad')+'">'+cnt[n]+'</td>')+
-      row('其中延長場',n=>'<td style="text-align:center">'+(extc[n]||0)+'</td>')+'</table>';
+    if(miss)h+='<div class="qsum bad">還有 '+miss+' 場沒有監考老師　<button class="b sm" onclick="pushUndo();autoProctor(true)">補齊</button></div>';
+    h+='<table class="ed">'+row('老師',n=>ce+'><b>'+esc(n)+'</b></td>')+
+      row('應授課節數',n=>ce+'>'+esc((D.proctorInfo[n]||{}).teach||'')+'</td>')+
+      row('應監考（節）',n=>ce+'>'+f1(Q.q[n])+'</td>')+
+      row('已排（節）',n=>ce+' class="'+(Math.abs(cnt[n]-Q.q[n])<=0.5?'q-ok':'q-bad')+'">'+f1(cnt[n])+'</td>')+
+      row('場次',n=>ce+'>'+num[n]+(extc[n]?'<small style="color:var(--mute)">（延長 '+extc[n]+'）</small>':'')+'</td>')+'</table>';
     h+=conf.map(c=>'<div class="cm">● '+esc(c)+'</div>').join('')+'<h3>每位老師監考哪幾場</h3>'+procMatrix('pm',used);
   }
   $('ptally').innerHTML=h;
@@ -623,60 +644,88 @@ function renderTally(cells,waits,waitRoom){
 function procMatrix(cls,used){ // 老師 × 節次：監考哪一間；斜線＝不排的時段
   used=used||usedNow();const ses=M.ses.slice().sort((a,b)=>a.key-b.key).filter(T=>used.some(c=>c.T===T));
   if(!D.proctors.length||!ses.length)return '<div class="note">還沒有可以顯示的監考分配。</div>';
-  let h='<table class="'+(cls==='out'?'out':'pm')+'"><tr><th>老師</th>'+ses.map(T=>'<th>'+esc(T.date)+'<small>'+esc(sesLabel(T))+' '+fmt(T.st)+'</small></th>').join('')+'<th>合計</th></tr>';
-  D.proctors.forEach(n=>{let k=0;h+='<tr><th>'+esc(n)+'</th>'+ses.map(T=>{const mine=used.filter(c=>c.T===T&&D.proctorOf[c.key]===n);k+=mine.length;
-      if(mine.length)return '<td class="on">'+mine.map(c=>esc(c.R.name)+(c.ext?'<br><small>'+fmt(c.s)+'~'+fmt(c.e)+'</small>':'')).join('<br>')+'</td>';
-      return pOff(n).includes(procSlot(T))?'<td class="off">不排</td>':'<td></td>';}).join('')+'<td><b>'+k+'</b></td></tr>';});
-  const un=used.filter(c=>!D.proctorOf[c.key]);
-  if(un.length)h+='<tr><th style="color:var(--bad)">未指定</th>'+ses.map(T=>'<td>'+un.filter(c=>c.T===T).map(c=>esc(c.R.name)).join('<br>')+'</td>').join('')+'<td><b>'+un.length+'</b></td></tr>';
+  let h='<table class="'+(cls==='out'?'out':'pm')+'"><tr><th>老師</th>'+ses.map(T=>'<th>'+esc(T.date)+(T.ref.dow?'（'+esc(T.ref.dow)+'）':'')+'<small>'+esc(sesLabel(T))+' '+fmt(T.st)+'</small></th>').join('')+'<th>合計</th></tr>';
+  D.proctors.forEach(n=>{let k=0,w=0;h+='<tr><th>'+esc(n)+'</th>'+ses.map(T=>{const mine=used.filter(c=>c.T===T&&D.proctorOf[c.key]===n);k+=mine.length;mine.forEach(c=>w+=cw(c));
+      if(mine.length)return '<td class="on">'+mine.map(c=>esc(c.R.name)+(c.ext?'<br><small>延長 '+fmt(c.s)+'~'+fmt(c.e)+'</small>':'')).join('<br>')+'</td>';
+      return pOff(n).includes(procSlot(T))?'<td class="off">不排</td>':'<td></td>';}).join('')+'<td><b>'+f1(w)+' 節</b><br><small>'+k+' 場</small></td></tr>';});
+  const un=used.filter(c=>!D.proctors.includes(D.proctorOf[c.key]));
+  if(un.length)h+='<tr><th style="color:var(--bad)">未指定</th>'+ses.map(T=>'<td>'+un.filter(c=>c.T===T).map(c=>esc(c.R.name)).join('<br>')+'</td>').join('')+'<td><b>'+un.length+' 場</b></td></tr>';
   return h+'</table>';
 }
-function autoProctor(){
-  if(!D.proctors.length){toast('請先到「2 考程與教室」填監考老師');return;}
-  const used=usedNow(),Q=procQuota(used.length).q,rnd=mulberry32(20261118);
+function autoProctor(keep,quiet){ // keep＝已經指定的不動，只補空的
+  if(!D.proctors.length){if(!quiet)toast('請先到「2 考程與教室」填監考老師');return;}
+  const used=usedNow(),Q=procQuota(used).q,rnd=mulberry32(20261118);
+  const kept=keep?used.filter(c=>D.proctors.includes(D.proctorOf[c.key])).map(c=>({n:D.proctorOf[c.key],c})):[];
+  const todo=used.filter(c=>!kept.some(d=>d.c===c));
   const free=(n,c,done)=>!pOff(n).includes(procSlot(c.T))&&!done.some(d=>d.n===n&&d.c.T.date===c.T.date&&d.c.s<c.e&&c.s<d.c.e);
   const nOk=c=>D.proctors.filter(n=>!pOff(n).includes(procSlot(c.T))).length;
   let best=null;
-  for(let it=0;it<400;it++){ // 多試幾種順序，留最符合節數的一組
-    const load={},extc={},done=[],asg={};D.proctors.forEach(n=>{load[n]=0;extc[n]=0;});let miss=0;
-    const order=used.map(c=>({c,k:nOk(c)+(it?rnd()*2:0)})).sort((a,b)=>a.k-b.k).map(x=>x.c); // 能排的老師越少越先排
-    for(const c of order){let bn=null,bs=-1e9;
+  for(let it=0;it<400;it++){ // 多試幾種順序，留最接近應監考節數的一組
+    const load={},extc={},done=kept.slice(),asg={};D.proctors.forEach(n=>{load[n]=0;extc[n]=0;});let miss=0;
+    kept.forEach(d=>{asg[d.c.key]=d.n;load[d.n]+=cw(d.c);if(d.c.ext)extc[d.n]++;});
+    const order=todo.map(c=>({c,k:nOk(c)-(c.ext?0.5:0)+(it?rnd()*2:0)})).sort((a,b)=>a.k-b.k).map(x=>x.c); // 能排的老師越少越先排
+    for(const c of order){let bn=null,bs=-1e9;const w=cw(c);
       for(const n of D.proctors){if(!free(n,c,done))continue;
-        const s=(Q[n]-load[n])*10-(load[n]>=Q[n]?100:0)-(c.ext?extc[n]*3:0)+(it?rnd()*4:0);
+        const s=(Q[n]-load[n])*10-(load[n]+w>Q[n]+0.5?100:0)-(c.ext?extc[n]*3:0)+(it?rnd()*4:0);
         if(s>bs){bs=s;bn=n;}}
-      if(bn){asg[c.key]=bn;load[bn]++;if(c.ext)extc[bn]++;done.push({n:bn,c});}else miss++;}
+      if(bn){asg[c.key]=bn;load[bn]+=w;if(c.ext)extc[bn]++;done.push({n:bn,c});}else miss++;}
     const em=D.proctors.reduce((a,n)=>a+extc[n],0)/D.proctors.length;let cost=miss*10000;
     D.proctors.forEach(n=>{const d=load[n]-Q[n];cost+=d*d*100+(extc[n]-em)*(extc[n]-em);});
     if(!best||cost<best.cost)best={cost,asg,load,miss};
   }
   D.proctorOf=best.asg;save();renderBoard();
-  const off=D.proctors.filter(n=>best.load[n]!==Q[n]);
-  toast(best.miss?'有 '+best.miss+' 場排不進去（老師不夠，或不排的時段太多），請手動指定':off.length?'已分配，但 '+off.join('、')+' 的場次和設定的節數不同，請看下方統計':'已照每位老師的監考節數分配好了');
+  if(quiet&&!best.miss)return;
+  const off=D.proctors.filter(n=>Math.abs(best.load[n]-Q[n])>0.5);
+  toast(best.miss?'有 '+best.miss+' 場監考排不進去（老師不夠，或不排的時段太多），請手動指定':off.length?'已分配，但 '+off.join('、')+' 和應監考節數差比較多，請看下方統計':'監考已按應授課節數比例分配好了');
 }
-// --- 步驟 2 的監考老師表
+// --- 步驟 2：考試日期（改一次，節次、星期、不排時段、服務表、通知單都跟著換）
+function dateOf(s,dow){const m=String(s||'').match(/(\d{1,2})\s*[\/月.\-]\s*(\d{1,2})/);if(!m)return null;
+  const mo=+m[1],da=+m[2],now=new Date(),y0=now.getFullYear(),c=[];
+  const t=String(D.title||'').match(/(\d{2,3})\s*(?:學年|[-–])/);if(t)c.push(+t[1]+(mo>=8?1911:1912));
+  [y0-1,y0,y0+1].sort((a,b)=>Math.abs(new Date(a,mo-1,da)-now)-Math.abs(new Date(b,mo-1,da)-now)).forEach(y=>c.push(y));
+  const ds=c.map(y=>new Date(y,mo-1,da)).filter(x=>x.getMonth()===mo-1);
+  return (dow&&ds.find(x=>DOW[x.getDay()]===dow))||ds[0]||null;}
+function renderDays(){const ds=[...new Set(D.sessions.map(s=>s.date))];
+  $('dayBar').innerHTML='<div class="days">'+ds.map((d,k)=>{const ss=D.sessions.filter(s=>s.date===d),dt=dateOf(d,ss[0].dow);
+    const iso=dt?dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'):'';
+    return '<label class="day"><span>第 '+(k+1)+' 天</span><input type="date" value="'+iso+'" onchange="setDay('+k+',this.value)"><b>星期'+esc(ss[0].dow||'？')+'</b><small>'+ss.length+' 節</small></label>';}).join('')+'</div>'+
+    '<div class="note" style="margin:8px 0 0">改這裡的日期，下面每一節的日期與星期、老師「不排監考的時段」、服務表和學生通知單都會自動跟著換。</div>';}
+function setDay(k,iso){const old=[...new Set(D.sessions.map(s=>s.date))][k];if(!iso||old==null)return;
+  const a=iso.split('-'),nd=(+a[1])+'/'+(+a[2]),dw=DOW[new Date(+a[0],a[1]-1,+a[2]).getDay()];
+  if(nd!==old&&D.sessions.some(s=>s.date===nd)){toast('已經有 '+nd+' 這一天了');renderSet();return;}
+  D.sessions.forEach(s=>{if(s.date===old){s.date=nd;s.dow=dw;}});dataChanged();renderSet();toast('已改成 '+nd+'（星期'+dw+'），其他頁面會一起更新');}
+function setSesDate(i,v){v=v.trim();const s=D.sessions[i];s.date=v;const same=D.sessions.find(x=>x!==s&&x.date===v&&x.dow),dt=dateOf(v);
+  s.dow=same?same.dow:dt?DOW[dt.getDay()]:s.dow;dataChanged();renderSet();}
+// --- 步驟 2：監考老師表
 function renderProc(){
-  const slots=procSlots(),total=usedNow().length;let sum=0,blank=0;
-  D.proctors.forEach(n=>{const v=(D.proctorInfo[n]||{}).quota;if(v===''||v==null)blank++;else sum+=+v||0;});
-  let h='<table class="ed"><tr><th>老師</th><th>應授課節數</th><th>監考節數</th><th>不排監考的時段（點一下切換）</th><th>個別需求（備註）</th><th></th></tr>';
-  D.proctors.forEach((n,i)=>{const f=D.proctorInfo[n]||{},off=f.off||[];
+  const slots=procSlots(),Q=procQuota(usedNow());
+  let h='<table class="ed"><tr><th>老師</th><th>應授課節數</th><th>這次監考（節）</th><th>不排監考的時段（點一下切換）</th><th>個別需求（備註）</th><th></th></tr>';
+  D.proctors.forEach((n,i)=>{const f=D.proctorInfo[n]||{},off=f.off||[],man=!(f.quota===''||f.quota==null);
     h+='<tr><td><input type="text" style="width:90px" value="'+esc(n)+'" onchange="renameProc('+i+',this.value)"></td>'+
       '<td><input type="number" min="0" style="width:64px" value="'+esc(f.teach==null?'':f.teach)+'" onchange="setProc('+i+',\'teach\',this.value)"></td>'+
-      '<td><input type="number" min="0" style="width:64px" value="'+esc(f.quota==null?'':f.quota)+'" placeholder="平均" onchange="setProc('+i+',\'quota\',this.value)"></td>'+
-      '<td><div class="offs">'+slots.map(s=>'<label class="'+(off.includes(s.k)?'on':'')+'"><input type="checkbox" '+(off.includes(s.k)?'checked':'')+' onchange="togOff('+i+',\''+esc(s.k)+'\',this.checked)">'+esc(s.date)+(s.dow?'（'+esc(s.dow)+'）':'')+(s.pm?'下午':'上午')+'</label>').join('')+'</div></td>'+
+      '<td><input type="number" min="0" step="0.5" style="width:64px" title="留白＝按應授課節數比例；填數字＝指定這位老師的節數" value="'+esc(man?f.quota:'')+'" placeholder="'+f1(Q.q[n])+'" onchange="setProc('+i+',\'quota\',this.value)">'+(man?' <small style="color:var(--warn)">指定</small>':'')+'</td>'+
+      '<td><div class="offs">'+slots.map(s=>'<label class="'+(off.includes(s.k)?'on':'')+'"><input type="checkbox" '+(off.includes(s.k)?'checked':'')+' onchange="togOff('+i+',\''+esc(s.k)+'\',this.checked)">'+(s.dow?'週'+esc(s.dow):esc(s.date))+(s.pm?'下午':'上午')+'</label>').join('')+'</div></td>'+
       '<td><input type="text" style="width:220px" value="'+esc(f.note||'')+'" placeholder="例：週二下午不排監考" onchange="setProc('+i+',\'note\',this.value)"></td>'+
       '<td><button class="b sm" onclick="delProc('+i+')">刪除</button></td></tr>';});
   h+='</table>';
-  if(D.proctors.length)h+='<div class="qsum '+(blank?'':(sum===total?'ok':'bad'))+'">監考節數合計 <b>'+sum+'</b> 節'+(blank?'（另有 '+blank+' 位留白，由系統平均分）':'')+'　｜　目前排法需要 <b>'+total+'</b> 場監考'+(!blank&&sum!==total?'　→ 兩邊不一樣，'+(sum<total?'會有老師多排':'會有老師少排'):'')+'</div>';
-  else h+='<div class="note">還沒有老師。按「貼上老師表」可以把整張表一次貼進來。</div>';
+  if(D.proctors.length){
+    const man=D.proctors.length-Q.auto,bad=(!Q.auto&&Math.abs(Q.fixed-Q.W)>0.01)||Q.fixed>Q.W+0.01;
+    h+='<div class="qsum">目前排法共 <b>'+Q.used+'</b> 場監考'+(Q.ext?'，其中延長 '+Q.ext+' 場（每場算 '+EXTW+' 節）':'')+'＝ <b>'+f1(Q.W)+'</b> 節，按應授課節數比例分給 '+D.proctors.length+' 位老師（灰色數字）。</div>';
+    if(Q.noTeach)h+=' <div class="qsum bad">有 '+Q.noTeach+' 位沒填應授課節數，先當作平均值計算。</div>';
+    if(man)h+=' <div class="qsum'+(bad?' bad':'')+'">'+man+' 位是指定節數'+(bad?'，合計和這次需要的 '+f1(Q.W)+' 節對不上':'')+'　<a style="cursor:pointer;color:var(--acc)" onclick="clearQuota()">全部改回按比例</a></div>';
+  }else h+='<div class="note">還沒有老師。按「貼上老師表」可以把整張表一次貼進來。</div>';
   $('procTable').innerHTML=h;
 }
-function noteToOff(note){ // 「週二下午不排監考」→ 自動勾選對應時段
-  const m=String(note||'').match(/(?:週|周|星期|禮拜)\s*([一二三四五六日天])\s*(上午|下午|全天|整天)?[^，,。；;]*不/);if(!m)return null;
-  return procSlots().filter(s=>s.dow===m[1]&&(!m[2]||/全天|整天/.test(m[2])||(m[2]==='下午')===s.pm)).map(s=>s.k);}
+function noteToOff(note){ // 「週二下午不排監考」→ 星期二下午（之後段考日期換了也會跟著對到）
+  note=String(note||'');if(!/不/.test(note))return null;const a=[];
+  for(const m of note.matchAll(/(?:週|周|星期|禮拜)\s*([一二三四五六日天])\s*(上午|下午)?/g)){const d=m[1]==='天'?'日':m[1];if(m[2]!=='下午')a.push(d+'|am');if(m[2]!=='上午')a.push(d+'|pm');}
+  return a.length?a:null;}
 function setProc(i,k,v){const f=pinfo(D.proctors[i]);
-  if(k==='note'){f.note=v.trim();const o=noteToOff(v);if(o&&o.length){f.off=[...new Set((f.off||[]).concat(o))];toast('已依備註勾選不排的時段');}}
+  if(k==='note'){const old=noteToOff(f.note)||[],o=noteToOff(v)||[];f.note=v.trim();
+    f.off=[...new Set((f.off||[]).filter(x=>!old.includes(x)).concat(o))];if(o.length)toast('已依備註設定不排的時段');}
   else f[k]=v===''?'':+v;
   save();renderProc();}
+function clearQuota(){D.proctors.forEach(n=>{pinfo(n).quota='';});save();renderProc();}
 function togOff(i,k,on){const f=pinfo(D.proctors[i]);f.off=(f.off||[]).filter(x=>x!==k);if(on)f.off.push(k);save();renderProc();}
 function addProctor(){let n='老師'+(D.proctors.length+1);while(D.proctors.includes(n))n+='_';D.proctors.push(n);save();renderProc();}
 function renameProc(i,v){v=v.trim();const old=D.proctors[i];if(!v||v===old){renderProc();return;}
@@ -687,7 +736,7 @@ function delProc(i){const n=D.proctors[i];if(!confirm('確定刪除 '+n+'？已�
   D.proctors.splice(i,1);delete D.proctorInfo[n];for(const k in D.proctorOf)if(D.proctorOf[k]===n)delete D.proctorOf[k];save();renderProc();}
 function pasteProc(){
   const d=$('paste');
-  d.innerHTML='<button class="x" onclick="$(\'paste\').close()" aria-label="關閉">✕</button><h2>貼上老師表</h2><p class="lead">從 Word、Excel 或 Google 文件把整張表複製貼上就可以，兩種排法都讀得懂：<br>・<b>橫的</b>：第一列是「老師」，下面幾列是「個別需求／應授課節數／監考節數」。<br>・<b>直的</b>：一行一位，寫成「姓名　應授課節數　監考節數　個別需求」，後面三項可省略。</p><textarea id="pasteTa" rows="9" placeholder="王老師&#9;7&#9;5&#10;陳老師&#9;4&#9;3&#9;週二下午不排監考"></textarea><p class="sub">會取代目前的老師名單；已經排好的監考，同名的老師會保留。</p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="b" onclick="$(\'paste\').close()">取消</button><button class="b pri" onclick="pasteProcOk()">套用</button></div>';
+  d.innerHTML='<button class="x" onclick="$(\'paste\').close()" aria-label="關閉">✕</button><h2>貼上老師表</h2><p class="lead">從 Word、Excel 或 Google 文件把整張表複製貼上就可以，兩種排法都讀得懂：<br>・<b>橫的</b>：第一列是「老師」，下面幾列是「個別需求／應授課節數」。<br>・<b>直的</b>：一行一位，寫成「姓名　應授課節數　個別需求」。</p><textarea id="pasteTa" rows="9" placeholder="王老師&#9;7&#10;陳老師&#9;4&#9;週二下午不排監考"></textarea><p class="sub">會取代目前的老師名單。監考節數由系統按應授課節數比例計算，表上原本的「監考節數」不會讀進來。</p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="b" onclick="$(\'paste\').close()">取消</button><button class="b pri" onclick="pasteProcOk()">套用</button></div>';
   d.showModal();$('pasteTa').focus();
 }
 function pasteProcOk(){
@@ -696,19 +745,19 @@ function pasteProcOk(){
   let list=[];
   if(/老師|教師|姓名/.test(rows[0][0])&&rows[0].length>1){ // 橫的：每一欄是一位老師
     const find=re=>rows.find(r=>re.test(r[0]))||[];
-    const N=rows[0],need=find(/需求|備註/),teach=find(/授課/),quota=find(/監考/);
-    for(let c=1;c<N.length;c++)if(N[c])list.push({n:N[c],note:need[c]||'',teach:teach[c],quota:quota[c]});
+    const N=rows[0],need=find(/需求|備註/),teach=find(/授課/);
+    for(let c=1;c<N.length;c++)if(N[c])list.push({n:N[c],note:need[c]||'',teach:teach[c]});
   }else rows.forEach(r=>{ // 直的：一行一位
     if(r.length===1)r=r[0].split(/\s+/);
-    const nums=r.slice(1).filter(x=>/^\d+$/.test(x)),txt=r.slice(1).filter(x=>x&&!/^\d+$/.test(x)).join(' ');
-    if(r[0]&&!/^\d+$/.test(r[0]))list.push({n:r[0],teach:nums.length>1?nums[0]:'',quota:nums.length>1?nums[1]:nums[0],note:txt});});
+    const nums=r.slice(1).filter(x=>/^\d+(\.\d+)?$/.test(x)),txt=r.slice(1).filter(x=>x&&!/^\d+(\.\d+)?$/.test(x)).join(' ');
+    if(r[0]&&!/^\d+$/.test(r[0]))list.push({n:r[0],teach:nums[0],note:txt});});
   if(!list.length){alert('讀不出老師的名字，請確認貼上的內容。');return;}
   const num=v=>(v==null||v===''||isNaN(+v))?'':+v,info={};
   D.proctors=[...new Set(list.map(x=>x.n))];
-  list.forEach(x=>{const f=info[x.n]={teach:num(x.teach),quota:num(x.quota),note:x.note||'',off:((D.proctorInfo[x.n]||{}).off)||[]};
-    const o=noteToOff(x.note);if(o&&o.length)f.off=[...new Set(f.off.concat(o))];});
+  list.forEach(x=>{const old=D.proctorInfo[x.n]||{},f=info[x.n]={teach:num(x.teach),quota:'',note:x.note||'',off:(old.off||[]).filter(k=>!(noteToOff(old.note)||[]).includes(k))};
+    const o=noteToOff(x.note);if(o)f.off=[...new Set(f.off.concat(o))];});
   D.proctorInfo=info;for(const k in D.proctorOf)if(!D.proctors.includes(D.proctorOf[k]))delete D.proctorOf[k];
-  $('paste').close();save();renderProc();toast('已套用 '+D.proctors.length+' 位老師。到「3 排考場」按「自動分配監考」');
+  $('paste').close();save();autoProctor(false,true);renderProc();toast('已套用 '+D.proctors.length+' 位老師，監考也重新分配好了');
 }
 (function(){
   const b=$('board');let hl=null;
@@ -963,7 +1012,7 @@ function renderSet(){
   const tx=(i,f,w)=>'<input type="text" style="width:'+w+'px" value="'+esc(D.sessions[i][f])+'" onchange="D.sessions['+i+'].'+f+'=this.value.trim();dataChanged()">';
   const ck=(i,f)=>'<td style="text-align:center"><input type="checkbox" '+(D.sessions[i][f]?'checked':'')+' onchange="D.sessions['+i+'].'+f+'=this.checked;dataChanged()"></td>';
   D.sessions.forEach((s,i)=>{
-    h+='<tr><td>'+tx(i,'date',50)+'</td><td>'+tx(i,'dow',30)+'</td><td>'+tx(i,'period',60)+'</td><td>'+tx(i,'subject',90)+'</td><td>'+
+    h+='<tr><td><input type="text" style="width:50px" value="'+esc(s.date)+'" onchange="setSesDate('+i+',this.value)"></td><td style="text-align:center">'+esc(s.dow||'')+'</td><td>'+tx(i,'period',60)+'</td><td>'+tx(i,'subject',90)+'</td><td>'+
       [7,8,9].map(g=>'<label><input type="checkbox" '+(s.grades.includes(g)?'checked':'')+' onchange="togGrade('+i+','+g+',this.checked)">'+GN[g]+'</label>').join(' ')+'</td>'+
       '<td><input type="time" value="'+esc(s.start)+'" onchange="D.sessions['+i+'].start=this.value;dataChanged()"></td>'+
       '<td><input type="time" value="'+esc(s.end)+'" onchange="D.sessions['+i+'].end=this.value;dataChanged()"></td>'+
@@ -983,7 +1032,7 @@ function renderSet(){
       '<td><button class="b sm" onclick="if(confirm(\'刪除這間教室？\')){D.rooms.splice('+i+',1);dataChanged();renderSet()}">刪除</button></td></tr>';
   });
   $('roomTable').innerHTML=h+'</table>';
-  $('smallMax').value=D.settings.smallMax;renderProc();
+  $('smallMax').value=D.settings.smallMax;renderDays();renderProc();
 }
 function togGrade(i,g,on){const a=D.sessions[i].grades.filter(x=>x!==g);if(on)a.push(g);D.sessions[i].grades=a.sort();dataChanged();}
 function addSes(){const l=D.sessions[D.sessions.length-1]||{};D.sessions.push({id:'s'+Date.now().toString(36),date:l.date||'',dow:l.dow||'',period:'',subject:'新科目',grades:[7,8,9],start:'09:15',end:'10:00',extMin:20,extMode:'after',oralCap:8,split:false,noRead:false,makeup:false,oralSep:false});dataChanged();renderSet();}
@@ -1057,7 +1106,7 @@ function importJson(inp){const f=inp.files[0];if(!f)return;const rd=new FileRead
   save();rebuild();init2();if($('share').open)$('share').close();toast('已還原');};rd.readAsText(f);}
 function resetAll(){if(!confirm('確定清空，回到範例資料？\n目前的名單、考程與排法都會被清掉'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。'))return;D=defaultData();rebuild();save();init2();runSolve('all');if($('share').open)$('share').close();}
 function noticeReload(){try{const w=$('noticeFrame').contentWindow;w&&w.reloadData&&w.reloadData();}catch(e){}}
-function normalize(o){const d=defaultData();o.settings=Object.assign(d.settings,o.settings||{});o.assign=o.assign||{};o.proctorOf=o.proctorOf||{};o.notes=o.notes||{};o.proctors=o.proctors||[];o.proctorInfo=o.proctorInfo||{};o.students.forEach(s=>{s.sv=s.sv||{};});return o;}
+function normalize(o){const d=defaultData(),pv0=(o.settings||{}).pv||0;o.settings=Object.assign(d.settings,o.settings||{});o.assign=o.assign||{};o.proctorOf=o.proctorOf||{};o.notes=o.notes||{};o.proctors=o.proctors||[];o.proctorInfo=o.proctorInfo||{};if(pv0<2){o.settings.pv=2;const dw={};(o.sessions||[]).forEach(x=>{if(x.dow)dw[x.date]=x.dow;});for(const n in o.proctorInfo){const f=o.proctorInfo[n];f.quota='';f.off=(f.off||[]).map(k=>{const a=k.split('|');return (dw[a[0]]||a[0])+'|'+a[1];});}}o.students.forEach(s=>{s.sv=s.sv||{};});return o;}
 
 /* ---------- 啟動 ---------- */
 function showTab(n){curTab=n;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===n));
