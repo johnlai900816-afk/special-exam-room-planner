@@ -9,24 +9,33 @@ service cloud.firestore {
 
     // 共用名單：第一位登入者成為主持人，之後只有主持人能改名單與權限
     // emails＝全部成員；viewers＝其中只能檢視的人（主持人不能被設成檢視）
+    // 名冊、排課、段考考場共用這一份名單
     match /config/access {
       allow get: if signedIn() && (resource == null || email() in resource.data.emails);
       allow create: if signedIn() && request.resource.data.admin == email() && request.resource.data.emails == [email()];
       allow update: if signedIn() && resource.data.admin == email() && request.resource.data.admin == email()
         && email() in request.resource.data.emails && !(email() in request.resource.data.get('viewers', []));
     }
-    // 誰在線上：名單內的人都可以寫
+
+    // 名冊與排課（rc/main）、誰在線上（rc/presence）
+    match /rc/presence {
+      allow read, write: if member();
+    }
+    match /rc/{id} {
+      allow read: if member();
+      allow write: if editor();
+    }
+
+    // ── 以下和「段考特殊試場排列機」的規則相同，段考考場頁沿用 ──
     match /exams/presence {
       allow read, write: if member();
     }
-    // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），知道鑰匙才讀得到單一文件，不能列出；
-    // 只有主持人與編輯能寫，而且只能寫到主持人目前開啟的那一把鑰匙
+    // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），知道鑰匙才讀得到單一文件，不能列出
     match /view/{t} {
       allow get: if true;
       allow write: if editor() && access().get('link', '') != ''
         && (t == access().link || t == access().link + '_n');
     }
-    // 考場資料：名單內都可讀；只有主持人與編輯可寫
     match /exams/{id} {
       allow read: if member();
       allow write: if editor();

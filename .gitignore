@@ -1,4 +1,6 @@
-# 含學生資料的設定檔一律不上傳
+# 含學生資料的設定檔與備份檔一律不上傳
 *設定檔*.json
+*備份*.json
 *.pdf
 .firebase/
+firebase-debug.log
