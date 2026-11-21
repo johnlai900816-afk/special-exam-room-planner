@@ -24,7 +24,7 @@ function colorOf(g){const i=M.rts.indexOf(g.t);return i<0?6:i%6;}
 const PAGES={
   home:{t:'總覽'},
   roster:{t:'名冊',subs:[['stu','學生'],['tea','老師'],['env','教室與作息']]},
-  sched:{t:'排課',subs:[['groups','分組'],['off','不排課時段'],['board','排課'],['out','課表輸出']]},
+  sched:{t:'排課',subs:[['groups','分組'],['teach','任課老師'],['off','不排課時段'],['board','排課'],['out','課表輸出']]},
   exam:{t:'段考考場'},
   checkin:{t:'簽到退',subs:[['now','點名'],['log','出缺席紀錄'],['cards','學生卡']]}
 };
@@ -41,7 +41,7 @@ function render(){
   $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button class="${k===sub?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
   if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed';return;}
-  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'sched/groups':renderGroups,'sched/off':renderOff,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
+  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'sched/groups':renderGroups,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
 }
 document.querySelectorAll('#nav button[data-p]').forEach(b=>{b.onclick=()=>go(b.dataset.p);});
 
@@ -110,7 +110,7 @@ function renderStu(){
     <td class="dim">${esc((gOf[s.id]||[]).join('、'))||'尚未分組'}</td>
     <td>${(sv[s.id]||[]).map(x=>`<span class="tagv">${x}</span>`).join('')}</td>
     <td><input type="text" class="w8" value="${esc(s.note)}" onchange="setStu(${i},'note',this.value)"></td>
-    <td><button class="x" title="刪除" onclick="delStu(${i})">✕</button></td></tr>`;});
+    <td class="nw"><button class="b sm" onclick="stuCard(${i})">檢視</button><button class="x" title="刪除" onclick="delStu(${i})">✕</button></td></tr>`;});
   $('page').innerHTML=h+'</table></div>';
 }
 function renderTea(){
@@ -118,10 +118,11 @@ function renderTea(){
   M.G.forEach(g=>g.locks.forEach(k=>{if(k.t>=0){const id=D.teachers[k.t].id;(use[id]=use[id]||[]).push(k.cls+g.subject);}}));
   let h=`<p class="guide">除了資源班老師，也要把<b>學生原班的任課老師</b>加進來，排課才知道哪些時段會卡到他們。資源班老師會自動成為段考的監考老師。</p>
   <div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><span class="stat">共 <b>${D.teachers.length}</b> 位</span></div>
-  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>相關的組別與班級</th><th>備註</th><th></th></tr>`;
+  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>相關的組別與班級</th><th>備註</th><th></th></tr>`;
   D.teachers.forEach((t,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(t.name)}" onchange="setTea(${i},'name',this.value)"></td>
     <td><select onchange="setTea(${i},'role',this.value)">${ROLES.map(r=>`<option${r===t.role?' selected':''}>${r}</option>`).join('')}</select></td>
-    <td><button class="b sm" onclick="offSel=D.teachers[${i}].id;go('sched','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
+    <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('sched','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
+    <td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length||''}</td>
     <td class="dim">${esc([...new Set(use[t.id]||[])].join('、'))}</td>
     <td><input type="text" class="w8" value="${esc(t.note)}" onchange="setTea(${i},'note',this.value)"></td>
     <td><button class="x" title="刪除" onclick="delTeacher(${i})">✕</button></td></tr>`;});
@@ -139,15 +140,24 @@ function renderEnv(){
   <h3>排課規則</h3><label><input type="checkbox"${D.settings.regClash?' checked':''} onchange="D.settings.regClash=this.checked;changed()"> 同一位普通班老師，同一節不能被兩個班同時鎖課（抽離課要原班同時上同一科時請保持開啟）</label>`;
   $('page').innerHTML=h;
 }
+function stuCard(i){const s=D.students[i],si=M.sIdx[s.id],E=examInfo(),sv=((E&&E.sv)||{})[s.id]||[],at=attStats('0000','9999','')[s.id];
+  const gs=M.G.filter(g=>g.stu.includes(si)),cm=D.teachers.find(t=>t.id===s.caseMgr),sets=D.sets.filter(x=>x.students.includes(s.id));
+  const rows=gs.map(g=>{const ls=M.L.map((x,l)=>l).filter(l=>M.L[l].g===g.gi&&ST.slot[l]>=0).map(l=>ST.slot[l]).sort((a,b)=>a-b);return `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.t>=0?M.T[g.t].name:'')}</td><td>${esc(ls.length?slotsText(ls):'還沒排')}</td></tr>`;}).join('');
+  openDlg(`<h3>${esc(stuLabel(s))}</h3><p class="lead">${esc(s.cls)} 班 ${esc(s.seat)} 號　個管老師：${esc(cm?cm.name:'未指定')}${s.note?'<br>'+esc(s.note):''}</p>
+    <h4>資源班課程（每週 ${gs.reduce((n,g)=>n+M.L.filter((x,l)=>x.g===g.gi&&ST.slot[l]>=0).length,0)} 節）</h4>${rows?`<table class="ed" style="width:100%"><tr><th>組別</th><th>老師</th><th>上課節次</th></tr>${rows}</table>`:'<p class="note">還沒分到任何一組。</p>'}
+    <h4>考評服務</h4><p>${sv.length?sv.map(x=>`<span class="tagv">${x}</span>`).join(''):'<span class="note">沒有設定</span>'}</p>
+    <h4>出缺席</h4><p>${at?'應到 '+at.exp+'　實到 '+at.in+'　遲到 '+at.late+'　請假 '+at.leave+'　缺席 '+at.abs:'<span class="note">還沒有點名紀錄</span>'}</p>
+    ${sets.length?`<h4>學生群組</h4><p>${sets.map(x=>`<span class="tagv">${esc(x.name)}</span>`).join('')}</p>`:''}
+    <div class="bar" style="margin:14px 0 0"><button class="b" data-id="${esc(s.id)}" onclick="offSel='s:'+this.dataset.id;closeDlg();go('sched','off')">個人不排課時段${(D.offBy['s:'+s.id]||[]).length?'（'+D.offBy['s:'+s.id].length+' 格）':''}</button><span class="grow"></span><button class="b" onclick="closeDlg()">關閉</button></div>`);}
 function setStu(i,k,v){D.students[i][k]=String(v).trim();changed();}
 function addStu(){D.students.push({id:uid('s'),cls:'',seat:'',name:'',caseMgr:'',note:''});changed();render();$('main').scrollTo(0,1e6);}
 function delStu(i){const s=D.students[i];if(!confirm('確定刪除 '+stuLabel(s)+'？\n會從所屬組別移除，段考考場裡他的考評服務也會一起清掉。'))return;
-  D.groups.forEach(g=>{g.students=g.students.filter(id=>id!==s.id);});D.students.splice(i,1);D.gone=(D.gone||[]).concat([s.id]).slice(-500);changed();render();}
+  D.groups.forEach(g=>{g.students=g.students.filter(id=>id!==s.id);});D.students.splice(i,1);D.gone=(D.gone||[]).concat([s.id]).slice(-500);delete D.offBy['s:'+s.id];D.sets.forEach(x=>{x.students=x.students.filter(id=>id!==s.id);});changed();render();}
 function setTea(i,k,v){D.teachers[i][k]=String(v).trim();changed();if(k==='role')render();}
 function addTeacher(){D.teachers.push({id:uid('t'),name:'新老師',role:'普通班',off:[],note:''});changed();render();$('main').scrollTo(0,1e6);}
 function delTeacher(i){const t=D.teachers[i];if(!confirm('確定刪除 '+t.name+'？他負責的組別與任課設定會變成未指定。'))return;
   D.groups.forEach(g=>{if(g.teacher===t.id)g.teacher='';});for(const k in D.classSubj)if(D.classSubj[k]===t.id)delete D.classSubj[k];
-  D.students.forEach(s=>{if(s.caseMgr===t.id)s.caseMgr='';});if(offSel===t.id)offSel='*';if(view===t.id)view='';D.teachers.splice(i,1);changed();render();}
+  D.students.forEach(s=>{if(s.caseMgr===t.id)s.caseMgr='';});if(offSel==='t:'+t.id)offSel='*';if(view===t.id)view='';D.teachers.splice(i,1);changed();render();}
 function delRoom(i){const r=D.rooms[i];D.groups.forEach(g=>{if(g.room===r.id)g.room='';});D.rooms.splice(i,1);changed();render();}
 function setPer(i,k,v){D.periods[i][k]=v;changed();}
 function delPer(i){if(D.periods.length<2)return;if(!confirm('確定刪除「'+D.periods[i].name+'」？排在這一節的課會變成還沒排。'))return;D.periods.splice(i,1);changed();render();}
@@ -169,7 +179,7 @@ function pasteStuOk(){let add=0,upd=0,skip=0;
 function renderGroups(){
   const subj=[...new Set(D.groups.map(g=>g.subject).concat(['國文','數學','英文']))],byId={};D.students.forEach(s=>{byId[s.id]=s;});
   let h=`<p class="guide">一組就是一堂資源班的課。<b>抽離</b>課會用到原班上同一科的時間，所以要指定每個班的任課老師，他們不排課的時段會一起算進去；<b>外加</b>課只排在早自習這類時段，不影響原班。</p>
-  <div class="bar"><button class="b pri" onclick="addGroup()">新增一組</button><span class="stat">共 <b>${D.groups.length}</b> 組、每週 <b>${M.L.length}</b> 節</span></div>
+  <div class="bar"><button class="b pri" onclick="addGroup()">新增一組</button><button class="b" onclick="pasteGroups()">貼上分組表</button><span class="stat">共 <b>${D.groups.length}</b> 組、每週 <b>${M.L.length}</b> 節</span></div>
   <datalist id="subjList">${subj.map(s=>`<option value="${esc(s)}">`).join('')}</datalist><div class="cards">`;
   D.groups.forEach((g,i)=>{const c=M.G[i];
     h+=`<div class="gc${g.on===false?' off':''}"><div class="hd"><input type="text" class="nm" value="${esc(g.name)}" placeholder="組名" onchange="setGrp(${i},'name',this.value)">
@@ -194,35 +204,118 @@ function setCS(el){if(el.value)D.classSubj[el.dataset.k]=el.value;else delete D.
 function togGS(i,id){const a=D.groups[i].students,k=a.indexOf(id);if(k>=0)a.splice(k,1);else a.push(id);changed();}
 function pickStu(i){const g=D.groups[i],same={};
   D.groups.forEach((o,j)=>{if(j!==i&&o.subject===g.subject)o.students.forEach(id=>{same[id]=o.name;});});
-  const by={};D.students.slice().sort(sortStu).forEach(s=>{(by[s.cls]=by[s.cls]||[]).push(s);});
-  let h=`<h3>${esc(g.name)}的學生</h3><div class="pick">`;
-  for(const c in by)h+=`<div class="cl">${esc(c)}</div>`+by[c].map(s=>`<label><input type="checkbox"${g.students.includes(s.id)?' checked':''} data-id="${esc(s.id)}" onchange="togGS(${i},this.dataset.id)">${esc(s.name)}${same[s.id]?` <small>已在${esc(same[s.id])}</small>`:''}</label>`).join('');
-  openDlg(h+`</div><div class="bar" style="margin:0"><button class="b pri" onclick="closeDlg()">完成</button></div>`,render);}
+  pickList(g.name+'的學生',g.students,same);}
 
-/* ───── 排課｜不排課時段 ───── */
-function offArr(){if(offSel==='*')return D.blocked;const t=D.teachers.find(x=>x.id===offSel);if(!t){offSel='*';return D.blocked;}return t.off;}
+/* ───── 排課｜不排課時段（一層一層疊）───── */
+// offSel：'*' 全校、'g:7' 年級、'x:id' 學生群組、'c:701' 班級、's:id' 學生個人、't:id' 老師
+function offTarget(){
+  const k=offSel,id=k.slice(2),ob=n=>(D.offBy[n]=D.offBy[n]||[]);
+  if(k==='*')return {arr:D.blocked,name:'全校共同不排',hint:'所有年級、所有組別都不排的時段，例如全校週會。'};
+  if(k[0]==='g'&&GRADE[id])return {arr:ob(k),name:GRADE[id],hint:'這個年級的學生都不能被抽離的時段，例如社團、班會、彈性課程。各年級時間不一樣就分開點。',up:['*']};
+  if(k[0]==='c')return {arr:ob(k),name:id+' 班',hint:'只有這一班不能被抽離的時段。',up:['*','g:'+gradeOfCls(id)]};
+  if(k[0]==='s'){const s=D.students.find(x=>x.id===id);if(s)return {arr:ob(k),name:stuLabel(s),hint:'這位學生個人不能被抽離的時段，例如巡迴輔導、治療、校隊練習。',up:['*','g:'+gradeOfCls(s.cls),'c:'+s.cls].concat(D.sets.filter(x=>x.students.includes(id)).map(x=>'x:'+x.id))};}
+  if(k[0]==='x'){const x=D.sets.find(o=>o.id===id);if(x)return {arr:x.off,name:x.name,hint:'這一群學生共同不能被抽離的時段。有他們在的組別，這些時段都不會排。',set:x,up:['*']};}
+  if(k[0]==='t'){const t=D.teachers.find(o=>o.id===id);if(t)return {arr:t.off,name:t.name,hint:'格子裡的字是他現在已經排到的課。',tea:t,up:['*']};}
+  offSel='*';return offTarget();
+}
+function offKeys(k){if(k==='*')return D.blocked;if(k[0]==='x'){const x=D.sets.find(o=>o.id===k.slice(2));return x?x.off:[];}if(k[0]==='t'){const t=D.teachers.find(o=>o.id===k.slice(2));return t?t.off:[];}return D.offBy[k]||[];}
+function offNav(){
+  const it=[{k:'*',name:'全校共同不排',grp:'全校'}];
+  let gs=[...new Set(D.students.map(s=>gradeOfCls(s.cls)).filter(g=>GRADE[g]))].sort();if(!gs.length)gs=[7,8,9];
+  gs.forEach(g=>it.push({k:'g:'+g,name:GRADE[g],grp:'年級'}));
+  D.sets.forEach(x=>it.push({k:'x:'+x.id,name:x.name,sub:x.students.length+' 人',grp:'學生群組'}));
+  Object.keys(D.offBy).filter(k=>(k[0]==='c'||k[0]==='s')&&(D.offBy[k].length||k===offSel)).sort().forEach(k=>{
+    if(k[0]==='c')it.push({k,name:k.slice(2)+' 班',grp:'班級與個人'});else{const s=D.students.find(x=>x.id===k.slice(2));if(s)it.push({k,name:stuLabel(s),grp:'班級與個人'});}});
+  D.teachers.filter(t=>t.role==='資源班').forEach(t=>it.push({k:'t:'+t.id,name:t.name,grp:'資源班老師'}));
+  D.teachers.filter(t=>t.role!=='資源班').forEach(t=>it.push({k:'t:'+t.id,name:t.name,sub:t.role==='普通班'?'':t.role,grp:'其他老師'}));
+  it.forEach(o=>{o.n=offKeys(o.k).length;});return it;
+}
 function occOf(ti){const m={};M.L.forEach((x,l)=>{const s=ST.slot[l];if(s<0)return;const g=M.G[x.g];
   if(g.t===ti)(m[s]=m[s]||[]).push(g.name);g.locks.forEach(k=>{if(k.t===ti)(m[s]=m[s]||[]).push(k.cls+g.subject);});});return m;}
 function renderOff(){
-  const a=offArr(),t=D.teachers.find(x=>x.id===offSel),ti=t?M.tIdx[t.id]:-1,occ=ti>=0?occOf(ti):{};
-  const item=(id,name,n,role)=>`<button class="${offSel===id?'on':''}" data-id="${esc(id)}" onclick="offSel=this.dataset.id;render()"><span>${esc(name)}${role?` <small>${esc(role)}</small>`:''}</span><small>${n?n+' 格':''}</small></button>`;
-  let h=`<p class="guide">把教務處給的「不排課時間」點進來。點格子切換，點<b>星期</b>或<b>節次</b>可以整排切換。斜線的格子排課時會自動避開，不用自己記誰限制多、誰要先排。</p>
-  <div class="offwrap"><div class="tlist">${item('*','全校共同不排',D.blocked.length,'')}<div class="grp">資源班老師</div>`+
-    D.teachers.filter(x=>x.role==='資源班').map(x=>item(x.id,x.name,x.off.length,'')).join('')+`<div class="grp">其他老師</div>`+
-    D.teachers.filter(x=>x.role!=='資源班').map(x=>item(x.id,x.name,x.off.length,x.role==='普通班'?'':x.role)).join('')+`</div><div>
-  <h3>${esc(t?t.name:'全校共同不排')}</h3><p class="note">${t?'目前有 '+a.length+' 格不排課。格子裡的字是他現在已經排到的課。':'例如週會、班會、社團：這些時段所有組別都不排。'}</p>
+  const T=offTarget(),a=T.arr,items=offNav(),ti=T.tea?M.tIdx[T.tea.id]:-1,occ=ti>=0?occOf(ti):{};
+  const up=new Set((T.up||[]).flatMap(offKeys)),grps=['全校','年級','學生群組','班級與個人','資源班老師','其他老師'];
+  const cls=[...new Set(D.students.map(s=>String(s.cls)))].filter(Boolean).sort();
+  const btn=o=>`<button class="${offSel===o.k?'on':''}" data-k="${esc(o.k)}" onclick="offSel=this.dataset.k;render()"><span>${esc(o.name)}${o.sub?` <small>${esc(o.sub)}</small>`:''}</span><small>${o.n?o.n+' 格':''}</small></button>`;
+  const extra={'學生群組':`<button class="add" onclick="addSet()">＋ 新增群組（例：技藝班）</button>`,
+    '班級與個人':`<select onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 選一個班級…</option>${cls.map(c=>`<option value="c:${esc(c)}">${esc(c)} 班</option>`).join('')}</select>
+      <select onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 選一位學生…</option>${D.students.slice().sort(sortStu).map(s=>`<option value="s:${esc(s.id)}">${esc(stuLabel(s))}</option>`).join('')}</select>`,
+    '資源班老師':`<button class="add" onclick="addTeacherHere('資源班')">＋ 新增資源班老師</button>`,'其他老師':`<button class="add" onclick="addTeacherHere('普通班')">＋ 新增原班任課老師</button>`};
+  let h=`<p class="guide">不排課的時段分成幾層，排課時會<b>全部疊在一起</b>避開：全校 → 年級（各年級社團時間不同就分開點）→ 學生群組（例：技藝班）→ 班級或個人 → 老師。點格子切換，點<b>星期</b>或<b>節次</b>可以整排切換。</p>
+  <select class="tsel" onchange="offSel=this.value;render()">${grps.map(g=>{const li=items.filter(o=>o.grp===g);return li.length?`<optgroup label="${g}">${li.map(o=>`<option value="${esc(o.k)}"${o.k===offSel?' selected':''}>${esc(o.name)}${o.n?'（'+o.n+' 格）':''}</option>`).join('')}</optgroup>`:'';}).join('')}</select>
+  <div class="offadd"><button class="b sm" onclick="addSet()">＋ 學生群組</button><button class="b sm" onclick="addTeacherHere('資源班')">＋ 資源班老師</button><button class="b sm" onclick="addTeacherHere('普通班')">＋ 任課老師</button>${extra['班級與個人']}</div>
+  <div class="offwrap"><div class="tlist">`+grps.map(g=>`<div class="grp">${g}</div>`+items.filter(o=>o.grp===g).map(btn).join('')+(extra[g]||'')).join('')+`</div><div class="offmain">`;
+  if(T.set)h+=`<div class="bar"><input type="text" class="nmin" value="${esc(T.set.name)}" onchange="offTarget().set.name=this.value.trim()||'學生群組';changed();render()"><button class="b sm" onclick="pickSet()">選學生（${T.set.students.length} 人）</button><button class="b sm danger" onclick="delSet()">刪除群組</button></div>
+    <p class="note">${esc(T.set.students.map(id=>D.students.find(s=>s.id===id)).filter(Boolean).sort(sortStu).map(stuLabel).join('、'))||'還沒有學生，請按「選學生」。'}</p>`;
+  else if(T.tea)h+=`<div class="bar"><input type="text" class="nmin" value="${esc(T.tea.name)}" onchange="offTarget().tea.name=this.value.trim()||'老師';changed();render()"><select onchange="offTarget().tea.role=this.value;changed();render()">${ROLES.map(r=>`<option${r===T.tea.role?' selected':''}>${r}</option>`).join('')}</select></div>`;
+  else h+=`<h3>${esc(T.name)}</h3>`;
+  h+=`<p class="note">${esc(T.hint)}${a.length?'　目前 '+a.length+' 格。':''}${up.size?'　灰色斜線是上一層已經不排的時段。':''}</p>
   <div class="scroll"><table class="grid"><tr><th onclick="togOff(allKeys())">全部</th>`+DAYS.map((d,di)=>`<th onclick="togOff(dayKeys(${di}))">週${d}</th>`).join('')+'</tr>';
-  D.periods.forEach((p,pi)=>{h+=`<tr><th onclick="togOff(perKeys(${pi}))">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const k=di+'-'+p.id,on=a.includes(k),g=t&&D.blocked.includes(k);
-    return `<td class="${on?'x':g?'g':''}" data-k="${esc(k)}" onclick="togOff([this.dataset.k])">${on?'不排':esc((occ[di*M.NP+pi]||[]).join(' '))}</td>`;}).join('')+'</tr>';});
-  h+=`</table></div>${t?`<div class="bar" style="margin-top:10px"><span class="note" style="margin:0">備註</span><input type="text" style="width:340px;max-width:60vw" value="${esc(t.note)}" onchange="setTea(${D.teachers.indexOf(t)},'note',this.value)"><button class="b sm" onclick="clearOff()">清空</button></div>`:''}</div></div>`;
+  D.periods.forEach((p,pi)=>{h+=`<tr><th onclick="togOff(perKeys(${pi}))">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const k=di+'-'+p.id,on=a.includes(k);
+    return `<td class="${on?'x':up.has(k)?'g':''}" data-k="${esc(k)}" onclick="togOff([this.dataset.k])">${on?'不排':esc((occ[di*M.NP+pi]||[]).join(' '))}</td>`;}).join('')+'</tr>';});
+  const src=items.filter(o=>o.n&&o.k!==offSel);
+  h+=`</table></div><div class="bar" style="margin-top:12px">${src.length?`<select onchange="copyOff(this.value);this.value=''"><option value="">複製另一個的時段過來…</option>${src.map(o=>`<option value="${esc(o.k)}">${esc(o.name)}（${o.n} 格）</option>`).join('')}</select>`:''}
+    <button class="b sm" onclick="clearOff()">清空</button>${T.tea?`<input type="text" style="flex:1;min-width:160px" placeholder="備註，例：兼課只有週一、二到校" value="${esc(T.tea.note)}" onchange="offTarget().tea.note=this.value;save()">`:T.set?`<input type="text" style="flex:1;min-width:160px" placeholder="備註" value="${esc(T.set.note||'')}" onchange="offTarget().set.note=this.value;save()">`:''}</div></div></div>`;
   $('page').innerHTML=h;
 }
 function dayKeys(d){return D.periods.map(p=>d+'-'+p.id);}
 function perKeys(p){return DAYS.map((x,d)=>d+'-'+D.periods[p].id);}
 function allKeys(){return DAYS.flatMap((x,d)=>dayKeys(d));}
-function togOff(keys){const a=offArr(),all=keys.every(k=>a.includes(k));
+function togOff(keys){const a=offTarget().arr,all=keys.every(k=>a.includes(k));
   keys.forEach(k=>{const i=a.indexOf(k);if(all)a.splice(i,1);else if(i<0)a.push(k);});changed();render();}
-function clearOff(){const a=offArr();a.length=0;changed();render();}
+function clearOff(){offTarget().arr.length=0;changed();render();}
+function copyOff(k){if(!k)return;const a=offTarget().arr;offKeys(k).forEach(x=>{if(!a.includes(x))a.push(x);});changed();render();}
+function addSet(){const x={id:uid('x'),name:'技藝班',students:[],off:[],note:''};D.sets.push(x);offSel='x:'+x.id;changed();render();}
+function delSet(){const x=offTarget().set;if(!x||!confirm('確定刪除「'+x.name+'」這個群組？'))return;D.sets=D.sets.filter(o=>o!==x);offSel='*';changed();render();}
+function pickSet(){const x=offTarget().set;if(!x)return;pickList(x.name+'的學生',x.students,{});}
+function addTeacherHere(role){const t={id:uid('t'),name:role==='資源班'?'新老師':'新任課老師',role,off:[],note:''};D.teachers.push(t);offSel='t:'+t.id;changed();render();toast('已新增，請在上方改成老師的名字');}
+// 共用的「勾選學生」對話框：arr 是要增減的學生 id 陣列
+function pickList(title,arr,same){
+  pickList.arr=arr;const by={};D.students.slice().sort(sortStu).forEach(s=>{(by[s.cls]=by[s.cls]||[]).push(s);});
+  let h=`<h3>${esc(title)}</h3><div class="pick">`;
+  for(const c in by)h+=`<div class="cl">${esc(c)}</div>`+by[c].map(s=>`<label><input type="checkbox"${arr.includes(s.id)?' checked':''} data-id="${esc(s.id)}" onchange="pickTog(this.dataset.id)">${esc(s.name)}${same[s.id]?` <small>已在${esc(same[s.id])}</small>`:''}</label>`).join('');
+  if(!D.students.length)h+='<p class="note">名冊還沒有學生。</p>';
+  openDlg(h+`</div><div class="bar" style="margin:0"><button class="b pri" onclick="closeDlg()">完成</button></div>`,render);}
+function pickTog(id){const a=pickList.arr,k=a.indexOf(id);if(k>=0)a.splice(k,1);else a.push(id);changed();}
+
+/* ───── 排課｜任課老師（班級 × 科目）───── */
+function renderTeach(){
+  const need={},subs=[];M.G.forEach(g=>{if(!g.pull||!g.per)return;if(!subs.includes(g.subject))subs.push(g.subject);g.cls.forEach(c=>{(need[c]=need[c]||{})[g.subject]=1;});});
+  const cls=Object.keys(need).sort(),tot=cls.reduce((n,c)=>n+Object.keys(need[c]).length,0),done=cls.reduce((n,c)=>n+Object.keys(need[c]).filter(sj=>D.classSubj[c+'|'+sj]).length,0);
+  let h=`<p class="guide">抽離課要和原班同一科同時上，所以要知道<b>每個班這一科是哪位老師</b>，他不排課的時段才會被算進去。直接打老師的名字就好：名冊裡沒有的會自動新增，之後再到「不排課時段」點他的時間。</p>`;
+  if(!cls.length){$('page').innerHTML=h+`<div class="probs">還沒有抽離課的組別。請先到「分組」建立組別、放進學生，這裡就會列出需要填的班級與科目。</div>`;return;}
+  h+=`<div class="bar"><span class="stat">已填 <b>${done}</b> / ${tot} 格</span></div><datalist id="tnames">${D.teachers.filter(t=>t.role!=='資源班').map(t=>`<option value="${esc(t.name)}">`).join('')}</datalist>
+  <div class="scroll"><table class="ed"><tr><th>班級</th>${subs.map(s=>`<th>${esc(s)}</th>`).join('')}</tr>`+
+  cls.map(c=>`<tr><td><b>${esc(c)}</b></td>`+subs.map(sj=>need[c][sj]?`<td><input type="text" class="w5${D.classSubj[c+'|'+sj]?'':' miss'}" list="tnames" data-k="${esc(c+'|'+sj)}" value="${esc((D.teachers.find(t=>t.id===D.classSubj[c+'|'+sj])||{}).name||'')}" placeholder="老師姓名" onchange="setCSName(this)"></td>`:'<td class="dim">不需要</td>').join('')+'</tr>').join('')+`</table></div>`;
+  $('page').innerHTML=h;
+}
+function setCSName(el){const k=el.dataset.k,name=el.value.trim();
+  if(!name){delete D.classSubj[k];changed();render();return;}
+  let t=D.teachers.find(x=>x.name===name);if(!t){t={id:uid('t'),name,role:'普通班',off:[],note:''};D.teachers.push(t);toast('已把 '+name+' 加進老師名冊');}
+  D.classSubj[k]=t.id;changed();
+  const all=[...document.querySelectorAll('#page input[data-k]')],i=all.indexOf(el);render();const nx=document.querySelectorAll('#page input[data-k]')[i+1];if(nx)nx.focus();}
+
+/* ───── 排課｜貼上分組表 ───── */
+function pasteGroups(){openDlg(`<h3>貼上分組表</h3><p class="note">從 Excel 或 Google 試算表複製整張分組表貼上。每位學生一格「班級-座號姓名」（例 <b>701-13王小明</b>），後面幾格依序是各科的組別代號（例 7C、7B、空白＝不抽）。一列可以並排好幾位學生。</p>
+  <div class="bar"><span class="note" style="margin:0">各欄科目</span><input type="text" id="pgSubj" style="flex:1;min-width:0" value="國文,英文,數學,特需"></div>
+  <div class="bar"><span class="note" style="margin:0">每週節數</span><input type="text" id="pgPer" style="flex:1;min-width:0" value="5,3,4,1"></div>
+  <textarea id="pasteBox" placeholder="701-13王小明&#9;7C&#9;7C&#9;7C&#10;702-03陳小華&#9;7B&#9;7B&#9;7A"></textarea>
+  <p class="note">請從試算表複製（欄位之間是 Tab），空白的格子才對得上科目。直接從 PDF 複製會把空格吃掉。</p>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteGroupsOk()">建立學生與組別</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+function pasteGroupsOk(){
+  const subj=$('pgSubj').value.split(/[,，、\s]+/).filter(Boolean),per=$('pgPer').value.split(/[,，、\s]+/).map(Number),RE=/^(\d{3,4})\s*[-－–]\s*(\d{1,2})?\s*(\S.*)$/;
+  let nS=0,nG=0,nM=0,bad=0;
+  $('pasteBox').value.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const cells=line.includes('\t')?line.split('\t'):line.trim().split(/\s+/);let cur=null,col=0,any=false;
+    cells.forEach(c=>{c=c.trim();const m=c.match(RE);
+      if(m){any=true;const cls=m[1],seat=m[2]?String(+m[2]).padStart(2,'0'):'',name=m[3].trim();
+        cur=D.students.find(s=>String(s.cls)===cls&&((seat&&s.seat&&+s.seat===+seat)||s.name===name));
+        if(!cur){cur={id:uid('s'),cls,seat,name,caseMgr:'',note:''};D.students.push(cur);nS++;}col=0;return;}
+      if(!cur)return;const sj=subj[col],i=col;col++;if(!c||!sj)return;
+      const gname=c+sj;let g=D.groups.find(x=>x.name===gname);
+      if(!g){g={id:uid('g'),name:gname,subject:sj,teacher:'',per:per[i]>0?per[i]:3,students:[],mode:'抽離',room:'',on:true};D.groups.push(g);nG++;}
+      if(!g.students.includes(cur.id)){g.students.push(cur.id);nM++;}});
+    if(!any)bad++;});
+  D=normalize(D);changed();closeDlg();render();toast('新增 '+nS+' 位學生、'+nG+' 組，放進組別 '+nM+' 人次'+(bad?'；略過 '+bad+' 行':''));}
 
 /* ───── 排課｜排課板 ───── */
 function chipHtml(l,errs){const g=M.G[M.L[l].g],r=ROOM[l],names=g.stu.map(i=>stuLabel(D.students[i])).join('、');
@@ -231,19 +324,19 @@ function renderBoard(){
   const out=[];evaluate(M,ST.slot,out);
   const errs={},msg=new Map();out.forEach(o=>{if(o.k!=='un')errs[o.l]=(errs[o.l]?errs[o.l]+'\n':'')+o.m;msg.set(o.m,(msg.get(o.m)||0)+1);});
   const warns=M.G.filter(g=>g.per).flatMap(g=>g.warn.map(w=>g.name+'：'+w));
-  const placed=[...ST.slot].filter(s=>s>=0).length,total=M.L.length,ti=view?M.tIdx[view]:-1;
-  const show=l=>{if(ti==null||ti<0)return true;const g=M.G[M.L[l].g];return g.t===ti||g.locks.some(k=>k.t===ti);};
+  const placed=[...ST.slot].filter(s=>s>=0).length,total=M.L.length,gv=view.slice(0,2)==='g:'?+view.slice(2):0,ti=view&&!gv?M.tIdx[view]:-1;
+  const show=shownL,gOff=gv?new Set(D.offBy[view]||[]):null,gname=gv?GRADE[gv]:'';
   const at={},un=[];M.L.forEach((x,l)=>{if(!show(l))return;const s=ST.slot[l];if(s<0)un.push(l);else(at[s]=at[s]||[]).push(l);});
   let h=`<p class="guide">按<b>一鍵排課</b>，系統會避開所有人的不排課時段，並確認老師、學生、教室都不撞。排完可以直接拖曳調整（或點一下組別、再點要放的格子）；動過的會<b>固定</b>住，再按一次排課時不會被移走。</p>
-  <div class="bar"><button class="b pri big" onclick="runSolve(false)">一鍵排課</button><button class="b" onclick="runSolve(true)">全部重排</button><button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><button class="b danger" onclick="clearAll()">清空排法</button>
+  <div class="bar"><button class="b pri big" onclick="runSolve(false)">${gv?'排'+gname:'一鍵排課'}</button><button class="b" onclick="runSolve(true)">${gv?gname+'重排':'全部重排'}</button><button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><button class="b danger" onclick="clearAll()">清空排法</button>
     <span class="stat">已排 <b>${placed}</b> / ${total} 節</span><span class="stat${out.length?' bad':''}">問題 <b>${out.length}</b></span><span class="grow"></span>
-    <select onchange="view=this.value;selL=-1;render()"><option value="">看全部</option>${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select></div>`;
+    <select onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select></div>`;
   if(!total)h+=`<div class="probs">還沒有要排的組，請先到「分組」建立。</div>`;
   else if(!out.length&&!warns.length&&placed===total)h+=`<div class="probs ok">全部排好了，沒有衝突。</div>`;
   else if(out.length||warns.length)h+=`<div class="probs">`+warns.map(w=>`<div>${esc(w)}</div>`).join('')+[...msg].map(([m,n])=>`<div class="err">${esc(m)}${n>1?'（'+n+' 節）':''}</div>`).join('')+`</div>`;
   h+=`<div class="tray" data-s="-1">${un.length?'還沒排：'+un.map(l=>chipHtml(l,errs)).join(''):(placed<total?'':'拖到這裡可以把一節拿下來')}</div>
   <div class="scroll"><table class="board"><tr><th class="ph2"></th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`;
-  D.periods.forEach((p,pi)=>{h+=`<tr class="${p.extra?'ex':''}"><th class="ph2">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const s=di*M.NP+pi,blk=M.blocked[s]||(ti>=0&&M.off[ti][s]);
+  D.periods.forEach((p,pi)=>{h+=`<tr class="${p.extra?'ex':''}"><th class="ph2">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const s=di*M.NP+pi,blk=M.blocked[s]||(ti>=0&&M.off[ti][s])||(gOff&&gOff.has(M.s2key(s)));
     return `<td class="${blk?'blk':''}" data-s="${s}">${(at[s]||[]).sort((a,b)=>colorOf(M.G[M.L[a].g])-colorOf(M.G[M.L[b].g])).map(l=>chipHtml(l,errs)).join('')}</td>`;}).join('')+'</tr>';});
   h+=`</table></div><div class="legend">`+M.rts.map((t,i)=>`<span class="chip c${i%6}">${esc(M.T[t].name)}</span>`).join('')+`　粗框＝已固定（連點兩下可切換）　斜線＝不排課　紅框＝有衝突，滑鼠停在上面看原因</div>`;
   const rows=M.G.filter(g=>g.per).map(g=>({g,slack:g.alist.length-g.per})).sort((a,b)=>a.slack-b.slack);
@@ -269,12 +362,14 @@ function moveLesson(l,s){if(ST.slot[l]===s){selL=-1;render();return;}pushUndo();
     if(c){const l=+c.dataset.l;selL=selL===l?-1:l;render();return;}
     const td=e.target.closest('[data-s]');if(td&&selL>=0)moveLesson(selL,+td.dataset.s);});
 })();
+// 目前的檢視（某個年級或某位老師）包含哪些節
+function shownL(l){if(!view)return true;const g=M.G[M.L[l].g];if(view.slice(0,2)==='g:')return g.grades.includes(+view.slice(2));const ti=M.tIdx[view];return ti==null||g.t===ti||g.locks.some(k=>k.t===ti);}
 function runSolve(all){
   if(!M.L.length){toast('還沒有要排的組，請先到「分組」建立');return;}
-  if(all&&ST.pin.some(x=>x)&&!confirm('全部重排會連已經固定的也一起重排，確定嗎？'))return;
+  const part=view.slice(0,2)==='g:';if(all&&ST.pin.some((x,l)=>x&&(!part||shownL(l)))&&!confirm('重排會連已經固定的也一起重排，確定嗎？'))return;
   pushUndo();$('busy').style.display='flex';
-  setTimeout(()=>{try{if(all)ST.pin.fill(0);D.settings.seed=(D.settings.seed||1)+1;const R=solve(M,ST,{seed:D.settings.seed});ST={slot:R.slot,pin:R.pin};selL=-1;commit();
-      toast(R.viol?'排好了，但還有 '+R.viol+' 個問題排不開，請看上方說明':'排好了：'+M.L.length+' 節全部排入，沒有衝突');}
+  setTimeout(()=>{try{if(all)ST.pin.forEach((x,l)=>{if(!part||shownL(l))ST.pin[l]=0;});D.settings.seed=(D.settings.seed||1)+1;const R=solve(M,ST,{seed:D.settings.seed,only:part?shownL:null});ST={slot:R.slot,pin:R.pin};selL=-1;commit();
+      const n=part?M.L.filter((x,l)=>shownL(l)).length:M.L.length;const o2=[];evaluate(M,ST.slot,o2);const v=o2.filter(o=>!part||shownL(o.l)).length;toast(v?'排好了，但還有 '+v+' 個問題排不開，請看上方說明':'排好了：'+(part?GRADE[+view.slice(2)]+' ':'')+n+' 節全部排入，沒有衝突');}
     finally{$('busy').style.display='none';}},40);
 }
 function undo(){if(!undoStack.length){toast('沒有可以復原的動作');return;}D.assign=JSON.parse(undoStack.pop());ST=toState(M,D);selL=-1;commit();}
@@ -285,7 +380,7 @@ function clearAll(){if(!confirm('確定清空目前的排法？（可以按「�
 function slotsText(list){const by={};list.forEach(s=>{const d=Math.floor(s/M.NP);(by[d]=by[d]||[]).push(M.P[s%M.NP].name);});
   return Object.keys(by).sort().map(d=>'週'+DAYS[d]+' '+by[d].join('、')).join('；');}
 function renderOut(){
-  const modes=[['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['student','學生抽離一覽'],['group','組別總表']];
+  const modes=[['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['homeroom','給導師的班級抽離表'],['card','學生個人課表'],['student','學生抽離一覽'],['group','組別總表']];
   const placed=[...ST.slot].filter(s=>s>=0).length;
   let h=`<p class="guide">排好之後，在這裡印出或複製各種表。<b>鎖課表</b>是給教務處的：列出每個班哪幾節必須排哪一科，原班才會和資源班同時上同一科。</p>
   <div class="bar">`+modes.map(([k,n])=>`<button class="b${outMode===k?' pri':''}" onclick="outMode='${k}';render()">${n}</button>`).join('')+`<span class="grow"></span><button class="b" onclick="copyOut()">複製</button><button class="b" onclick="window.print()">列印</button></div>`;
@@ -300,6 +395,14 @@ function renderOut(){
     b=`<div class="pg"><h2>${T}｜資源班抽離課鎖課表</h2><table class="out"><tr><th>班級</th><th>科目</th><th>任課老師</th><th>請排這一科的節次</th><th>節數</th><th>資源班組別</th></tr>`+
       lockTable(M,ST.slot).map(r=>`<tr><td class="c">${esc(r.cls)}</td><td class="c">${esc(r.subject)}</td><td>${esc(r.teacher)}</td><td>${esc(slotsText(r.slots))}</td><td class="c">${r.slots.length}</td><td>${esc(r.groups.join('、'))}</td></tr>`).join('')+
       `</table><p class="note">外加課不占原班時間，沒有列在這張表。</p></div>`;
+  }else if(outMode==='homeroom'||outMode==='card'){
+    const of={};M.L.forEach((x,l)=>{const s=ST.slot[l],g=M.G[x.g];if(s<0)return;g.stu.forEach(i=>{(of[i]=of[i]||{})[s]={g,l};});});
+    const list=D.students.map((s,i)=>({s,i})).filter(o=>of[o.i]).sort((a,b2)=>sortStu(a.s,b2.s));
+    const cell=o=>o?`<b>${esc(o.g.subject)}</b><br><small>${esc(o.g.name)}${ROOM[o.l]>=0?'・'+esc(D.rooms[ROOM[o.l]].name):''}</small>`:'';
+    if(outMode==='card')b='<div class="cardsheet2">'+list.map(({s,i})=>`<div class="tcard"><h2>${esc(s.cls)} 班 ${esc(s.seat)} 號　${esc(s.name)}｜資源班課表</h2><table class="out"><tr><th style="width:70px">節次</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
+      D.periods.map((p,pi)=>DAYS.some((d,di)=>of[i][di*M.NP+pi])?`<tr><td class="c">${esc(p.name)}<br><small>${esc(p.start)}</small></td>`+DAYS.map((d,di)=>`<td class="c">${cell(of[i][di*M.NP+pi])}</td>`).join('')+'</tr>':'').join('')+`</table><p class="note">表上的節次請到資源班上課，其餘時間在原班。${esc(D.title||'')}</p></div>`).join('')+'</div>';
+    else b=[...new Set(list.map(o=>String(o.s.cls)))].map(c=>`<div class="pg"><h2>${T}｜${esc(c)} 班 資源班抽離表</h2><table class="out"><tr><th>座號</th><th>姓名</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
+      list.filter(o=>String(o.s.cls)===c).map(({s,i})=>`<tr><td class="c">${esc(s.seat)}</td><td>${esc(s.name)}</td>`+DAYS.map((d,di)=>'<td>'+Object.keys(of[i]).map(Number).filter(x=>Math.floor(x/M.NP)===di).sort((a,b2)=>a-b2).map(x=>esc(M.P[x%M.NP].name+' '+of[i][x].g.subject)).join('<br>')+'</td>').join('')+'</tr>').join('')+`</table><p class="note">以上節次學生到資源班上課，請導師協助提醒。</p></div>`).join('');
   }else if(outMode==='student'){
     const of={};M.L.forEach((x,l)=>{const s=ST.slot[l],g=M.G[x.g];if(s<0)return;g.stu.forEach(i=>{(of[i]=of[i]||[]).push({s,g});});});
     b=`<div class="pg"><h2>${T}｜學生抽離一覽</h2><table class="out"><tr><th>班級</th><th>座號</th><th>姓名</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}<th>每週</th></tr>`+

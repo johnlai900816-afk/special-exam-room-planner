@@ -61,20 +61,24 @@ function defaultData(){
       Gp('g9','九英','英文','r2',3,ids(g9,[1,7])),
       Gp('g10','社會技巧','社會技巧','r1',1,[g7[1].id,g7[6].id,g8[2].id,g9[5].id],'外加')
     ],
-    blocked:['4-6','4-7'],
+    blocked:['4-7'],
+    offBy:{'g:7':['4-6'],'g:8':['4-6'],'g:9':['3-6']},
+    sets:[{id:'x1',name:'技藝班',students:[g9[3].id,g9[6].id],off:['1-5','1-6','1-7'],note:'週二下午到合作學校上課'}],
     assign:{},
     settings:{regClash:true,seed:1}
   };
 }
 
 /* 空白的一份：只留作息，其餘清空 */
-function emptyData(){const B=defaultData();return Object.assign(B,{title:'',students:[],teachers:[],groups:[],classSubj:{},blocked:[],assign:{},rooms:[{id:'A',name:'資源教室一'}]});}
+function emptyData(){const B=defaultData();return Object.assign(B,{title:'',students:[],teachers:[],groups:[],classSubj:{},blocked:[],offBy:{},sets:[],assign:{},rooms:[{id:'A',name:'資源教室一'}]});}
 
 function normalize(D){
   const B=defaultData();
   if(!D||typeof D!=='object')return B;
   ['periods','students','teachers','rooms','groups','blocked'].forEach(k=>{if(!Array.isArray(D[k]))D[k]=k==='periods'?B.periods:[];});
-  ['classSubj','assign','settings'].forEach(k=>{if(!D[k]||typeof D[k]!=='object')D[k]={};});
+  if(!Array.isArray(D.sets))D.sets=[];
+  D.sets.forEach(x=>{if(!Array.isArray(x.students))x.students=[];if(!Array.isArray(x.off))x.off=[];});
+  ['classSubj','assign','settings','offBy'].forEach(k=>{if(!D[k]||typeof D[k]!=='object')D[k]={};});
   if(D.settings.regClash==null)D.settings.regClash=true;
   if(!D.settings.seed)D.settings.seed=1;
   D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';});
@@ -82,6 +86,9 @@ function normalize(D){
   if(D.title==null)D.title='';
   return D;
 }
+
+const GRADE={7:'七年級',8:'八年級',9:'九年級',1:'一年級',2:'二年級',3:'三年級',4:'四年級',5:'五年級',6:'六年級'};
+function gradeOfCls(c){const g=parseInt(String(c).trim()[0],10);return isNaN(g)?0:g;}
 
 /* 把資料整理成求解器用的索引與「每一組可以排的時段」 */
 function compile(D){
@@ -93,6 +100,10 @@ function compile(D){
   const T=D.teachers,NT=T.length,tIdx={};T.forEach((t,i)=>{tIdx[t.id]=i;});
   const mark=list=>{const a=new Uint8Array(NS);(list||[]).forEach(k=>{const s=key2s(k);if(s>=0)a[s]=1;});return a;};
   const off=T.map(t=>mark(t.off)),blocked=mark(D.blocked);
+  // 學生這一邊的不排課：年級、班級、學生群組（例：技藝班）、個人，一層一層疊起來
+  const OB=D.offBy||{},layer={},lay=(k,label)=>{if(!(OB[k]&&OB[k].length))return null;return layer[k]||(layer[k]={label,arr:mark(OB[k])});};
+  const setsOf={};(D.sets||[]).forEach(x=>{if(!x.off||!x.off.length)return;const o={label:x.name||'學生群組',arr:mark(x.off)};(x.students||[]).forEach(id=>{(setsOf[id]=setsOf[id]||[]).push(o);});});
+  const stuOff=D.students.map(st=>{const c=String(st.cls),a=[lay('g:'+gradeOfCls(c),GRADE[gradeOfCls(c)]||''),lay('c:'+c,c+' 班'),lay('s:'+st.id,c+' '+st.name)].filter(Boolean);return a.concat(setsOf[st.id]||[]);});
   const NStu=D.students.length,sIdx={};D.students.forEach((s,i)=>{sIdx[s.id]=i;});
   const classes=[...new Set(D.students.map(s=>String(s.cls)))].sort(),cIdx={};classes.forEach((c,i)=>{cIdx[c]=i;});
   const subjects=[...new Set(D.groups.map(g=>g.subject))],jIdx={};subjects.forEach((c,i)=>{jIdx[c]=i;});
@@ -104,7 +115,8 @@ function compile(D){
     const pull=g.mode!=='外加',t=idxOf(tIdx,g.teacher);
     const cls=[...new Set(stu.map(i=>String(D.students[i].cls)))].sort();
     const locks=pull?cls.map(c=>({c:cIdx[c],cls:c,t:idxOf(tIdx,D.classSubj[c+'|'+g.subject])})):[];
-    const o={gi,ref:g,name:g.name||'（未命名）',subject:g.subject,j:jIdx[g.subject],t,stu,pull,cls,locks,room:idxOf(rIdx,g.room),
+    const soff=[...new Set(stu.flatMap(i=>stuOff[i]))],grades=[...new Set(cls.map(gradeOfCls))];
+    const o={gi,ref:g,name:g.name||'（未命名）',subject:g.subject,j:jIdx[g.subject],t,stu,pull,cls,locks,soff,grades,room:idxOf(rIdx,g.room),
       per:g.on===false?0:(+g.per||0),allowed:new Uint8Array(NS),alist:[],warn:[]};
     return o;
   });
@@ -132,6 +144,7 @@ function why(M,gi,s){
   if(g.pull&&p.extra)r.push(p.name+'只排外加課');
   if(!g.pull&&!p.extra)r.push('外加課只排在外加時段');
   if(M.blocked[s])r.push('全校共同不排');
+  g.soff.forEach(o=>{if(o.arr[s])r.push(o.label+'不排課');});
   if(g.t>=0&&M.off[g.t][s])r.push(M.T[g.t].name+'不排課');
   const seen={};
   g.locks.forEach(k=>{if(k.t>=0&&!seen[k.t]&&M.off[k.t][s]){seen[k.t]=1;r.push(M.T[k.t].name+'不排課');}});
@@ -176,7 +189,7 @@ function solve(M,S0,opt){
   opt=opt||{};const N=opt.iters||60000,RS=opt.restarts||4;
   const rnd=mulberry32(opt.seed||1),ri=n=>Math.floor(rnd()*n);
   const L=M.L,base=Int16Array.from(S0.slot),free=[];
-  for(let l=0;l<L.length;l++){if(S0.pin[l]&&base[l]>=0)continue;if(M.G[L[l].g].alist.length)free.push(l);else base[l]=-1;}
+  for(let l=0;l<L.length;l++){if(S0.pin[l]&&base[l]>=0)continue;if(opt.only&&!opt.only(l))continue;if(M.G[L[l].g].alist.length)free.push(l);else base[l]=-1;}
   if(!free.length){const o={slot:base,pin:S0.pin};o.cost=evaluate(M,base);o.viol=M.viol;return o;}
   let best=null,bestC=Infinity;
   for(let rs=0;rs<RS;rs++){
@@ -242,5 +255,5 @@ function lockTable(M,slot){
     .sort((a,b)=>a.cls.localeCompare(b.cls)||a.subject.localeCompare(b.subject));
 }
 
-const CORE={DAYS,ROLES,MODES,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+const CORE={DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;

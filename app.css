@@ -277,3 +277,42 @@ table.out td.bad{color:var(--bad);font-weight:700}
 .scard b{display:block;font-family:var(--serif);font-size:21px;letter-spacing:.06em;margin:2px 0 4px}
 .scard span{font-size:11px;color:#777}
 @media print{.pills,.flash,#camBox{display:none!important}.cardsheet{grid-template-columns:repeat(3,1fr);gap:8px}}
+
+/* 不排課時段：分層、手機用下拉選單 */
+.tsel{display:none;width:100%;padding:9px 10px!important;font-size:16px!important;margin-bottom:14px}
+.tlist select{margin:3px 6px;font-size:13px}
+.tlist .add{color:var(--acc-d)!important;font-size:13px}
+.offmain{flex:1;min-width:0}
+.nmin{font-family:var(--serif)!important;font-weight:700;font-size:17px!important;padding:5px 9px!important;width:220px;max-width:60vw}
+input.miss{border-color:#dcae62!important;background:var(--warn-l)!important}
+td.nw{white-space:nowrap}
+.cardsheet2{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:18px}
+.tcard{break-inside:avoid;border:1px solid #bbb;border-radius:8px;padding:12px 14px}
+.tcard h2{font-size:15px!important;text-align:left!important}
+.tcard table.out{margin-bottom:6px}
+@media (max-width:860px){
+  input[type=text],input[type=number],input[type=time],input[type=date],input[type=email],select,textarea{font-size:16px}
+  .tsel{display:block}.tlist{display:none}
+  .offwrap{display:block}
+  table.grid{width:100%;border-spacing:3px}table.grid td{width:auto;height:48px}table.grid th{padding:4px 2px;font-size:12.5px}
+  table.board{min-width:600px}table.board th.ph2{width:58px}
+  .bar{gap:6px}button.b{padding:8px 12px}button.b.sm{padding:6px 10px;font-size:13px}button.x{padding:8px 10px;font-size:17px}
+  .tiles{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}
+  #title{width:auto;flex:1;min-width:0;text-align:right}.ph h1{font-size:20px}
+  .scanin{width:100%}
+  .cardsheet2{grid-template-columns:1fr}
+  dialog{padding:18px 16px}
+}
+@media print{.cardsheet2{display:block}.tcard{margin-bottom:10px}}
+
+/* 觸控：iPhone 要求可點的元素是 pointer 游標，委派的點擊才會觸發 */
+table.board td,.tray,.tile,.todo li,table.grid td,table.grid th,table.out tr.click{cursor:pointer}
+@media (hover:none){.chip{cursor:pointer}}
+*{-webkit-tap-highlight-color:rgba(47,106,91,.15)}
+nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrollbar{display:none}
+.offadd{display:none}
+@media (max-width:860px){.offadd{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}.offadd select{flex:1;min-width:140px}
+  table.board td{height:54px}.chip{padding:5px 8px}}
+
+input[type=date]{font-family:inherit;font-size:13.5px;border:1px solid var(--line2);border-radius:8px;padding:5px 8px;background:#fff;color:var(--ink)}
+@media (max-width:860px){input[type=date]{font-size:16px}}
