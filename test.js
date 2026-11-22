@@ -107,5 +107,27 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(ms<15000,'實際規模在 15 秒內排完（'+ms+' ms）');
 }
 
+// 8. 可以自由調整的部分：單節指定教室、規則開關、老師跨角色衝堂
+{
+  const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M,D),{seed:1});
+  const S=C.toState(M,Object.assign(D,{assign:C.fromState(M,R)}));
+  const a=0,b=M.L.findIndex((x,l)=>l!==a&&R.slot[l]===R.slot[a]);
+  S.rfix[a]=2;M.lroom=S.rfix;let rooms=C.assignRooms(M,S.slot);
+  ok(rooms[a]===2,'單獨指定某一節的教室會照指定排');
+  if(b>=0){S.rfix[b]=2;const out=[];C.evaluate(M,S.slot,out);ok(out.some(o=>o.k==='room'),'兩節指定同一間教室、同一時段會被抓出來');S.rfix[b]=-1;}
+  D.assign=C.fromState(M,S);const S2=C.toState(C.compile(D),D);ok(S2.rfix[a]===2,'指定的教室會跟著存檔');
+  M.lroom=null;
+  // 資源班老師同時是某班的任課老師：兩邊撞在同一節要算衝堂
+  const D2=C.defaultData();D2.classSubj['701|國文']='r3';
+  const M2=C.compile(D2),S3=C.toState(M2,D2),g1=M2.G.findIndex(g=>g.name==='七國'),g2=M2.G.findIndex(g=>g.ref.teacher==='r3');
+  const l1=M2.L.findIndex(x=>x.g===g1),l2=M2.L.findIndex(x=>x.g===g2),sl=M2.key2s('1-3');
+  S3.slot[l1]=sl;S3.slot[l2]=sl;const o3=[];C.evaluate(M2,S3.slot,o3);
+  ok(o3.some(o=>o.k==='reg'&&o.m.includes('被鎖在原班')),'老師同一節既上資源班又被鎖在原班，會被抓出來');
+  // 規則數字可調：同一組一天最多 2 節時，不會因為一天兩節被扣分
+  const D3=C.defaultData();D3.settings.maxDay=2;const M3=C.compile(D3);ok(M3.maxDay===2&&C.compile(C.defaultData()).maxDay===1,'「同一組一天最多幾節」可以調整');
+  const D4=C.defaultData();D4.settings.roomCheck=false;D4.rooms=[D4.rooms[0]];const M4=C.compile(D4),R4=C.solve(M4,C.toState(M4,D4),{seed:1});
+  ok(R4.viol===0,'關掉教室數量檢查後，只有一間教室也排得出來');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

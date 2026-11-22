@@ -120,7 +120,9 @@ function compile(D){
       per:g.on===false?0:(+g.per||0),allowed:new Uint8Array(NS),alist:[],warn:[]};
     return o;
   });
-  const M={D,P,NP,NS,NT,NStu,NC:classes.length,NR,T,G,classes,subjects,off,blocked,strict,key2s,s2key,sn,tIdx,sIdx,cIdx,L:[],viol:0};
+  const ST_=D.settings||{},num=(v,d)=>(v===''||v==null||isNaN(+v))?d:+v;
+  const M={D,P,NP,NS,NT,NStu,NC:classes.length,NR,T,G,classes,subjects,off,blocked,strict,key2s,s2key,sn,tIdx,sIdx,cIdx,L:[],viol:0,
+    classClash:ST_.classClash!==false,roomCheck:ST_.roomCheck!==false,maxDay:Math.max(1,num(ST_.maxDay,1)),tRun:Math.max(1,num(ST_.tRun,3)),sDay:Math.max(1,num(ST_.sDay,3)),lroom:null};
   G.forEach(g=>{
     for(let s=0;s<NS;s++)if(!why(M,g.gi,s).length){g.allowed[s]=1;g.alist.push(s);}
     if(!g.per)return;
@@ -162,23 +164,25 @@ function evaluate(M,slot,out){
     if(s<0){bad('un',gi,l,-1,out&&(g.name+'還有節數沒排進去'));continue;}
     if(!g.allowed[s])bad('off',gi,l,s,out&&(M.sn(s)+'：'+g.name+'不能排在這裡（'+why(M,gi,s).join('、')+'）'));
     if(g.t>=0){const k=s*NT+g.t;if(tc[k])bad('teacher',gi,l,s,out&&(M.sn(s)+'：'+(tc[k]-1===gi?g.name+'有兩節排在同一格':M.T[g.t].name+'同時有兩組（'+G[tc[k]-1].name+'、'+g.name+'）')));else tc[k]=gi+1;}
+    if(g.t>=0&&M.strict&&rt[s*NT+g.t])bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[g.t].name+'這一節要上'+g.name+'，但他同時是 '+M.classes[rt[s*NT+g.t]-1]+' 的任課老師、被鎖在原班'));
     for(let a=0;a<g.stu.length;a++){const i=g.stu[a],k=s*NStu+i;
       if(sc[k]-1===gi)v++;else if(sc[k])bad('student',gi,l,s,out&&(M.sn(s)+'：'+M.D.students[i].cls+' '+M.D.students[i].name+'同時在兩組（'+G[sc[k]-1].name+'、'+g.name+'）'));else sc[k]=gi+1;}
     for(let a=0;a<g.locks.length;a++){const lk=g.locks[a],k=s*NC+lk.c,j=g.j+1;
-      if(cs[k]&&cs[k]!==j)bad('class',gi,l,s,out&&(M.sn(s)+'：'+lk.cls+' 同一節被要求上兩科（'+M.subjects[cs[k]-1]+'、'+g.subject+'）'));else cs[k]=j;
+      if(M.classClash&&cs[k]&&cs[k]!==j)bad('class',gi,l,s,out&&(M.sn(s)+'：'+lk.cls+' 同一節被要求上兩科（'+M.subjects[cs[k]-1]+'、'+g.subject+'）'));else cs[k]=j;
       if(M.strict&&lk.t>=0){const k2=s*NT+lk.t,c=lk.c+1;
+        if(tc[k2]&&!rt[k2])bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[lk.t].name+'這一節要上'+G[tc[k2]-1].name+'，但他同時是 '+lk.cls+' 的任課老師、被鎖在原班'));
         if(rt[k2]&&rt[k2]!==c)bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[lk.t].name+'同一節要在兩個班上課（'+M.classes[rt[k2]-1]+'、'+lk.cls+'）'));else rt[k2]=c;}}
-    if(NR>0){
-      if(g.room>=0){const k=s*NR+g.room;if(fr[k])bad('room',gi,l,s,out&&(M.sn(s)+'：'+M.D.rooms[g.room].name+'同時被兩組指定（'+G[fr[k]-1].name+'、'+g.name+'）'));else fr[k]=gi+1;}
+    if(NR>0&&M.roomCheck){const fx=M.lroom&&M.lroom[l]>=0&&M.lroom[l]<NR?M.lroom[l]:g.room;
+      if(fx>=0){const k=s*NR+fx;if(fr[k])bad('room',gi,l,s,out&&(M.sn(s)+'：'+M.D.rooms[fx].name+'同時被兩組指定（'+G[fr[k]-1].name+'、'+g.name+'）'));else fr[k]=gi+1;}
       if(++rc[s]>NR)bad('room',gi,l,s,out&&(M.sn(s)+'：教室不夠，同時有 '+rc[s]+' 組但只有 '+NR+' 間'));
     }
     gd[gi*5+((s/NP)|0)]++;
   }
-  for(let gi=0;gi<G.length;gi++)for(let d=0;d<5;d++){const c=gd[gi*5+d];if(c>1)soft+=(c-1)*4;}
+  for(let gi=0;gi<G.length;gi++)for(let d=0;d<5;d++){const c=gd[gi*5+d];if(c>M.maxDay)soft+=(c-M.maxDay)*4;}
   for(let a=0;a<M.rts.length;a++){const t=M.rts[a];let tot=0;const dc=[0,0,0,0,0];
-    for(let d=0;d<5;d++){let run=0;for(let p=0;p<NP;p++){if(tc[(d*NP+p)*NT+t]){dc[d]++;tot++;if(++run>3)soft+=2;}else run=0;}}
+    for(let d=0;d<5;d++){let run=0;for(let p=0;p<NP;p++){if(tc[(d*NP+p)*NT+t]){dc[d]++;tot++;if(++run>M.tRun)soft+=2;}else run=0;}}
     const avg=tot/5;for(let d=0;d<5;d++)soft+=(dc[d]-avg)*(dc[d]-avg)*0.4;}
-  for(let i=0;i<NStu;i++)for(let d=0;d<5;d++){let c=0;for(let p=0;p<NP;p++)if(sc[(d*NP+p)*NStu+i])c++;if(c>3)soft+=c-3;}
+  for(let i=0;i<NStu;i++)for(let d=0;d<5;d++){let c=0;for(let p=0;p<NP;p++)if(sc[(d*NP+p)*NStu+i])c++;if(c>M.sDay)soft+=c-M.sDay;}
   M.viol=v;return v*1000+soft;
 }
 
@@ -220,12 +224,13 @@ function solve(M,S0,opt){
 }
 
 function toState(M,D){
-  const n=M.L.length,S={slot:new Int16Array(n).fill(-1),pin:new Uint8Array(n)};
-  M.L.forEach((x,l)=>{const a=D.assign&&D.assign[M.G[x.g].ref.id],e=a&&a[x.k];if(!e||!e.s)return;
-    const s=M.key2s(e.s);if(s>=0){S.slot[l]=s;S.pin[l]=e.pin?1:0;}});
+  const n=M.L.length,S={slot:new Int16Array(n).fill(-1),pin:new Uint8Array(n),rfix:new Int16Array(n).fill(-1)};
+  M.L.forEach((x,l)=>{const a=D.assign&&D.assign[M.G[x.g].ref.id],e=a&&a[x.k];if(!e)return;
+    if(e.r){const r=D.rooms.findIndex(o=>o.id===e.r);if(r>=0)S.rfix[l]=r;}
+    if(!e.s)return;const s=M.key2s(e.s);if(s>=0){S.slot[l]=s;S.pin[l]=e.pin?1:0;}});
   return S;
 }
-function fromState(M,S){const a={};M.L.forEach((x,l)=>{const id=M.G[x.g].ref.id;(a[id]=a[id]||[])[x.k]={s:S.slot[l]>=0?M.s2key(S.slot[l]):'',pin:!!S.pin[l]};});return a;}
+function fromState(M,S){const a={};M.L.forEach((x,l)=>{const id=M.G[x.g].ref.id,e={s:S.slot[l]>=0?M.s2key(S.slot[l]):'',pin:!!S.pin[l]};if(S.rfix&&S.rfix[l]>=0&&M.D.rooms[S.rfix[l]])e.r=M.D.rooms[S.rfix[l]].id;(a[id]=a[id]||[])[x.k]=e;});return a;}
 
 /* 把 l 這一節放到 s 會不會多出違規 */
 function canPlace(M,slot,l,s){
@@ -239,7 +244,7 @@ function assignRooms(M,slot){
   const home={};M.rts.forEach((t,i)=>{home[t]=i%M.NR;});
   const by={};M.L.forEach((x,l)=>{if(slot[l]>=0)(by[slot[l]]=by[slot[l]]||[]).push(l);});
   for(const s in by){const used=new Uint8Array(M.NR),rest=[];
-    by[s].forEach(l=>{const g=M.G[M.L[l].g];if(g.room>=0&&!used[g.room]){used[g.room]=1;room[l]=g.room;}else rest.push(l);});
+    by[s].forEach(l=>{const g=M.G[M.L[l].g],fx=M.lroom&&M.lroom[l]>=0&&M.lroom[l]<M.NR?M.lroom[l]:g.room;if(fx>=0&&!used[fx]){used[fx]=1;room[l]=fx;}else rest.push(l);});
     rest.forEach(l=>{const g=M.G[M.L[l].g];let r=g.room>=0?-1:(home[g.t]!=null?home[g.t]:0);
       if(r<0||used[r]){r=-1;for(let i=0;i<M.NR;i++)if(!used[i]){r=i;break;}}
       if(r>=0){used[r]=1;room[l]=r;}});}

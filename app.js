@@ -9,7 +9,8 @@ function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);
 function localSave(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
 function save(){if(isRO()){clearTimeout(save.h);save.h=setTimeout(roRevert,0);return;}localSave();cloudPush();}
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>{t.style.display='none';},2600);}
-function rebuild(){M=compile(D);ST=toState(M,D);ROOM=assignRooms(M,ST.slot);selL=-1;}
+function setST(S){ST=S;if(!ST.rfix)ST.rfix=new Int16Array(M.L.length).fill(-1);M.lroom=ST.rfix;}
+function rebuild(){M=compile(D);setST(toState(M,D));ROOM=assignRooms(M,ST.slot);selL=-1;}
 function changed(){rebuild();D.assign=fromState(M,ST);save();}                                  // 名冊、分組、不排時段有改
 function commit(){D.assign=fromState(M,ST);ROOM=assignRooms(M,ST.slot);save();render();}        // 排法有改
 function pushUndo(){undoStack.push(JSON.stringify(D.assign));if(undoStack.length>40)undoStack.shift();}
@@ -118,9 +119,10 @@ function renderTea(){
   M.G.forEach(g=>g.locks.forEach(k=>{if(k.t>=0){const id=D.teachers[k.t].id;(use[id]=use[id]||[]).push(k.cls+g.subject);}}));
   let h=`<p class="guide">除了資源班老師，也要把<b>學生原班的任課老師</b>加進來，排課才知道哪些時段會卡到他們。資源班老師會自動成為段考的監考老師。</p>
   <div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><span class="stat">共 <b>${D.teachers.length}</b> 位</span></div>
+  <datalist id="roleList">${ROLES.map(r=>`<option value="${r}">`).join('')}</datalist><p class="note">身分可以自己打（例：專輔、巡迴）；只有「資源班」會被當成資源班老師與監考老師。</p>
   <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>相關的組別與班級</th><th>備註</th><th></th></tr>`;
   D.teachers.forEach((t,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(t.name)}" onchange="setTea(${i},'name',this.value)"></td>
-    <td><select onchange="setTea(${i},'role',this.value)">${ROLES.map(r=>`<option${r===t.role?' selected':''}>${r}</option>`).join('')}</select></td>
+    <td><input type="text" class="w3" list="roleList" value="${esc(t.role)}" onchange="setTea(${i},'role',this.value||'普通班')"></td>
     <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('sched','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
     <td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length||''}</td>
     <td class="dim">${esc([...new Set(use[t.id]||[])].join('、'))}</td>
@@ -135,9 +137,12 @@ function renderEnv(){
   <div class="scroll"><table class="ed"><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加時段</th><th></th></tr>`;
   D.periods.forEach((p,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(p.name)}" onchange="setPer(${i},'name',this.value)"></td>
     <td><input type="time" value="${esc(p.start)}" onchange="setPer(${i},'start',this.value)"></td><td><input type="time" value="${esc(p.end)}" onchange="setPer(${i},'end',this.value)"></td>
-    <td><input type="checkbox"${p.extra?' checked':''} onchange="setPer(${i},'extra',this.checked)"></td><td><button class="x" onclick="delPer(${i})">✕</button></td></tr>`;});
+    <td><input type="checkbox"${p.extra?' checked':''} onchange="setPer(${i},'extra',this.checked)"></td><td class="nw"><button class="b sm" title="往上移" onclick="movePer(${i})"${i?'':' disabled'}>↑</button><button class="x" onclick="delPer(${i})">✕</button></td></tr>`;});
   h+=`</table></div><div class="bar"><button class="b sm" onclick="D.periods.push({id:uid('p'),name:'新節次',start:'16:05',end:'16:50',extra:true});changed();render()">新增節次</button></div>
-  <h3>排課規則</h3><label><input type="checkbox"${D.settings.regClash?' checked':''} onchange="D.settings.regClash=this.checked;changed()"> 同一位普通班老師，同一節不能被兩個班同時鎖課（抽離課要原班同時上同一科時請保持開啟）</label>`;
+  <h3>排課規則</h3><p class="note">每一條都可以依學校的做法開關或改數字，改完回排課頁就會照新的規則檢查衝堂。</p>
+  <div class="rules">${[['regClash','同一位任課老師，同一節不能被兩個班同時鎖課（也包含資源班老師自己兼原班任課）',true],['classClash','同一個班，同一節不能被要求上兩科',true],['roomCheck','同一節的組數不能超過教室數，指定的教室不能重複',true]].map(([k,t])=>`<label><input type="checkbox"${D.settings[k]!==false?' checked':''} onchange="D.settings.${k}=this.checked;changed()"> ${t}</label>`).join('')}
+    ${[['maxDay','同一組一天最多排',1,'節（設成 2 就允許一天兩節或連堂）'],['tRun','資源班老師最多連續上',3,'節'],['sDay','學生一天最多被抽離',3,'節']].map(([k,a,d,b])=>`<label>${a} <input type="number" min="1" max="9" class="w2" value="${D.settings[k]>0?D.settings[k]:d}" onchange="D.settings.${k}=+this.value;changed()"> ${b}</label>`).join('')}
+    <label>上課超過 <input type="number" min="0" max="60" class="w2" value="${D.settings.grace>=0?D.settings.grace:5}" onchange="D.settings.grace=+this.value;save()"> 分鐘才到算遲到（簽到退用）</label></div>`;
   $('page').innerHTML=h;
 }
 function stuCard(i){const s=D.students[i],si=M.sIdx[s.id],E=examInfo(),sv=((E&&E.sv)||{})[s.id]||[],at=attStats('0000','9999','')[s.id];
@@ -160,6 +165,7 @@ function delTeacher(i){const t=D.teachers[i];if(!confirm('確定刪除 '+t.name+
   D.students.forEach(s=>{if(s.caseMgr===t.id)s.caseMgr='';});if(offSel==='t:'+t.id)offSel='*';if(view===t.id)view='';D.teachers.splice(i,1);changed();render();}
 function delRoom(i){const r=D.rooms[i];D.groups.forEach(g=>{if(g.room===r.id)g.room='';});D.rooms.splice(i,1);changed();render();}
 function setPer(i,k,v){D.periods[i][k]=v;changed();}
+function movePer(i){if(i<1)return;const a=D.periods;[a[i-1],a[i]]=[a[i],a[i-1]];changed();render();}
 function delPer(i){if(D.periods.length<2)return;if(!confirm('確定刪除「'+D.periods[i].name+'」？排在這一節的課會變成還沒排。'))return;D.periods.splice(i,1);changed();render();}
 function openDlg(html,done){$('dlgBody').innerHTML=html;dlgDone=done||null;if(!$('dlg').open)$('dlg').showModal();}
 function closeDlg(){$('dlg').close();}
@@ -261,10 +267,11 @@ function renderOff(){
 function dayKeys(d){return D.periods.map(p=>d+'-'+p.id);}
 function perKeys(p){return DAYS.map((x,d)=>d+'-'+D.periods[p].id);}
 function allKeys(){return DAYS.flatMap((x,d)=>dayKeys(d));}
+function offWarn(){const o=[];evaluate(M,ST.slot,o);const n=o.filter(x=>x.k==='off').length;if(n)toast('有 '+n+' 節已經排好的課落在不排課時段，請到排課頁調整');}
 function togOff(keys){const a=offTarget().arr,all=keys.every(k=>a.includes(k));
-  keys.forEach(k=>{const i=a.indexOf(k);if(all)a.splice(i,1);else if(i<0)a.push(k);});changed();render();}
+  keys.forEach(k=>{const i=a.indexOf(k);if(all)a.splice(i,1);else if(i<0)a.push(k);});changed();render();if(!all)offWarn();}
 function clearOff(){offTarget().arr.length=0;changed();render();}
-function copyOff(k){if(!k)return;const a=offTarget().arr;offKeys(k).forEach(x=>{if(!a.includes(x))a.push(x);});changed();render();}
+function copyOff(k){if(!k)return;const a=offTarget().arr;offKeys(k).forEach(x=>{if(!a.includes(x))a.push(x);});changed();render();offWarn();}
 function addSet(){const x={id:uid('x'),name:'技藝班',students:[],off:[],note:''};D.sets.push(x);offSel='x:'+x.id;changed();render();}
 function delSet(){const x=offTarget().set;if(!x||!confirm('確定刪除「'+x.name+'」這個群組？'))return;D.sets=D.sets.filter(o=>o!==x);offSel='*';changed();render();}
 function pickSet(){const x=offTarget().set;if(!x)return;pickList(x.name+'的學生',x.students,{});}
@@ -322,7 +329,8 @@ function chipHtml(l,errs){const g=M.G[M.L[l].g],r=ROOM[l],names=g.stu.map(i=>stu
   return `<span class="chip c${colorOf(g)}${ST.pin[l]?' pin':''}${errs[l]?' err':''}${selL===l?' sel':''}" draggable="true" data-l="${l}" title="${esc((g.t>=0?M.T[g.t].name+'｜':'')+names+(errs[l]?'\n'+errs[l]:''))}">${esc(g.name)}<small>${esc(ST.slot[l]>=0&&r>=0?D.rooms[r].name:(g.t>=0?M.T[g.t].name:''))}</small></span>`;}
 function renderBoard(){
   const out=[];evaluate(M,ST.slot,out);
-  const errs={},msg=new Map();out.forEach(o=>{if(o.k!=='un')errs[o.l]=(errs[o.l]?errs[o.l]+'\n':'')+o.m;msg.set(o.m,(msg.get(o.m)||0)+1);});
+  const errs={},msg=new Map(),cnt={};out.forEach(o=>{cnt[o.k]=(cnt[o.k]||0)+1;if(o.k!=='un')errs[o.l]=(errs[o.l]?errs[o.l]+'\n':'')+o.m;const e=msg.get(o.m);if(e)e.n++;else msg.set(o.m,{n:1,l:o.l,k:o.k});});
+  const CK=[['teacher','老師'],['student','學生'],['class','原班兩科'],['reg','任課老師'],['room','教室'],['off','不排課時段'],['un','還沒排']];
   const warns=M.G.filter(g=>g.per).flatMap(g=>g.warn.map(w=>g.name+'：'+w));
   const placed=[...ST.slot].filter(s=>s>=0).length,total=M.L.length,gv=view.slice(0,2)==='g:'?+view.slice(2):0,ti=view&&!gv?M.tIdx[view]:-1;
   const show=shownL,gOff=gv?new Set(D.offBy[view]||[]):null,gname=gv?GRADE[gv]:'';
@@ -333,7 +341,11 @@ function renderBoard(){
     <select onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select></div>`;
   if(!total)h+=`<div class="probs">還沒有要排的組，請先到「分組」建立。</div>`;
   else if(!out.length&&!warns.length&&placed===total)h+=`<div class="probs ok">全部排好了，沒有衝突。</div>`;
-  else if(out.length||warns.length)h+=`<div class="probs">`+warns.map(w=>`<div>${esc(w)}</div>`).join('')+[...msg].map(([m,n])=>`<div class="err">${esc(m)}${n>1?'（'+n+' 節）':''}</div>`).join('')+`</div>`;
+  else if(out.length||warns.length)h+=`<div class="probs">`+warns.map(w=>`<div>${esc(w)}</div>`).join('')+[...msg].map(([m,e])=>`<div class="err${e.k==='un'?'':' go'}" data-l="${e.l}" onclick="pickL(+this.dataset.l)">${esc(m)}${e.n>1?'（'+e.n+' 節）':''}</div>`).join('')+`</div>`;
+  if(total)h+=`<div class="chk"><b>衝堂檢查</b>`+CK.map(([k,n])=>`<span class="${cnt[k]?'bad':'ok'}">${n} ${cnt[k]||0}</span>`).join('')+`<small>每次調整都會重新檢查；點上面的紅字會跳到那一節</small></div>`;
+  if(selL>=0&&selL<M.L.length){const g=M.G[M.L[selL].g],s=ST.slot[selL],fx=ST.rfix[selL];
+    h+=`<div class="selbar"><b>${esc(g.name)}</b><span>${s>=0?esc(M.sn(s)):'還沒排'}</span><label>教室 <select onchange="setLRoom(this.value)"><option value="-1">自動${s>=0&&fx<0&&ROOM[selL]>=0?'（'+esc(D.rooms[ROOM[selL]].name)+'）':''}</option>${D.rooms.map((r,i)=>`<option value="${i}"${i===fx?' selected':''}>${esc(r.name)}</option>`).join('')}</select></label>
+      ${s>=0?`<button class="b sm" onclick="togPin()">${ST.pin[selL]?'解除固定':'固定在這一節'}</button><button class="b sm" onclick="moveLesson(selL,-1)">拿下來</button>`:''}<span class="note" style="margin:0">點要放的格子可以移動；綠色是不會衝堂的位置</span><span class="grow"></span><button class="b sm" onclick="selL=-1;render()">取消選取</button></div>`;}
   h+=`<div class="tray" data-s="-1">${un.length?'還沒排：'+un.map(l=>chipHtml(l,errs)).join(''):(placed<total?'':'拖到這裡可以把一節拿下來')}</div>
   <div class="scroll"><table class="board"><tr><th class="ph2"></th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`;
   D.periods.forEach((p,pi)=>{h+=`<tr class="${p.extra?'ex':''}"><th class="ph2">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const s=di*M.NP+pi,blk=M.blocked[s]||(ti>=0&&M.off[ti][s])||(gOff&&gOff.has(M.s2key(s)));
@@ -345,6 +357,9 @@ function renderBoard(){
   $('page').innerHTML=h;
   if(selL>=0)markCells(selL);
 }
+function pickL(l){if(!(l>=0))return;selL=l;if(view&&!shownL(l))view='';render();const c=document.querySelector('#page .chip[data-l="'+l+'"]');if(c&&c.scrollIntoView)c.scrollIntoView({block:'center',inline:'center'});}
+function setLRoom(v){if(selL<0)return;pushUndo();const l=selL;ST.rfix[l]=+v;commit();selL=l;render();}
+function togPin(){if(selL<0||ST.slot[selL]<0)return;pushUndo();const l=selL;ST.pin[l]=ST.pin[l]?0:1;commit();selL=l;render();}
 function markCells(l){document.querySelectorAll('#page td[data-s]').forEach(td=>{const s=+td.dataset.s;if(s===ST.slot[l])return;
   const ok=canPlace(M,ST.slot,l,s);td.classList.add(ok?'ok':'no');if(!ok){const r=why(M,M.L[l].g,s);td.title=r.length?r.join('、'):'放這裡會和別組衝突';}});}
 function clearMarks(){document.querySelectorAll('#page td[data-s]').forEach(td=>{td.classList.remove('ok','no','over');td.removeAttribute('title');});const t=document.querySelector('.tray');if(t)t.classList.remove('over');}
@@ -368,13 +383,13 @@ function runSolve(all){
   if(!M.L.length){toast('還沒有要排的組，請先到「分組」建立');return;}
   const part=view.slice(0,2)==='g:';if(all&&ST.pin.some((x,l)=>x&&(!part||shownL(l)))&&!confirm('重排會連已經固定的也一起重排，確定嗎？'))return;
   pushUndo();$('busy').style.display='flex';
-  setTimeout(()=>{try{if(all)ST.pin.forEach((x,l)=>{if(!part||shownL(l))ST.pin[l]=0;});D.settings.seed=(D.settings.seed||1)+1;const R=solve(M,ST,{seed:D.settings.seed,only:part?shownL:null});ST={slot:R.slot,pin:R.pin};selL=-1;commit();
+  setTimeout(()=>{try{if(all)ST.pin.forEach((x,l)=>{if(!part||shownL(l))ST.pin[l]=0;});D.settings.seed=(D.settings.seed||1)+1;const R=solve(M,ST,{seed:D.settings.seed,only:part?shownL:null});setST({slot:R.slot,pin:R.pin,rfix:ST.rfix});selL=-1;commit();
       const n=part?M.L.filter((x,l)=>shownL(l)).length:M.L.length;const o2=[];evaluate(M,ST.slot,o2);const v=o2.filter(o=>!part||shownL(o.l)).length;toast(v?'排好了，但還有 '+v+' 個問題排不開，請看上方說明':'排好了：'+(part?GRADE[+view.slice(2)]+' ':'')+n+' 節全部排入，沒有衝突');}
     finally{$('busy').style.display='none';}},40);
 }
-function undo(){if(!undoStack.length){toast('沒有可以復原的動作');return;}D.assign=JSON.parse(undoStack.pop());ST=toState(M,D);selL=-1;commit();}
+function undo(){if(!undoStack.length){toast('沒有可以復原的動作');return;}D.assign=JSON.parse(undoStack.pop());setST(toState(M,D));selL=-1;commit();}
 function unpinAll(){pushUndo();ST.pin.fill(0);commit();}
-function clearAll(){if(!confirm('確定清空目前的排法？（可以按「復原」救回來）'))return;pushUndo();ST.slot.fill(-1);ST.pin.fill(0);selL=-1;commit();}
+function clearAll(){if(!confirm('確定清空目前的排法？（可以按「復原」救回來）'))return;pushUndo();ST.slot.fill(-1);ST.pin.fill(0);ST.rfix.fill(-1);selL=-1;commit();}
 
 /* ───── 排課｜課表輸出 ───── */
 function slotsText(list){const by={};list.forEach(s=>{const d=Math.floor(s/M.NP);(by[d]=by[d]||[]).push(M.P[s%M.NP].name);});

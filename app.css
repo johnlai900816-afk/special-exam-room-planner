@@ -316,3 +316,16 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
 
 input[type=date]{font-family:inherit;font-size:13.5px;border:1px solid var(--line2);border-radius:8px;padding:5px 8px;background:#fff;color:var(--ink)}
 @media (max-width:860px){input[type=date]{font-size:16px}}
+
+/* 衝堂檢查列、單節編輯列 */
+.chk{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px;font-size:13px}
+.chk b{font-family:var(--serif);margin-right:4px}
+.chk span{border-radius:99px;padding:2px 10px;background:var(--ok-l);color:var(--ok)}
+.chk span.bad{background:var(--bad-l);color:var(--bad);font-weight:700}
+.chk small{color:var(--mute);margin-left:4px}
+.probs .err.go{cursor:pointer;text-decoration:underline;text-decoration-color:rgba(168,50,31,.3);text-underline-offset:3px}
+.selbar{position:sticky;top:0;z-index:4;display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:#fbf3dc;border:1px solid #e3cf95;border-radius:12px;padding:8px 12px;margin-bottom:12px;font-size:13.5px}
+.selbar b{font-family:var(--serif);font-size:16px}
+.rules{display:flex;flex-direction:column;gap:9px;max-width:760px}
+.rules label{line-height:1.6}
+button.b:disabled{opacity:.4;cursor:default}
