@@ -129,5 +129,27 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(R4.viol===0,'關掉教室數量檢查後，只有一間教室也排得出來');
 }
 
+// 9. 老師優先：先只有老師開的課（沒有學生）排出鐘點，再把學生編進課裡
+{
+  const D=C.defaultData();
+  D.groups.forEach(g=>{if(g.mode!=='外加'){g.students.forEach(id=>{const s=D.students.find(x=>x.id===id);if(!s.needs.includes(g.subject))s.needs.push(g.subject);});g.students=[];}});
+  C.normalize(D);const need0=C.needList(D).length;
+  ok(need0>0&&D.groups.filter(g=>g.mode!=='外加').every(g=>!g.students.length),'開課時可以先沒有學生（待安排 '+need0+' 人次）');
+  let M=C.compile(D),R=C.solve(M,C.toState(M,D),{seed:1});D.assign=C.fromState(M,R);
+  ok(R.viol===0,'只有老師與課的時候，老師的鐘點排得出來');
+  const g7=M.G.find(g=>g.name==='七國');ok(g7.alist.every(s=>M.s2key(s)!=='4-6'),'指定年級的課，還沒有學生也會避開該年級的社團時段');
+  const r=C.placeStudents(D);
+  ok(r.placed===need0&&!r.left.length&&!C.needList(D).length,'學生全部編進課裡（'+r.placed+' 人次）');
+  ok(D.groups.every(g=>g.students.every(id=>!g.grade||String(D.students.find(s=>s.id===id).cls)[0]===g.grade)),'學生只會進到同年級的課');
+  M=C.compile(D);R=C.solve(M,C.toState(M,D),{seed:2});
+  ok(R.viol===0,'編完學生再修正一次，沒有衝堂');
+  const s0=D.students[0];s0.needs.push('理化');ok(C.placeStudents(D).left.length===1,'沒有對應的課時會留在待安排，不會亂塞');
+  // AI 接口：題目不含姓名，回覆可以套回來
+  const txt=C.aiPrompt(D);ok(!D.students.some(s=>txt.includes(s.name))&&!D.teachers.some(t=>txt.includes(t.name)),'給 AI 的題目不含學生與老師姓名');
+  const D5=C.defaultData();D5.students[7].needs=['國文'];
+  const res=C.aiApply(D5,'好的：```json\n{"slots":{"C1":["0-1","1-2","9-9"]},"members":{"C1":["S1","S8"]}}\n```');
+  ok(D5.groups[0].students.join()==='s1,s8'&&D5.assign.g1.length===2&&res.bad===1,'AI 的回覆會套回課表，看不懂的時段會略過並回報');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

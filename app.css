@@ -329,3 +329,17 @@ input[type=date]{font-family:inherit;font-size:13.5px;border:1px solid var(--lin
 .rules{display:flex;flex-direction:column;gap:9px;max-width:760px}
 .rules label{line-height:1.6}
 button.b:disabled{opacity:.4;cursor:default}
+
+/* 老師開課、學生編組 */
+.tsec{margin-bottom:26px}
+.thd{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.thd>b{font-family:var(--serif);font-size:18px}
+.thd label{font-size:13.5px;color:var(--ink2);white-space:nowrap}
+.thd .hb{flex:1;min-width:110px;height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+.thd .hb i{display:block;height:100%;border-radius:99px;background:var(--acc)}
+.thd .hb i.over{background:var(--warn)}
+.thd .hs{font-size:13.5px;color:var(--ink2)}.thd .hs.warn{color:var(--warn)}.thd .hs.ok{color:var(--ok)}
+.need select{max-width:190px}
+.need select.pend{border-color:var(--warn);background:var(--warn-l);color:var(--warn)}
+.need select.none{color:var(--mute)}
+#aiBox{width:100%;min-height:150px}

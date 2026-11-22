@@ -26,12 +26,13 @@ function defaultData(){
     '謝小哲','洪小彤','郭小翔','邱小涵','曾小睿','廖小琪','賴小恩','徐小安','周小宸','葉小語','蘇小樂','莊小晴'];
   const classes=['701','702','801','802','901','902'],cm=['r1','r2','r3'];
   const students=names.map((name,i)=>{const cls=classes[Math.floor(i/4)],seat=String(3+(i%4)*7).padStart(2,'0');
-    return {id:'s'+(i+1),cls,seat,name,caseMgr:cm[i%3],note:''};});
+    return {id:'s'+(i+1),cls,seat,name,caseMgr:cm[i%3],note:'',needs:[]};});
   const inG=g=>students.filter(s=>s.cls[0]===String(g));
   const ids=(list,skip)=>list.filter((s,i)=>!(skip||[]).includes(i)).map(s=>s.id);
   const classSubj={};
   classes.forEach((c,i)=>{const odd=i%2===0;classSubj[c+'|國文']=odd?'k1':'k2';classSubj[c+'|數學']=odd?'m1':'m2';classSubj[c+'|英文']=odd?'e1':'e2';});
-  const Gp=(id,name,subject,teacher,per,stu,mode)=>({id,name,subject,teacher,per,students:stu,mode:mode||'抽離',room:'',on:true});
+  teachers[0].hours=12;teachers[1].hours=12;teachers[2].hours=14;
+  const Gp=(id,name,subject,teacher,per,stu,mode)=>({id,name,subject,teacher,per,students:stu,mode:mode||'抽離',room:'',on:true,grade:({七:'7',八:'8',九:'9'})[name[0]]||''});
   const g7=inG(7),g8=inG(8),g9=inG(9);
   return {
     v:1,
@@ -81,8 +82,9 @@ function normalize(D){
   ['classSubj','assign','settings','offBy'].forEach(k=>{if(!D[k]||typeof D[k]!=='object')D[k]={};});
   if(D.settings.regClash==null)D.settings.regClash=true;
   if(!D.settings.seed)D.settings.seed=1;
-  D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';});
-  D.groups.forEach(g=>{if(!Array.isArray(g.students))g.students=[];g.per=Math.max(0,Math.min(15,+g.per||0));if(!g.mode)g.mode='抽離';if(g.on==null)g.on=true;});
+  D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';t.hours=Math.max(0,+t.hours||0);});
+  D.students.forEach(s=>{if(!Array.isArray(s.needs))s.needs=[];});
+  D.groups.forEach(g=>{if(!Array.isArray(g.students))g.students=[];g.per=Math.max(0,Math.min(15,+g.per||0));if(!g.mode)g.mode='抽離';if(g.on==null)g.on=true;g.grade=g.grade?String(g.grade):'';});
   if(D.title==null)D.title='';
   return D;
 }
@@ -115,7 +117,8 @@ function compile(D){
     const pull=g.mode!=='外加',t=idxOf(tIdx,g.teacher);
     const cls=[...new Set(stu.map(i=>String(D.students[i].cls)))].sort();
     const locks=pull?cls.map(c=>({c:cIdx[c],cls:c,t:idxOf(tIdx,D.classSubj[c+'|'+g.subject])})):[];
-    const soff=[...new Set(stu.flatMap(i=>stuOff[i]))],grades=[...new Set(cls.map(gradeOfCls))];
+    const gr=+g.grade||0;   // 這門課指定的年級：還沒有學生時也先避開該年級的不排課時段
+    const soff=[...new Set(stu.flatMap(i=>stuOff[i]).concat(gr?[lay('g:'+gr,GRADE[gr]||'')].filter(Boolean):[]))],grades=[...new Set(cls.map(gradeOfCls).concat(gr?[gr]:[]))];
     const o={gi,ref:g,name:g.name||'（未命名）',subject:g.subject,j:jIdx[g.subject],t,stu,pull,cls,locks,soff,grades,room:idxOf(rIdx,g.room),
       per:g.on===false?0:(+g.per||0),allowed:new Uint8Array(NS),alist:[],warn:[]};
     return o;
@@ -260,5 +263,85 @@ function lockTable(M,slot){
     .sort((a,b)=>a.cls.localeCompare(b.cls)||a.subject.localeCompare(b.subject));
 }
 
-const CORE={DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+/* ───── 老師優先：先開課、排老師的鐘點，再把學生編進課裡 ───── */
+// 學生需要上、但還沒進任何一門課的科目
+function needList(D){
+  const inSub={};D.groups.forEach(g=>g.students.forEach(id=>{(inSub[id]=inSub[id]||{})[g.subject]=1;}));
+  const o=[];D.students.forEach(s=>(s.needs||[]).forEach(sj=>{if(!(inSub[s.id]&&inSub[s.id][sj]))o.push({id:s.id,subject:sj});}));return o;
+}
+// 這位學生這一科可以去哪幾門課（同科目、年級相符）
+function candidates(D,stu,subject){
+  const gr=gradeOfCls(stu.cls),cls={};D.students.forEach(s=>{cls[s.id]=s.cls;});
+  return D.groups.filter(g=>{if(g.on===false||g.subject!==subject)return false;if(g.grade)return +g.grade===gr;
+    const gs=g.students.map(id=>gradeOfCls(cls[id])).filter(Boolean);return !gs.length||gs.includes(gr);});
+}
+// 把待安排的學生放進「放進去之後衝堂最少、人數最平均」的那門課；課表已經排好時會照實際時段判斷
+function placeStudents(D,opt){
+  opt=opt||{};const byId={};D.students.forEach(s=>{byId[s.id]=s;});
+  const cost=g=>{const M=compile(D),S=toState(M,D);evaluate(M,S.slot);let c=M.viol*1000;
+    M.G.forEach(x=>{if(!x.per)return;c+=x.warn.length*300;});return c+g.students.length*2;};
+  const todo=needList(D).filter(n=>!opt.filter||opt.filter(byId[n.id])).map(n=>({n,c:candidates(D,byId[n.id],n.subject)})).sort((a,b)=>a.c.length-b.c.length);
+  const left=[];let placed=0;
+  todo.forEach(({n,c})=>{if(!c.length){left.push(n);return;}
+    let best=null,bc=Infinity;c.forEach(g=>{g.students.push(n.id);const v=cost(g);g.students.pop();if(v<bc){bc=v;best=g;}});
+    best.students.push(n.id);placed++;});
+  return {placed,left};
+}
+
+/* ───── AI 排課接口：把題目整理成去識別化的文字，AI 回傳 JSON 後再套回來（之後可改成直接呼叫 API）───── */
+function aiProblem(D){
+  const sc={},tc={},P=D.periods;D.students.forEach((s,i)=>{sc[s.id]='S'+(i+1);});D.teachers.forEach((t,i)=>{tc[t.id]='T'+(i+1);});
+  const setOff={};(D.sets||[]).forEach(x=>(x.students||[]).forEach(id=>{setOff[id]=(setOff[id]||[]).concat(x.off||[]);}));
+  const OB=D.offBy||{},pend={};needList(D).forEach(n=>{(pend[n.id]=pend[n.id]||[]).push(n.subject);});
+  const st=D.settings||{},cs={};for(const k in D.classSubj)if(tc[D.classSubj[k]])cs[k]=tc[D.classSubj[k]];
+  return {
+    slots:DAYS.flatMap((d,di)=>P.map(p=>({k:di+'-'+p.id,name:'週'+d+p.name,extra:!!p.extra}))),
+    blocked:D.blocked,rooms:D.rooms.length,
+    rules:{maxPerDayPerCourse:st.maxDay>0?st.maxDay:1,teacherMaxConsecutive:st.tRun>0?st.tRun:3,studentMaxPerDay:st.sDay>0?st.sDay:3},
+    teachers:D.teachers.map(t=>({id:tc[t.id],role:t.role,hours:t.hours||0,off:t.off})),
+    courses:D.groups.map((g,i)=>({id:'C'+(i+1),on:g.on!==false,subject:g.subject,grade:g.grade||'',mode:g.mode,teacher:tc[g.teacher]||null,perWeek:g.per,
+      members:g.students.map(id=>sc[id]).filter(Boolean),fixed:(D.assign[g.id]||[]).filter(e=>e&&e.pin&&e.s).map(e=>e.s)})).filter(c=>c.on),
+    students:D.students.map(s=>({id:sc[s.id],cls:String(s.cls),toPlace:pend[s.id]||[],
+      off:[...new Set([].concat(OB['g:'+gradeOfCls(s.cls)]||[],OB['c:'+s.cls]||[],OB['s:'+s.id]||[],setOff[s.id]||[]))]})),
+    classSubjectTeacher:cs
+  };
+}
+function aiPrompt(D){
+  return `你是國中資源班的排課助理。下面的 JSON 是題目（人名都已換成代號），請排出一份沒有衝堂的課表。
+
+做法（老師優先）：
+1. 先替每門課 courses 決定時段：每門課要排 perWeek 節，時段用 slots 裡的 k。fixed 是已經固定的時段，一定要保留。
+2. 再把 students 裡 toPlace 列出的科目，分配到同科目、同年級（grade 空白表示不限）的課，寫進該課的 members。已經在 members 裡的學生不要移動。
+
+一定要遵守：
+- mode 是「抽離」的課只能排在 extra 為 false 的時段；「外加」只能排在 extra 為 true 的時段。
+- blocked 的時段都不能排。課的老師、課裡每位學生的 off 時段都不能排。
+- 同一位老師同一個時段只能有一門課；同一位學生同一個時段只能在一門課。
+- 抽離課會佔用學生原班同一科的時間：classSubjectTeacher["班級|科目"] 是那個班該科的任課老師，他的 off 時段也不能排；同一位任課老師同一個時段不能被兩個不同的班同時用到；同一個班同一個時段不能被兩個不同科目的抽離課用到。
+- 同一個時段的課數不能超過 rooms。
+盡量做到：rules 裡的三個上限、每位老師每天節數平均。
+
+只回覆一段 JSON，不要其他文字，格式：
+{"slots":{"C1":["0-1","2-3"]},"members":{"C1":["S1","S2"]}}
+slots 要包含每一門課；members 只要列出有新增學生的課（要寫出完整名單）。
+
+題目：
+`+JSON.stringify(aiProblem(D));
+}
+// 把 AI 的回覆套回資料；回傳套用了幾門課、幾節，以及看不懂的項目數。排得對不對交給原本的衝堂檢查
+function aiApply(D,text){
+  const a=text.indexOf('{'),b=text.lastIndexOf('}');if(a<0||b<=a)throw new Error('找不到 JSON');
+  const R=JSON.parse(text.slice(a,b+1)),sid={},gid={},M=compile(D);
+  D.students.forEach((s,i)=>{sid['S'+(i+1)]=s.id;});D.groups.forEach((g,i)=>{gid['C'+(i+1)]=g;});
+  let nm=0,nl=0,bad=0;const mem=R.members||{},sl=R.slots||{};
+  for(const c in mem){const g=gid[c];if(!g||!Array.isArray(mem[c])){bad++;continue;}
+    const ids=[...new Set(mem[c].map(x=>sid[x]))];if(ids.some(x=>!x))bad++;g.students=ids.filter(Boolean);nm++;}
+  for(const c in sl){const g=gid[c];if(!g||!Array.isArray(sl[c])){bad++;continue;}
+    const arr=(D.assign[g.id]||[]).filter(e=>e&&e.pin&&e.s),used=new Set(arr.map(e=>e.s));
+    sl[c].forEach(k=>{k=String(k);if(M.key2s(k)<0){bad++;return;}if(arr.length>=g.per||used.has(k))return;used.add(k);arr.push({s:k,pin:false});nl++;});
+    D.assign[g.id]=arr;}
+  return {courses:Math.max(nm,Object.keys(sl).length),lessons:nl,bad};
+}
+
+const CORE={needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;
