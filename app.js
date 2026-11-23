@@ -189,7 +189,7 @@ function grpCard(g,i,byId,grs){const c=M.G[i];
   let h=`<div class="gc${g.on===false?' off':''}"><div class="hd"><input type="text" class="nm" value="${esc(g.name)}" placeholder="課名" onchange="setGrp(${i},'name',this.value)">
       <label class="note" style="margin:0;white-space:nowrap"><input type="checkbox"${g.on!==false?' checked':''} onchange="setGrp(${i},'on',this.checked)"> 要排</label><button class="x" title="刪除這門課" onclick="delGroup(${i})">✕</button></div>
     <div class="f"><span>科目</span><input type="text" list="subjList" value="${esc(g.subject)}" onchange="setGrp(${i},'subject',this.value)">
-      <span>每週</span><input type="number" min="0" max="15" value="${g.per}" onchange="setGrp(${i},'per',+this.value)">
+      <span>每週節數</span><input type="number" min="0" max="15" value="${g.per}" onchange="setGrp(${i},'per',+this.value)">
       <span>老師</span><select onchange="setGrp(${i},'teacher',this.value)">${tOpts(g.teacher,'res')}</select>
       <span>年級</span><select onchange="setGrp(${i},'grade',this.value)"><option value="">不限</option>${grs.map(x=>`<option value="${x}"${String(x)===g.grade?' selected':''}>${GRADE[x]}</option>`).join('')}</select>
       <span>型態</span><select onchange="setGrp(${i},'mode',this.value)">${MODES.map(m=>`<option${m===g.mode?' selected':''}>${m}</option>`).join('')}</select>
@@ -449,16 +449,33 @@ function unpinAll(){pushUndo();ST.pin.fill(0);commit();}
 function clearAll(){if(!confirm('確定清空目前的排法？（可以按「復原」救回來）'))return;pushUndo();ST.slot.fill(-1);ST.pin.fill(0);ST.rfix.fill(-1);selL=-1;commit();}
 
 /* ───── 排課｜課表輸出 ───── */
+let outG='';
+const TCOL=['#d96a00','#d81e1e','#8a3b12','#4b1a8c','#111111','#0a9fd2','#e02fb4','#7a7a7a','#0b6b1e','#1a2be0','#0d857a','#9a6f00'];
+const SUBC={'':['#eef5ee','#5aa06f','#22603a'],國:['#fdecec','#e86a6a','#a11d1d'],數:['#eaf1fa','#6a9ad8','#234a94'],英:['#fdf7dc','#f0c000','#8a5a00'],社:['#f3ecfa','#9a6fd0','#4b2a8c']};
+// 總課表上的組別代號：組名如果帶著科目（8A國文）就只留代號（8A）
+function shortName(g){const n=String(g.name||''),j=String(g.subject||'');return j&&n.length>j.length&&n.endsWith(j)?n.slice(0,-j.length):j&&n.length>j.length&&n.startsWith(j)?n.slice(j.length):n;}
 function slotsText(list){const by={};list.forEach(s=>{const d=Math.floor(s/M.NP);(by[d]=by[d]||[]).push(M.P[s%M.NP].name);});
   return Object.keys(by).sort().map(d=>'週'+DAYS[d]+' '+by[d].join('、')).join('；');}
 function renderOut(){
-  const modes=[['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['homeroom','給導師的班級抽離表'],['card','學生個人課表'],['student','學生抽離一覽'],['group','組別總表']];
+  const modes=[['master','總課表'],['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['homeroom','給導師的班級抽離表'],['card','學生個人課表'],['student','學生抽離一覽'],['group','組別總表']];
   const placed=[...ST.slot].filter(s=>s>=0).length;
   let h=`<p class="guide">排好之後，在這裡印出或複製各種表。<b>鎖課表</b>是給教務處的：列出每個班哪幾節必須排哪一科，原班才會和資源班同時上同一科。</p>
   <div class="bar">`+modes.map(([k,n])=>`<button class="b${outMode===k?' pri':''}" onclick="outMode='${k}';render()">${n}</button>`).join('')+`<span class="grow"></span><button class="b" onclick="copyOut()">複製</button><button class="b" onclick="window.print()">列印</button></div>`;
+  if(outMode==='master')h+=`<div class="bar"><label class="note" style="margin:0">實施日期 <input type="text" class="w8" value="${esc(D.settings.dates||'')}" placeholder="115.09.02-116.01.20" onchange="D.settings.dates=this.value.trim();save();render()"></label><span class="note" style="margin:0">欄是教室、顏色是老師；列印時會自動用橫式。教室名稱取最後一個字當欄名。</span></div>`;
+  if(outMode==='card')h+=`<div class="bar"><label class="note" style="margin:0">課表名稱 <input type="text" class="w8" value="${esc(D.settings.cardTitle||'資源班課表')}" onchange="D.settings.cardTitle=this.value.trim();save();render()"></label>
+    <select onchange="outG=this.value;render()"><option value="">全部年級</option>${[...new Set(D.students.map(x=>gradeOfCls(x.cls)))].filter(x=>GRADE[x]).sort().map(x=>`<option value="${x}"${String(x)===outG?' selected':''}>${GRADE[x]}</option>`).join('')}</select><span class="note" style="margin:0">一位學生一頁</span></div>`;
   if(!placed){$('page').innerHTML=h+`<div class="probs">還沒有排法，請先到「排課」按一鍵排課。</div>`;return;}
   const T=esc(D.title||'資源班');let b='';
-  if(outMode==='teacher'){
+  if(outMode==='master'){
+    const names=D.rooms.map(r=>String(r.name||'')),uq=a=>new Set(a).size===a.length,la=names.map(n=>n.slice(-1)),fa=names.map(n=>n.slice(0,1)),rn=names.every(n=>n.length<=2)?names:uq(la)?la:uq(fa)?fa:names;
+    const cols=D.rooms.map((r,i)=>({i,n:rn[i]})).concat(M.L.some((x,l)=>ST.slot[l]>=0&&ROOM[l]<0)?[{i:-1,n:'其他'}]:[]),at={};
+    M.L.forEach((x,l)=>{const sl=ST.slot[l];if(sl>=0){const k=sl+'|'+ROOM[l];(at[k]=at[k]||[]).push(l);}});
+    const tc=t=>TCOL[Math.max(0,M.rts.indexOf(t))%TCOL.length];
+    b=`<style>@page{size:A4 landscape;margin:10mm}</style><div class="pg master">${D.settings.dates?`<p class="dt">實施日期：${esc(D.settings.dates)}</p>`:''}<h2>${T} 課表</h2><p class="lg">教師：${M.rts.map(t=>`<b style="color:${tc(t)}">${esc(M.T[t].name)}</b>`).join('、')}</p>
+      <table class="out mt"><tr><th rowspan="2"></th>${DAYS.map(d=>`<th colspan="${cols.length}" class="dl">星期${d}</th>`).join('')}</tr><tr>${DAYS.map(()=>cols.map((c,k)=>`<th class="${k?'':'dl'}">${esc(c.n)}</th>`).join('')).join('')}</tr>`+
+      D.periods.map((p,pi)=>`<tr><th>${esc(String(p.name).replace(/^第\s*(\S+?)\s*節$/,'$1'))}</th>`+DAYS.map((d,di)=>cols.map((c,k)=>`<td class="${k?'':'dl'}">${(at[(di*M.NP+pi)+'|'+c.i]||[]).map(l=>{const g=M.G[M.L[l].g];
+        return `<span style="color:${tc(g.t)}"><b>${esc(String(g.subject).slice(0,1))}</b><br>${esc(shortName(g.ref))}</span>`;}).join('')}</td>`).join('')).join('')+'</tr>').join('')+'</table></div>';
+  }else if(outMode==='teacher'){
     M.rts.forEach(t=>{const at={};M.L.forEach((x,l)=>{const g=M.G[x.g];if(g.t===t&&ST.slot[l]>=0)at[ST.slot[l]]=l;});
       b+=`<div class="pg"><h2>${T}｜${esc(M.T[t].name)}課表（每週 ${Object.keys(at).length} 節）</h2><table class="out"><tr><th style="width:92px">節次</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
         D.periods.map((p,pi)=>`<tr><td class="c">${esc(p.name)}<br><small>${esc(p.start)}～${esc(p.end)}</small></td>`+DAYS.map((d,di)=>{const l=at[di*M.NP+pi];if(l==null)return '<td></td>';const g=M.G[M.L[l].g];
@@ -471,8 +488,11 @@ function renderOut(){
     const of={};M.L.forEach((x,l)=>{const s=ST.slot[l],g=M.G[x.g];if(s<0)return;g.stu.forEach(i=>{(of[i]=of[i]||{})[s]={g,l};});});
     const list=D.students.map((s,i)=>({s,i})).filter(o=>of[o.i]).sort((a,b2)=>sortStu(a.s,b2.s));
     const cell=o=>o?`<b>${esc(o.g.subject)}</b><br><small>${esc(o.g.name)}${ROOM[o.l]>=0?'・'+esc(D.rooms[ROOM[o.l]].name):''}</small>`:'';
-    if(outMode==='card')b='<div class="cardsheet2">'+list.map(({s,i})=>`<div class="tcard"><h2>${esc(s.cls)} 班 ${esc(s.seat)} 號　${esc(s.name)}｜資源班課表</h2><table class="out"><tr><th style="width:70px">節次</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
-      D.periods.map((p,pi)=>DAYS.some((d,di)=>of[i][di*M.NP+pi])?`<tr><td class="c">${esc(p.name)}<br><small>${esc(p.start)}</small></td>`+DAYS.map((d,di)=>`<td class="c">${cell(of[i][di*M.NP+pi])}</td>`).join('')+'</tr>':'').join('')+`</table><p class="note">表上的節次請到資源班上課，其餘時間在原班。${esc(D.title||'')}</p></div>`).join('')+'</div>';
+    if(outMode==='card'){const ttl=D.settings.cardTitle||'資源班課表';
+      b=list.filter(o=>!outG||gradeOfCls(o.s.cls)===+outG).map(({s,i})=>`<div class="pg pcard"><h2>${esc(s.cls)}-${esc(s.seat)}${esc(s.name)}　${esc(ttl)}</h2><table class="out pt"><tr><th style="width:100px">節次/時間</th>${DAYS.map(d=>`<th>星期${d}</th>`).join('')}</tr>`+
+        D.periods.map((p,pi)=>`<tr class="${pi%2?'alt':''}"><th>${esc(p.name)}${p.start&&!p.extra?`<small>${esc(p.start)}–${esc(p.end)}</small>`:''}</th>`+DAYS.map((d,di)=>{const o=of[i][di*M.NP+pi];if(!o)return '<td></td>';
+          const c=SUBC[String(o.g.subject)[0]]||SUBC[''],tn=o.g.t>=0?M.T[o.g.t].name:'';
+          return `<td><div class="pc" style="background:${c[0]};border-left-color:${c[1]};color:${c[2]}"><b>${esc(o.g.subject)}</b><span>${esc(tn&&!/(老師|主任|組長)/.test(tn)?tn+'老師':tn)}</span><small>${ROOM[o.l]>=0?'@ '+esc(D.rooms[ROOM[o.l]].name):''}</small></div></td>`;}).join('')+'</tr>').join('')+`</table></div>`).join('')||'<p class="note">這個年級沒有學生有排課。</p>';}
     else b=[...new Set(list.map(o=>String(o.s.cls)))].map(c=>`<div class="pg"><h2>${T}｜${esc(c)} 班 資源班抽離表</h2><table class="out"><tr><th>座號</th><th>姓名</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
       list.filter(o=>String(o.s.cls)===c).map(({s,i})=>`<tr><td class="c">${esc(s.seat)}</td><td>${esc(s.name)}</td>`+DAYS.map((d,di)=>'<td>'+Object.keys(of[i]).map(Number).filter(x=>Math.floor(x/M.NP)===di).sort((a,b2)=>a-b2).map(x=>esc(M.P[x%M.NP].name+' '+of[i][x].g.subject)).join('<br>')+'</td>').join('')+'</tr>').join('')+`</table><p class="note">以上節次學生到資源班上課，請導師協助提醒。</p></div>`).join('');
   }else if(outMode==='student'){

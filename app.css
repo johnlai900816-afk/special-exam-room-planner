@@ -343,3 +343,20 @@ button.b:disabled{opacity:.4;cursor:default}
 .need select.pend{border-color:var(--warn);background:var(--warn-l);color:var(--warn)}
 .need select.none{color:var(--mute)}
 #aiBox{width:100%;min-height:150px}
+
+/* 總課表、學生個人課表 */
+#outArea{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.master .dt{font-size:12px;margin:0;color:#333}.master .lg{text-align:center;margin:2px 0 8px;font-size:13.5px}
+table.mt{border:1px solid #333}
+table.mt th,table.mt td{padding:3px 1px;text-align:center;font-size:12.5px;line-height:1.25;min-width:24px;border-top:1px solid #333;border-bottom:1px solid #333;border-left:1px dashed #bbb;border-right:1px dashed #bbb;background:#fff;vertical-align:middle}
+table.mt .dl{border-left:1px solid #333}
+table.mt tr>th:first-child{border-right:1px solid #333;width:26px}
+table.mt td{height:64px;font-weight:700}table.mt td span{display:block}
+.pcard h2{text-align:left!important;font-size:20px!important;margin-bottom:10px}
+table.pt th,table.pt td{border-color:#d5dae0;vertical-align:middle;text-align:center}
+table.pt th{background:#e9ecef}
+table.pt tr>th:first-child{background:#fff;font-size:13px}table.pt tr.alt>th:first-child,table.pt tr.alt td{background:#f5f8fb}
+table.pt th small{display:block;font-weight:400;color:#666;font-size:11.5px}
+table.pt td{height:62px;padding:4px;width:17%}
+.pc{border-left:4px solid;border-radius:5px;padding:6px 4px;display:flex;flex-direction:column;gap:1px}
+.pc b{font-size:15px}.pc span{font-size:12px}.pc small{font-size:11.5px;color:#555!important}
