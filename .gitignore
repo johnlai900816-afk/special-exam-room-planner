@@ -4,3 +4,7 @@
 *.pdf
 .firebase/
 firebase-debug.log
+
+# 含真實學生資料的匯入檔、備份檔不可上傳
+*匯入檔*.json
+*備份*.json
