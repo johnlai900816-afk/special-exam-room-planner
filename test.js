@@ -166,5 +166,34 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   const r2=C.importCourseTable(D,t.replace('\t3\t2\t6','\t5\t2\t10'));ok(r2.updated===3&&r2.added===0&&D.groups.length===3&&g('7A數學').per===5,'再貼一次是更新，不會重複建立');
 }
 
+// 11. 彈性鎖課、不鎖課的課、貼上不排課表
+{
+  const D=C.defaultData();D.settings.lockMode='flex';D.settings.lockCap={國文:5,英文:3,數學:4};
+  let M=C.compile(D),R=C.solve(M,C.toState(M,D),{seed:1});
+  ok(M.flex&&R.viol===0,'彈性鎖課排得出零衝堂');
+  let A=C.assignLocks(M,R.slot);const seen={};let dup=0;A.locks.forEach(k=>{const key=k.t+'|'+k.s;if(seen[key])dup++;seen[key]=1;});
+  ok(A.pulled>0&&A.locks.length+A.open.length>=A.pulled&&dup===0,'配鎖課：同一位老師同一節只被一個班鎖（'+A.locks.length+' 鎖到、'+A.open.length+' 鎖不到）');
+  const cnt={};A.locks.forEach(k=>{cnt[k.cls+k.sj]=(cnt[k.cls+k.sj]||0)+1;});ok(Object.keys(cnt).every(k=>cnt[k]<=M.capOf(k.slice(3))),'每班每科鎖的節數不超過上限');
+  // 任課老師不排課時，改鎖別科而不是排不進去
+  const D2=C.defaultData();D2.settings.lockMode='flex';D2.teachers.find(t=>t.id==='k1').off=[0,1,2,3,4].flatMap(dd=>['1','2','3','4','5','6','7'].map(p=>dd+'-'+p));
+  M=C.compile(D2);R=C.solve(M,C.toState(M,D2),{seed:1});A=C.assignLocks(M,R.slot);
+  ok(R.viol===0&&A.locks.some(k=>!k.same),'任課老師整週不排課時仍排得出來，原班改鎖其他主科');
+  const D3=C.defaultData();D3.teachers.find(t=>t.id==='k1').off=D2.teachers.find(t=>t.id==='k1').off.slice();const M3=C.compile(D3);
+  ok(M3.G.find(g=>g.name==='七國').alist.length===0,'同一科同時上的方式下，這種情況會排不進去（兩種方式確實不同）');
+  // 不鎖課的課
+  const D4=C.defaultData();D4.groups.find(g=>g.name==='七國').mode='不鎖課';const M4=C.compile(D4),g4=M4.G.find(g=>g.name==='七國');
+  ok(g4.pull&&!g4.need&&!g4.locks.length&&g4.alist.every(s=>!M4.P[s%M4.NP].extra),'不鎖課的課排在一般節次，但不需要原班配合');
+  // 貼上不排課表
+  const D5=C.defaultData();const tx=['班級名稱'+'\t起始星期','701\t2\t2\t7\t7\t社團時間','702\t2\t2\t7\t7','701\t5\t5\t1\t2\t導師時間','張老師（國）\t2\t3\t5\t7\t領域','不在名冊\t1\t1\t1\t1'].join('\n');
+  const r5=C.importOff(D5,tx,{hard:'社團'});
+  ok(D5.offBy['c:701'].join()==='1-7'&&D5.offBy['c:702'].join()==='1-7'&&D5.offBy['k:701'].join()==='4-1,4-2','班級不排課：社團是不能抽離，其餘是不能鎖課；原因會沿用到下一列');
+  ok(D5.teachers.find(t=>t.id==='k1').off.includes('2-6')&&r5.skipT.join()==='不在名冊'&&r5.tea===1,'教師不排課帶入，名冊沒有的老師略過並回報');
+  D5.settings.lockMode='flex';const M5=C.compile(D5);ok(M5.lkav[M5.cIdx['701']*M5.NS+M5.key2s('4-1')]===0&&M5.lkav[M5.cIdx['702']*M5.NS+M5.key2s('4-1')]>0,'不能鎖課的時段，配鎖課時不會用到');
+  // 連堂
+  const D6=C.defaultData();D6.settings.lockMode='flex';D6.settings.lockCap={國文:5};D6.settings.lockDouble='國文';const M6=C.compile(D6),R6=C.solve(M6,C.toState(M6,D6),{seed:1}),A6=C.assignLocks(M6,R6.slot),by={};
+  A6.locks.filter(k=>k.sj==='國文').forEach(k=>{(by[k.cls]=by[k.cls]||[]).push(k.s);});
+  ok(Object.keys(by).every(c=>by[c].length<4||by[c].some(s=>by[c].includes(s+1)&&(s+1)%M6.NP!==0)),'國文鎖到只剩 1 節時，鎖的節次裡一定有連堂（不然就少鎖）');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

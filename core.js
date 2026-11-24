@@ -2,7 +2,7 @@
 'use strict';
 const DAYS=['一','二','三','四','五'];
 const ROLES=['資源班','普通班','兼課','代理','行政'];
-const MODES=['抽離','外加'];
+const MODES=['抽離','外加','不鎖課'];   // 不鎖課：一樣排在一般節次把學生抽出來，但不需要原班配合（例：社會技巧）
 
 function uid(p){return (p||'x')+Date.now().toString(36).slice(-4)+Math.random().toString(36).slice(2,6);}
 
@@ -110,22 +110,31 @@ function compile(D){
   const classes=[...new Set(D.students.map(s=>String(s.cls)))].sort(),cIdx={};classes.forEach((c,i)=>{cIdx[c]=i;});
   const subjects=[...new Set(D.groups.map(g=>g.subject))],jIdx={};subjects.forEach((c,i)=>{jIdx[c]=i;});
   const rIdx={};D.rooms.forEach((r,i)=>{rIdx[r.id]=i;});
-  const NR=D.rooms.length,strict=D.settings.regClash!==false;
+  // 鎖課方式：same＝原班和資源班同一節上同一科；flex＝鎖不到同一科可以改鎖其他主科，都不行就不鎖（排完再配鎖課）
+  const flex=D.settings.lockMode==='flex',NR=D.rooms.length,strict=D.settings.regClash!==false&&!flex;
+  const klay=classes.map(c=>OB['k:'+c]&&OB['k:'+c].length?mark(OB['k:'+c]):null);      // 這一班只是不能鎖課的時段
+  const copt=classes.map(()=>[]);for(const k in D.classSubj){const i=k.indexOf('|'),c=cIdx[k.slice(0,i)],tt=tIdx[D.classSubj[k]];if(c!=null&&tt!=null)copt[c].push({sj:k.slice(i+1),t:tt});}
+  const coff=classes.map(c=>{const a=new Uint8Array(NS);[OB['g:'+gradeOfCls(c)],OB['c:'+c],OB['k:'+c],D.blocked].forEach(li=>(li||[]).forEach(k=>{const s=key2s(k);if(s>=0)a[s]=1;}));
+    P.forEach((p,pi)=>{if(p.extra)for(let dd=0;dd<5;dd++)a[dd*NP+pi]=1;});return a;});
   const idxOf=(map,k)=>(k!=null&&map[k]!=null)?map[k]:-1;
   const G=D.groups.map((g,gi)=>{
     const stu=[...new Set((g.students||[]).map(id=>sIdx[id]).filter(i=>i!=null))];
-    const pull=g.mode!=='外加',t=idxOf(tIdx,g.teacher);
+    const pull=g.mode!=='外加',need=g.mode==='抽離',t=idxOf(tIdx,g.teacher);
     const cls=[...new Set(stu.map(i=>String(D.students[i].cls)))].sort();
-    const locks=pull?cls.map(c=>({c:cIdx[c],cls:c,t:idxOf(tIdx,D.classSubj[c+'|'+g.subject])})):[];
+    const locks=need?cls.map(c=>({c:cIdx[c],cls:c,t:idxOf(tIdx,D.classSubj[c+'|'+g.subject])})):[];
     const gr=+g.grade||0;   // 這門課指定的年級：還沒有學生時也先避開該年級的不排課時段
     const soff=[...new Set(stu.flatMap(i=>stuOff[i]).concat(gr?[lay('g:'+gr,GRADE[gr]||'')].filter(Boolean):[]))],grades=[...new Set(cls.map(gradeOfCls).concat(gr?[gr]:[]))];
-    const o={gi,ref:g,name:g.name||'（未命名）',subject:g.subject,j:jIdx[g.subject],t,stu,pull,cls,locks,soff,grades,room:idxOf(rIdx,g.room),
+    const o={gi,ref:g,name:g.name||'（未命名）',subject:g.subject,j:jIdx[g.subject],t,stu,pull,need,cls,locks,soff,grades,room:idxOf(rIdx,g.room),
       per:g.on===false?0:(+g.per||0),allowed:new Uint8Array(NS),alist:[],warn:[]};
     return o;
   });
   const ST_=D.settings||{},num=(v,d)=>(v===''||v==null||isNaN(+v))?d:+v;
   const M={D,P,NP,NS,NT,NStu,NC:classes.length,NR,T,G,classes,subjects,off,blocked,strict,key2s,s2key,sn,tIdx,sIdx,cIdx,L:[],viol:0,
-    classClash:ST_.classClash!==false,roomCheck:ST_.roomCheck!==false,maxDay:Math.max(1,num(ST_.maxDay,1)),tRun:Math.max(1,num(ST_.tRun,3)),sDay:Math.max(1,num(ST_.sDay,3)),lroom:null};
+    classClash:ST_.classClash!==false&&!flex,flex,klay,copt,coff,roomCheck:ST_.roomCheck!==false,maxDay:Math.max(1,num(ST_.maxDay,1)),tRun:Math.max(1,num(ST_.tRun,3)),sDay:Math.max(1,num(ST_.sDay,3)),lroom:null};
+  const caps=ST_.lockCap||{};M.capOf=sj=>caps[sj]>0?+caps[sj]:99;
+  M.dbl=new Set(String(ST_.lockDouble||'').split(/[,，、\s]+/).filter(Boolean));
+  M.lkav=new Uint8Array(NS*Math.max(1,M.NC));      // 彈性鎖課：這一班這一節還有幾位主科老師可以鎖
+  if(flex)for(let c=0;c<M.NC;c++)for(let s=0;s<NS;s++)if(!(klay[c]&&klay[c][s])){let n=0;copt[c].forEach(x=>{if(!off[x.t][s])n++;});M.lkav[c*NS+s]=Math.min(n,200);}
   G.forEach(g=>{
     for(let s=0;s<NS;s++)if(!why(M,g.gi,s).length){g.allowed[s]=1;g.alist.push(s);}
     if(!g.per)return;
@@ -151,8 +160,9 @@ function why(M,gi,s){
   if(M.blocked[s])r.push('全校共同不排');
   g.soff.forEach(o=>{if(o.arr[s])r.push(o.label+'不排課');});
   if(g.t>=0&&M.off[g.t][s])r.push(M.T[g.t].name+'不排課');
-  const seen={};
-  g.locks.forEach(k=>{if(k.t>=0&&!seen[k.t]&&M.off[k.t][s]){seen[k.t]=1;r.push(M.T[k.t].name+'不排課');}});
+  if(!M.flex){const seen={};     // 彈性鎖課時這兩項不是硬性的：鎖不到就改鎖別科或不鎖
+    g.locks.forEach(k=>{if(k.t>=0&&!seen[k.t]&&M.off[k.t][s]){seen[k.t]=1;r.push(M.T[k.t].name+'不排課');}
+      if(M.klay[k.c]&&M.klay[k.c][s])r.push(k.cls+' 這一節不能鎖課');});}
   return r;
 }
 
@@ -171,6 +181,9 @@ function evaluate(M,slot,out){
     for(let a=0;a<g.stu.length;a++){const i=g.stu[a],k=s*NStu+i;
       if(sc[k]-1===gi)v++;else if(sc[k])bad('student',gi,l,s,out&&(M.sn(s)+'：'+M.D.students[i].cls+' '+M.D.students[i].name+'同時在兩組（'+G[sc[k]-1].name+'、'+g.name+'）'));else sc[k]=gi+1;}
     for(let a=0;a<g.locks.length;a++){const lk=g.locks[a],k=s*NC+lk.c,j=g.j+1;
+      if(M.flex){   // 盡量排在「原班鎖得到課」的時段：完全鎖不到扣最多，鎖不到同一科或要和別班搶同一位老師扣一點
+        if(!M.lkav[lk.c*NS+s])soft+=3;else if(lk.t<0||M.off[lk.t][s])soft+=0.6;else{const k2=s*NT+lk.t;if(rt[k2]&&rt[k2]!==lk.c+1)soft+=0.6;else rt[k2]=lk.c+1;}
+        continue;}
       if(M.classClash&&cs[k]&&cs[k]!==j)bad('class',gi,l,s,out&&(M.sn(s)+'：'+lk.cls+' 同一節被要求上兩科（'+M.subjects[cs[k]-1]+'、'+g.subject+'）'));else cs[k]=j;
       if(M.strict&&lk.t>=0){const k2=s*NT+lk.t,c=lk.c+1;
         if(tc[k2]&&!rt[k2])bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[lk.t].name+'這一節要上'+G[tc[k2]-1].name+'，但他同時是 '+lk.cls+' 的任課老師、被鎖在原班'));
@@ -256,6 +269,8 @@ function assignRooms(M,slot){
 
 /* 給教務處的鎖課表：哪一班、哪一科、哪幾節必須排這一科 */
 function lockTable(M,slot){
+  if(M.flex){const rs={};assignLocks(M,slot).locks.forEach(k=>{const key=k.cls+'|'+k.sj,r=rs[key]=rs[key]||{cls:k.cls,subject:k.sj,teacher:M.T[k.t].name,slots:[],groups:new Set()};r.slots.push(k.s);k.groups.forEach(n=>r.groups.add(n));});
+    return Object.values(rs).map(r=>({cls:r.cls,subject:r.subject,teacher:r.teacher,slots:r.slots.sort((a,b)=>a-b),groups:[...r.groups]})).sort((a,b)=>a.cls.localeCompare(b.cls)||a.subject.localeCompare(b.subject));}
   const rows={};
   M.L.forEach((x,l)=>{const s=slot[l],g=M.G[x.g];if(s<0)return;
     g.locks.forEach(k=>{const key=k.cls+'|'+g.subject,r=rows[key]=rows[key]||{cls:k.cls,subject:g.subject,t:k.t,slots:new Set(),groups:new Set()};r.slots.add(s);r.groups.add(g.name);});});
@@ -367,5 +382,76 @@ function importCourseTable(D,text){
   return R;
 }
 
-const CORE={importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+/* 配鎖課：課表排好之後，替每個「有學生被抽離的班級 × 節次」決定請教務處鎖哪一科。
+   先盡量鎖和資源班同一科；鎖不到（老師不排課、被別班鎖走、該科節數用完）就改鎖其他主科；都不行就列為鎖不到。
+   同一位老師同一節只能被一個班鎖。回傳 locks、open（鎖不到的）、warn（連堂提醒）。 */
+function assignLocks(M,slot){
+  const {NS,NP,G,L}=M,P=new Map(),busy=new Set();
+  for(let l=0;l<L.length;l++){const s=slot[l],g=G[L[l].g];if(s<0)continue;if(g.t>=0)busy.add(g.t*NS+s);if(!g.need)continue;
+    g.locks.forEach(k=>{const key=k.c*NS+s;let o=P.get(key);if(!o)P.set(key,o={c:k.c,cls:k.cls,s,want:new Set(),groups:new Set(),pick:null});o.want.add(g.subject);o.groups.add(g.name);});}
+  const used={},own=new Map(),rem=(c,sj)=>M.capOf(sj)-(used[c+'|'+sj]||0);
+  const set=(o,x)=>{if(o.pick)used[o.c+'|'+o.pick.sj]--;o.pick=x;used[o.c+'|'+x.sj]=(used[o.c+'|'+x.sj]||0)+1;own.set(x.t*NS+o.s,o);};
+  const list=[...P.values()].sort((a,b)=>a.s-b.s||a.c-b.c);
+  list.forEach(o=>{const w=x=>o.want.has(x.sj)?1:0;o.opt=(M.klay[o.c]&&M.klay[o.c][o.s])?[]:M.copt[o.c].filter(x=>!M.off[x.t][o.s]&&!busy.has(x.t*NS+o.s)).sort((a,b)=>w(b)-w(a));});
+  const tryA=(o,seen,same)=>{for(const x of o.opt){if(same&&!o.want.has(x.sj))continue;if(seen.has(x.t))continue;
+      if(!(rem(o.c,x.sj)>0||(o.pick&&o.pick.sj===x.sj)))continue;seen.add(x.t);
+      const w=own.get(x.t*NS+o.s);if(!w||w===o||tryA(w,seen,same)){set(o,x);return true;}}
+    return false;};
+  list.forEach(o=>{if(!o.pick)tryA(o,new Set(),true);});
+  list.forEach(o=>{if(!o.pick)tryA(o,new Set(),false);});
+  // 連堂：某一科鎖到只剩 1 節（或全鎖）時，鎖的節次裡要有兩節連在一起，不然教務處排不出連堂；沒有就在旁邊多鎖一節
+  const warn=[],extra=[];
+  if(M.dbl.size){const byC={};list.forEach(o=>{if(o.pick&&M.dbl.has(o.pick.sj)){const k=o.c+'|'+o.pick.sj;(byC[k]=byC[k]||[]).push(o);}});
+    for(const key in byC){const a=byC[key],c=a[0].c,sj=a[0].pick.sj,t=a[0].pick.t,capv=M.capOf(sj);if(capv>=99||a.length<capv-1)continue;
+      const has=new Set(a.map(o=>o.s)),adj=s=>[s%NP?s-1:-1,(s+1)%NP?s+1:-1].filter(x=>x>=0);
+      if(a.some(o=>adj(o.s).some(x=>has.has(x))))continue;
+      let done=false;
+      if(a.length<capv)for(const o of a){for(const s2 of adj(o.s)){if(M.coff[c][s2]||M.off[t][s2]||busy.has(t*NS+s2)||own.has(t*NS+s2))continue;const p=P.get(c*NS+s2);if(p&&p.pick)continue;
+          if(p)set(p,{sj,t});else{const e={c,cls:a[0].cls,s:s2,want:new Set(),groups:new Set(),pick:null,extra:true};set(e,{sj,t});extra.push(e);}done=true;break;}
+        if(done)break;}
+      if(!done){   // 旁邊加不了：把其中一節改鎖別科，再不行就不鎖，讓原班留得出兩節排連堂
+        let n=a.length;const alt=o=>o.opt.find(x=>x.sj!==sj&&rem(c,x.sj)>0&&!own.has(x.t*NS+o.s));
+        a.slice().sort((p,q)=>(alt(q)?1:0)-(alt(p)?1:0)).forEach(o=>{if(n<capv-1)return;const x=alt(o);own.delete(t*NS+o.s);
+          if(x)set(o,x);else{used[c+'|'+sj]--;o.pick=null;o.dropped=sj;}n--;});
+        warn.push(a[0].cls+' 的'+sj+'原本會鎖到只剩 '+(capv-a.length)+' 節又沒有連堂，已改成只鎖 '+n+' 節');}}}
+  const locks=list.concat(extra).filter(o=>o.pick).map(o=>({c:o.c,cls:o.cls,s:o.s,sj:o.pick.sj,t:o.pick.t,same:o.want.has(o.pick.sj),extra:!!o.extra,groups:[...o.groups]}));
+  const open=list.filter(o=>!o.pick).map(o=>({cls:o.cls,s:o.s,groups:[...o.groups],why:o.dropped?'為了讓原班留得出'+o.dropped+'連堂，這一節不鎖':(M.klay[o.c]&&M.klay[o.c][o.s])?'這一節班級不能鎖課':!M.copt[o.c].length?'還沒填這一班的任課老師':!o.opt.length?'主科老師這一節都不排課':'主科老師被別班鎖走，或該科可以鎖的節數用完'}));
+  return {locks,open,warn,pulled:list.length,same:locks.filter(k=>k.same).length};
+}
+
+/* 彈性鎖課的收尾：排完之後逐節試著換時段，只要不增加衝堂、課表品質不明顯變差，而鎖不到的節次變少（或同科變多）就換過去 */
+function refineLocks(M,S,opt){
+  opt=opt||{};const slot=Int16Array.from(S.slot),sc=()=>{const A=assignLocks(M,slot);return A.open.length*20-A.same;};
+  let c0=evaluate(M,slot);const v0=M.viol;let b=sc();
+  for(let pass=0;pass<(opt.passes||2);pass++){let imp=false;
+    for(let l=0;l<M.L.length;l++){if(S.pin[l]||slot[l]<0||(opt.only&&!opt.only(l)))continue;const g=M.G[M.L[l].g];if(!g.need)continue;const o=slot[l];let best=o;
+      for(const s of g.alist){if(s===o)continue;slot[l]=s;const c=evaluate(M,slot);if(M.viol>v0||c>c0+1.5)continue;const x=sc();if(x<b){b=x;best=s;c0=c;}}
+      slot[l]=best;if(best!==o)imp=true;}
+    if(!imp)break;}
+  return {slot,pin:S.pin};
+}
+
+/* 貼上不排課表：名稱、起始星期、結束星期、首節、末節、（原因）。名稱是三四位數就是班級，其他當老師姓名。
+   原因可以只寫在每一段的第一列。班級的時段預設當成「不能鎖課」（學生仍可被抽離，排課時盡量避開）；
+   opt.hard：原因含這些字的（例：社團）才當成學生不能被抽離，寫 * 表示全部都是。 */
+function importOff(D,text,opt){
+  opt=opt||{};const R={cls:0,tea:0,cells:0,skipT:[],newT:0,bad:0};
+  const kw=String(opt.hard||'').split(/[,，、\s]+/).filter(Boolean),reg=D.periods.filter(p=>!p.extra);
+  const pOf=n=>D.periods.find(p=>String(p.name).replace(/\s/g,'')==='第'+n+'節')||reg[n-1];
+  let why='';
+  String(text).split(/\r?\n/).forEach(line=>{const c=line.split('\t').map(x=>x.trim());if(!c[0])return;
+    const name=c[0].replace(/\.0$/,''),d1=parseInt(c[1],10),d2=parseInt(c[2],10),p1=parseInt(c[3],10),p2=parseInt(c[4],10);
+    if(!(d1>=1&&d2>=d1&&d2<=7&&p1>=1&&p2>=p1&&p2<=20)){if(!/名稱|姓名/.test(name))R.bad++;return;}
+    if(c[5])why=c[5];
+    const keys=[];for(let dd=d1;dd<=Math.min(d2,5);dd++)for(let p=p1;p<=p2;p++){const per=pOf(p);if(per)keys.push((dd-1)+'-'+per.id);}
+    let arr;
+    if(/^\d{3,4}$/.test(name)){const k=(kw.includes('*')||kw.some(w=>why.includes(w))?'c:':'k:')+name;arr=D.offBy[k]=D.offBy[k]||[];R.cls++;}
+    else{let t=D.teachers.find(x=>x.name===name);
+      if(!t){if(!opt.addTeachers){R.skipT.push(name);return;}t={id:uid('t'),name,role:'普通班',off:[],note:'',hours:0};D.teachers.push(t);R.newT++;}
+      arr=t.off;R.tea++;}
+    keys.forEach(k=>{if(!arr.includes(k)){arr.push(k);R.cells++;}});});
+  R.skipT=[...new Set(R.skipT)];return R;
+}
+
+const CORE={assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;
