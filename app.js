@@ -207,7 +207,7 @@ function renderGroups(){
   let grs=[...new Set(D.students.map(s=>gradeOfCls(s.cls)))].filter(x=>GRADE[x]).sort();if(!grs.length)grs=[7,8,9];
   const list=D.teachers.filter(t=>t.role==='資源班'||D.groups.some(g=>g.teacher===t.id)),ids=new Set(list.map(t=>t.id)),lone=D.groups.map((g,i)=>i).filter(i=>!ids.has(D.groups[i].teacher));
   let h=`<p class="guide">從老師開始：先填每位資源班老師的<b>基本鐘點</b>，再替他開課，把節數補到剛好。這時候課裡可以還沒有學生，之後到「學生編組」勾選每位學生要上的科目，系統會把學生放進不衝堂的課。</p>
-  <div class="bar"><button class="b" onclick="pasteGroups()">貼上現成的分組表</button><span class="stat">共 <b>${D.groups.length}</b> 門課、每週 <b>${M.L.length}</b> 節</span></div>
+  <div class="bar"><button class="b" onclick="pasteCourses()">貼上課程一覽表</button><button class="b" onclick="pasteGroups()">貼上現成的分組表</button><span class="stat">共 <b>${D.groups.length}</b> 門課、每週 <b>${M.L.length}</b> 節</span></div>
   <datalist id="subjList">${subj.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
   if(!list.length)h+=`<div class="probs">還沒有資源班老師。<button class="b sm" onclick="addTeacherHere('資源班');go('sched','groups')">新增一位資源班老師</button></div>`;
   list.forEach(t=>{const ti=D.teachers.indexOf(t),n=hoursOf(t.id),hr=+t.hours||0,d=hr-n;
@@ -354,6 +354,19 @@ function setCSName(el){const k=el.dataset.k,name=el.value.trim();
   let t=D.teachers.find(x=>x.name===name);if(!t){t={id:uid('t'),name,role:'普通班',off:[],note:''};D.teachers.push(t);toast('已把 '+name+' 加進老師名冊');}
   D.classSubj[k]=t.id;changed();
   const all=[...document.querySelectorAll('#page input[data-k]')],i=all.indexOf(el);render();const nx=document.querySelectorAll('#page input[data-k]')[i+1];if(nx)nx.focus();}
+
+/* ───── 排課｜貼上課程一覽表（每一組各自的節數、老師、學生一次帶入）───── */
+function pasteCourses(){openDlg(`<h3>貼上課程一覽表</h3><p class="note">從 Excel 的「課程領域分組及節數一覽表」整張複製貼上。欄位依序是：<b>領域、年級、組別、抽離或外加、學生名單、節數、人數、人次、授課教師</b>。</p>
+  <p class="note">每一組的節數照表上的來，所以同科目不同組可以不一樣（例：數學 7A 3 節、7B 4 節）。組名相同的課會更新，不會重複建立。學生名單遮名的（704林○哲）會用班級和姓名頭尾對回名冊，所以要先有名冊。右邊的教師鐘點表如果一起貼，會帶入基本鐘點。</p>
+  <textarea id="pasteBox" placeholder="國文&#9;7&#9;A&#9;抽離&#9;704林○哲、704黃○侖&#9;3&#9;2&#9;6&#9;王老師"></textarea>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteCoursesOk()">帶入課程</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+function pasteCoursesOk(){const txt=$('pasteBox').value;if(!txt.trim())return;const r=importCourseTable(D,txt);
+  if(!r.added&&!r.updated){toast('沒有讀到任何一門課，請確認是從 Excel 複製（欄位之間是 Tab）、而且有節數');return;}
+  D=normalize(D);changed();render();
+  const miss=[...new Set(r.miss)];
+  if(miss.length)openDlg(`<h3>已帶入，但有 ${miss.length} 位學生對不到名冊</h3><p class="note">新增 ${r.added} 門課、更新 ${r.updated} 門，放進 ${r.members} 人次${r.hours?'，並帶入 '+r.hours+' 位老師的基本鐘點':''}。下面這些在名冊裡找不到，或同班有兩位符合，請到「名冊」新增後，再到「學生編組」放進課裡：</p><p>${miss.map(m=>`<span class="tagv">${esc(m)}</span>`).join(' ')}</p><div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);
+  else{closeDlg();toast('新增 '+r.added+' 門課、更新 '+r.updated+' 門，放進 '+r.members+' 人次'+(r.hours?'，帶入 '+r.hours+' 位老師的基本鐘點':''));}
+  offWarn();}
 
 /* ───── 排課｜貼上分組表 ───── */
 function pasteGroups(){openDlg(`<h3>貼上分組表</h3><p class="note">從 Excel 或 Google 試算表複製整張分組表貼上。每位學生一格「班級-座號姓名」（例 <b>701-13王小明</b>），後面幾格依序是各科的組別代號（例 7C、7B、空白＝不抽）。一列可以並排好幾位學生。</p>

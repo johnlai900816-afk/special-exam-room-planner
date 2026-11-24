@@ -151,5 +151,20 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(D5.groups[0].students.join()==='s1,s8'&&D5.assign.g1.length===2&&res.bad===1,'AI 的回覆會套回課表，看不懂的時段會略過並回報');
 }
 
+// 10. 貼上課程一覽表：每一組各自的節數、遮名對回名冊、鐘點表
+{
+  const D=C.defaultData();D.groups=[];D.assign={};
+  const t=['領域名稱\t年級\t組別\t抽離或外加\t學生名單\t節數\t人數\t人次\t授課教師',
+    '數學\t7\tA\t抽離\t701王○明、701陳○華\t3\t2\t6\t王老師\t\t\t\t\t教師\t基鐘\t部兼\t局兼\t總節數',
+    '數學\t7\tB\t抽離\t702李○芳、702不○在\t4\t2\t8\t王老師\t\t\t\t\t王老師\t12\t2\t1\t15',
+    '社會技巧\t8.9\tA\t外加\t801蔡小晴\t1\t1\t1\t新來的老師'].join('\n');
+  const r=C.importCourseTable(D,t),g=n=>D.groups.find(x=>x.name===n);
+  ok(r.added===3&&g('7A數學').per===3&&g('7B數學').per===4,'同科目不同組可以有不同節數（7A 3 節、7B 4 節）');
+  ok(g('7A數學').students.join()==='s1,s2'&&g('7B數學').students.join()==='s5'&&r.miss.join()==='702不○在','遮名的學生對回名冊，對不到的會列出來');
+  ok(g('A社會技巧').mode==='外加'&&g('A社會技巧').grade===''&&g('A社會技巧').students.join()==='s9'&&D.teachers.some(x=>x.name==='新來的老師'),'跨年級、外加、全名、新老師都處理');
+  ok(D.teachers.find(x=>x.name==='王老師').hours===15,'右邊的鐘點表帶入基本鐘點');
+  const r2=C.importCourseTable(D,t.replace('\t3\t2\t6','\t5\t2\t10'));ok(r2.updated===3&&r2.added===0&&D.groups.length===3&&g('7A數學').per===5,'再貼一次是更新，不會重複建立');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

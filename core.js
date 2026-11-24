@@ -343,5 +343,29 @@ function aiApply(D,text){
   return {courses:Math.max(nm,Object.keys(sl).length),lessons:nl,bad};
 }
 
-const CORE={needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+/* 貼上「課程領域分組及節數一覽表」：領域、年級、組別、抽離或外加、學生名單、節數、人數、人次、授課教師。
+   每一組各自的節數照表上的來；學生名單可以是遮名的（704林○哲），用班級＋姓＋名字最後的字對回名冊。
+   同一列右邊如果有「教師…總節數」的鐘點表，也一起讀成老師的基本鐘點。 */
+function importCourseTable(D,text){
+  const R={added:0,updated:0,members:0,miss:[],teachers:0,hours:0},MK=/[○〇ＯO＊*]/;
+  const tOf=name=>{let t=D.teachers.find(x=>x.name===name);if(!t){t={id:uid('t'),name,role:'資源班',off:[],note:'',hours:0};D.teachers.push(t);R.teachers++;}return t;};
+  let ti=-1,hi=-1;
+  String(text).split(/\r?\n/).forEach(line=>{const c=line.split('\t').map(x=>x.trim());
+    const a=c.indexOf('教師'),b=c.indexOf('總節數');
+    if(a>=0&&b>a){ti=a;hi=b;}else if(ti>=0&&c[ti]&&+c[hi]>0&&!/節數|合計/.test(c[ti])){tOf(c[ti]).hours=+c[hi];R.hours++;}
+    const per=+c[5];if(!c[0]||!c[2]||!(per>0)||/領域|名稱/.test(c[0]))return;
+    const subject=c[0],grade=/^[1-9]$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[];
+    (c[4]||'').split(/[、,，;；\/\s]+/).filter(Boolean).forEach(m=>{const mm=m.match(/^(\d{3,4})[-－]?\d{0,2}(\D.*)$/);if(!mm){R.miss.push(m);return;}
+      const nm=mm[2],k=nm.search(MK),f=k<0?nm:nm.slice(0,k),l=k<0?'':nm.replace(/^.*[○〇ＯO＊*]/,'');
+      const hit=D.students.filter(s=>String(s.cls)===mm[1]&&(k<0?s.name===nm:s.name.length>=f.length+l.length&&s.name.startsWith(f)&&s.name.endsWith(l)));
+      if(hit.length===1){if(!ids.includes(hit[0].id))ids.push(hit[0].id);}else R.miss.push(m);});
+    let g=D.groups.find(x=>x.name===name);
+    if(g)R.updated++;else{g={id:uid('g'),name,subject,teacher:'',per,students:[],mode:'抽離',room:'',on:true,grade};D.groups.push(g);R.added++;}
+    g.subject=subject;g.grade=grade;g.per=Math.min(15,per);g.mode=/外加/.test(c[3]||'')?'外加':'抽離';if(c[8])g.teacher=tOf(c[8]).id;
+    g.students=ids;R.members+=ids.length;
+    ids.forEach(id=>{const s=D.students.find(x=>x.id===id);if(!Array.isArray(s.needs))s.needs=[];if(!s.needs.includes(subject))s.needs.push(subject);});});
+  return R;
+}
+
+const CORE={importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;
