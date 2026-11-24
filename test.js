@@ -195,5 +195,28 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(Object.keys(by).every(c=>by[c].length<4||by[c].some(s=>by[c].includes(s+1)&&(s+1)%M6.NP!==0)),'國文鎖到只剩 1 節時，鎖的節次裡一定有連堂（不然就少鎖）');
 }
 
+// 12. 學校自己維護：任課老師名單、學生名單、科目別名、新學期與升年級
+{
+  const J=rows=>rows.map(r=>r.join('\t')).join('\n');
+  const D=C.defaultData();
+  const tl=J([['','701','702','703','704'],['國語文','張老師（國）','新來的','','-'],['英語文','劉老師（英）','蔡主任（英）','劉老師（英）','-'],['','801','802','803'],['數學','陳老師（數）','黃老師（數）','陳老師（數）'],['901','國語文','吳老師（國）']]);
+  const r=C.importTeacherList(D,tl),tn=k=>(D.teachers.find(x=>x.id===D.classSubj[k])||{}).name;
+  ok(tn('702|國文')==='新來的'&&tn('703|英文')==='劉老師（英）'&&!D.classSubj['704|國文']&&tn('803|數學')==='陳老師（數）'&&tn('901|國文')==='吳老師（國）','教師名單（班級橫排）與一列一筆都讀得懂，空白和「-」略過');
+  ok(r.newT.join()==='新來的'&&r.changed>=1,'名冊沒有的老師會新增，換老師會計數');
+  ok(C.canonSubj(D,'英語文')==='英文'&&C.canonSubj(D,'國語')==='國文','科目別名統一成這份資料用的寫法');
+  const D0=C.defaultData(),bad=J([['701','','節次','星期一','','','','','','801','','節次','','','','','','','901'],['國語文','李老師','3','','','','','','','國語文','王老師']]);
+  ok(C.importTeacherList(D0,bad).set===0,'「資料輸入」這種有班級號碼但不是名單的表，不會被誤讀');
+  const D2=C.defaultData(),r2=C.importStudents(D2,J([['班級','座號','姓名','個管老師','導師'],['701','3','王小明','王老師','蕭老師'],['799-05新同學'],['798','1','另一位','不存在']]));
+  const s=D2.students.find(x=>x.cls==='701'&&x.seat==='03');
+  ok(r2.add===2&&r2.upd===1&&s.caseMgr==='r2'&&s.note==='蕭老師'&&D2.students.some(x=>x.cls==='799'&&x.seat==='05'&&x.name==='新同學')&&r2.noCM.join()==='不存在','學生名單：照標題找欄位、班級座號姓名同一格、個管老師對回名冊');
+  const D3=C.defaultData(),n9=D3.students.filter(x=>x.cls[0]==='9').length,n7=D3.students.filter(x=>x.cls[0]==='7').length,n8=D3.students.filter(x=>x.cls[0]==='8').length;
+  const r3=C.newTerm(D3,{promote:true,title:'新學年'});
+  ok(r3.grad===n9&&D3.students.filter(x=>x.cls[0]==='8').length===n7&&D3.students.filter(x=>x.cls[0]==='9').length===n8&&!D3.students.some(x=>x.cls[0]==='7'),'升年級：七升八、八升九、九年級畢業');
+  ok(!D3.groups.length&&!Object.keys(D3.classSubj).length&&!Object.keys(D3.assign).length&&D3.title==='新學年'&&D3.teachers.length===9&&D3.offBy['g:7'],'升年級時課程與任課老師清空，老師與年級時段保留');
+  const D4=C.defaultData();D4.assign={g1:[{s:'0-1',pin:true}]};C.newTerm(D4,{clearAssign:true});ok(!Object.keys(D4.assign).length&&D4.groups.length===10,'只清排課結果時課程留著');
+  const D5=C.defaultData();D5.settings.lockMode='flex';D5.settings.lockCap={國文:5,數學:4};const M5=C.compile(D5);
+  ok(M5.copt.every(a=>a.every(x=>x.sj!=='英文')),'彈性鎖課只會改鎖有設上限的科目');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

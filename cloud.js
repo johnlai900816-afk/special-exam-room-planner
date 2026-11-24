@@ -27,11 +27,38 @@ function setCloudUI(state){
   if(shareOpen)renderShare();
   if(typeof page!=='undefined'&&page==='home'&&typeof M!=='undefined'&&M)render();
 }
+// 學校自己的雲端（設定存在這台瀏覽器，school.js 讀）
+function schoolCloud(){try{return JSON.parse(localStorage.getItem(window.SCHOOL_CLOUD_KEY||'rc-school-cloud')||'null');}catch(e){return null;}}
+function parseFbConfig(t){const o={};String(t).replace(/["']?(apiKey|authDomain|projectId|storageBucket|messagingSenderId|appId|measurementId)["']?\s*:\s*["']([^"']+)["']/g,(m,k,v)=>{o[k]=v;});return o.apiKey&&o.projectId&&o.authDomain?o:null;}
+function setSchoolCloud(c,msg){if(c)localStorage.setItem(window.SCHOOL_CLOUD_KEY,JSON.stringify(c));else localStorage.removeItem(window.SCHOOL_CLOUD_KEY);
+  try{if(CLOUD&&CLOUD.auth)CLOUD.auth.signOut();}catch(e){}toast(msg||'已套用，重新整理中…');setTimeout(()=>location.reload(),700);}
+function applySchoolCloud(){const c=parseFbConfig($('fbIn').value);if(!c){toast('讀不出設定，請把 Firebase 給的 firebaseConfig 整段貼上（要有 apiKey、authDomain、projectId）');return;}
+  if(!confirm('要讓這台電腦改用雲端「'+c.projectId+'」嗎？\n套用後請用 Google 帳號登入：第一位登入的人會成為主持人，這台電腦現在的資料會傳上去當第一份。'))return;setSchoolCloud(c);}
+function schoolLink(){const c=schoolCloud();if(!c||!c.apiKey)return;const b=btoa(JSON.stringify(c)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  copyText(location.origin+location.pathname+'#cloud='+b,'已複製設定連結：同事點開、按確定、再用 Google 登入，主持人把他的信箱加進共用名單就可以了');}
+function copyRules(){fetch('firestore.rules',{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.text();}).then(t=>copyText(t,'已複製安全規則，貼到 Firebase 的 Firestore「規則」分頁後按「發布」'),()=>toast('拿不到規則檔，請稍後再試'));}
+function schoolCloudHtml(open){const c=schoolCloud(),cur=window.FIREBASE_CONFIG,b=window.BUILTIN_FIREBASE;
+  const now=c&&c.local?'不使用雲端（單機）':c&&c.projectId?'學校自己的雲端「'+esc(c.projectId)+'」':cur&&cur.projectId?'網站內建的雲端「'+esc(cur.projectId)+'」':'不使用雲端（單機）';
+  return '<details class="more"'+(open?' open':'')+'><summary>學校自己的雲端</summary><p class="note">這台電腦目前：<b>'+now+'</b></p>'+
+  '<p class="note">讓資料存在<b>你們學校自己的 Google 帳號</b>底下，幾位老師用自己的 Gmail 登入共用同一份，帳號和資料都由學校自己管理。Firebase 免費方案就夠用。用學校或處室的公用 Google 帳號建立最好，人事異動時交接帳號就好。</p>'+
+  '<ol class="note"><li>到 <b>console.firebase.google.com</b> 用 Google 帳號「建立專案」（不用開 Google Analytics）。</li>'+
+  '<li>左邊「建構 › Firestore Database › 建立資料庫」，選「正式版模式」，位置選 <b>asia-east1（台灣）</b>。</li>'+
+  '<li>在 Firestore 的「規則」分頁，把內容全部換成下面按鈕複製的規則，按「發布」。</li>'+
+  '<li>「建構 › Authentication › 開始使用」，登入方式啟用 <b>Google</b>；再到「設定 › 已授權網域」新增 <b>'+esc(location.hostname)+'</b>。</li>'+
+  '<li>齒輪「專案設定 › 一般」最下面，按網頁圖示 <b>&lt;/&gt;</b> 註冊應用程式，把出現的 <b>firebaseConfig</b> 整段複製，貼到下面，按「套用」。</li>'+
+  '<li>按「用 Google 帳號登入」：第一位登入的人是主持人，這台電腦的資料會傳上去當第一份。</li>'+
+  '<li>按「複製給同事的設定連結」傳給同事；主持人在共用名單加入他們的 Gmail。</li></ol>'+
+  '<div class="bar"><button class="b" onclick="copyRules()">複製安全規則</button></div>'+
+  '<textarea id="fbIn" style="width:100%;height:110px" placeholder="const firebaseConfig = {&#10;  apiKey: &quot;…&quot;,&#10;  authDomain: &quot;…&quot;,&#10;  projectId: &quot;…&quot;, …"></textarea>'+
+  '<div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="applySchoolCloud()">套用</button>'+
+  (c&&c.projectId?'<button class="b" onclick="schoolLink()">複製給同事的設定連結</button>':'')+
+  (c&&!c.local?'':'')+(c?'<button class="b" onclick="setSchoolCloud(null,\'已改回網站內建的設定\')">改回網站內建的設定</button>':'')+
+  (!(c&&c.local)&&(b||c)?'<button class="b" onclick="setSchoolCloud({local:true},\'已改成單機，不連雲端\')">不使用雲端（單機）</button>':'')+'</div></details>';}
 function backupHtml(open){return '<details class="more"'+(open?' open':'')+'><summary>備份與還原</summary><p class="note">資料會自動儲存'+(cloudState==='on'?'並同步給共用的老師':'在這台電腦的這個瀏覽器')+'。換電腦、清瀏覽器資料之前，或想留一份存檔時再下載備份檔。備份檔含名冊、排課、段考考場與通知單，有學生姓名，請自行保管。</p>'+
-  '<div class="bar" style="margin:0"><button class="b" onclick="exportJson()">下載備份檔</button><button class="b" onclick="$(\'imp\').click()">從備份檔還原</button><button class="b danger" onclick="resetAll()">全部清空</button></div></details>';}
+  '<p class="note">另外，每天第一次修改和每次匯入之前，這台電腦都會自動保留一份，可以在「名冊 › 匯入與新學期」回到之前的版本。</p><div class="bar" style="margin:0"><button class="b" onclick="exportJson()">下載備份檔</button><button class="b" onclick="$(\'imp\').click()">從備份檔還原</button><button class="b danger" onclick="resetAll()">全部清空</button></div></details>';}
 function renderShare(){
   const st=cloudState,u=CLOUD&&CLOUD.user;let h='';
-  if(st==='local')h+='<h3>資料存在這台電腦</h3><p class="lead">這一份還沒有連接雲端，資料只存在這台電腦的這個瀏覽器。要讓幾位老師共用同一份，請照說明檔設定 Firebase。</p>';
+  if(st==='local')h+='<h3>資料存在這台電腦</h3><p class="lead">這一份還沒有連接雲端，資料只存在這台電腦的這個瀏覽器。要讓幾位老師共用同一份，請看下面的「學校自己的雲端」。</p>';
   else if(st==='offline')h+='<h3>連不上雲端</h3><p class="lead">可能是沒有網路。現在看到的是這台電腦上的資料，連上線後重新整理就會同步。</p>';
   else if(st==='out')h+='<h3>與其他老師共用</h3><p class="lead">登入後，幾位老師可以<b>同時打開同一份</b>：任何人改名冊、分組或拖課表，其他人的畫面都會立刻跟著變，不用互傳檔案。</p>'+
     '<ol><li>用你的 Google 帳號登入（第一位登入的人是主持人）。</li><li>主持人輸入其他老師的 Gmail，選「編輯」或「檢視」。</li><li>把網址傳給他們，他們登入後就會看到同一份。</li></ol>'+
@@ -55,9 +82,9 @@ function renderShare(){
     else h+='<p class="note">要增減老師或改權限，請找主持人 '+esc(A.admin||'')+'。</p>';
     h+='<p class="note">兩位老師同時改同一個地方時，以最後存檔的人為準。</p>';
   }
-  $('dlgBody').innerHTML=h+backupHtml(st==='local'||st==='offline'||st==='part')+'<div class="bar" style="margin:16px 0 0"><span class="grow"></span><button class="b" onclick="closeDlg()">關閉</button></div>';
+  $('dlgBody').innerHTML=h+backupHtml(st==='local'||st==='offline'||st==='part')+schoolCloudHtml(shareOpen===2)+'<div class="bar" style="margin:16px 0 0"><span class="grow"></span><button class="b" onclick="closeDlg()">關閉</button></div>';
 }
-function openShare(){shareOpen=true;openDlg('',()=>{shareOpen=false;});renderShare();}
+function openShare(x){shareOpen=x?2:true;openDlg('',()=>{shareOpen=false;});renderShare();}
 function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
 async function setMembers(emails,viewers,msg){viewers=viewers.filter(e=>emails.includes(e)&&e!==CLOUD.access.admin);
   try{await CLOUD.db.doc('config/access').update({emails,viewers});CLOUD.access.emails=emails;CLOUD.access.viewers=viewers;setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}

@@ -6,7 +6,7 @@ const lastSub={};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
-function localSave(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
+function localSave(){let j;try{j=JSON.stringify(D);localStorage.setItem(KEY,j);}catch(e){}try{const a=snaps(),l=a[a.length-1];if(j&&(!l||new Date(l.at).toDateString()!==new Date().toDateString()))snapshot('每天自動保留',j);}catch(e){}}
 function save(){if(isRO()){clearTimeout(save.h);save.h=setTimeout(roRevert,0);return;}localSave();cloudPush();}
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>{t.style.display='none';},2600);}
 function setST(S){ST=S;if(!ST.rfix)ST.rfix=new Int16Array(M.L.length).fill(-1);M.lroom=ST.rfix;}
@@ -24,7 +24,7 @@ function colorOf(g){const i=M.rts.indexOf(g.t);return i<0?6:i%6;}
 /* ───── 頁面切換 ───── */
 const PAGES={
   home:{t:'總覽'},
-  roster:{t:'名冊',subs:[['stu','學生'],['tea','老師'],['env','教室與作息']]},
+  roster:{t:'名冊',subs:[['stu','學生'],['tea','老師'],['env','教室與作息'],['data','匯入與新學期']]},
   sched:{t:'排課',subs:[['groups','老師開課'],['need','學生編組'],['teach','任課老師'],['off','不排課時段'],['board','排課'],['out','課表輸出']]},
   exam:{t:'段考考場'},
   checkin:{t:'簽到退',subs:[['now','點名'],['log','出缺席紀錄'],['cards','學生卡']]}
@@ -42,7 +42,7 @@ function render(){
   $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button class="${k===sub?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
   if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed';return;}
-  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
+  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/data':renderData,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
 }
 document.querySelectorAll('#nav button[data-p]').forEach(b=>{b.onclick=()=>go(b.dataset.p);});
 
@@ -64,7 +64,7 @@ function renderHome(){
   let h=`<div class="hello"><div class="date">${now.getMonth()+1} 月 ${now.getDate()} 日　週${'日一二三四五六'[wd]}</div><h2>${esc(D.title||'資源班')}</h2></div>`;
   if(!D.students.length&&!D.groups.length){
     $('page').innerHTML=h+`<div class="start"><b>從這三步開始</b><ol><li>到「名冊」貼上學生名單、加入老師。</li><li>到「排課」填每位老師的基本鐘點、替他開課，再勾選每位學生要上的科目，並點選不排課的時段。</li><li>按「一鍵排課」，再到「課表輸出」印出課表與鎖課表。</li></ol>
-      <div class="bar" style="margin:0"><button class="b pri" onclick="go('roster','stu')">前往名冊</button><button class="b" onclick="loadDemo()">先載入範例資料看看</button></div></div>`;return;}
+      <div class="bar" style="margin:0"><button class="b pri" onclick="go('roster','data')">上傳學校的 Excel</button><button class="b" onclick="go('roster','stu')">前往名冊</button><button class="b" onclick="loadDemo()">先載入範例資料看看</button></div></div>`;return;}
   h+=`<div class="stats">
     <button class="stt" onclick="go('roster','stu')"><span class="k">學生</span><b>${D.students.length}<small>人</small></b><span class="d${noG?' warn':''}">${noG?noG+' 位還沒分組':'都已分組'}</span></button>
     <button class="stt" onclick="go('sched','groups')"><span class="k">組別</span><b>${M.G.filter(g=>g.per).length}<small>組</small></b><span class="d">每週共 ${total} 節</span></button>
@@ -90,7 +90,8 @@ function renderHome(){
   if(noG)todo.push(['',noG+' 位學生還沒分到任何一組','名冊',"go('roster','stu')"]);
   if(noCM)todo.push(['',noCM+' 位學生還沒指定個管老師','名冊',"go('roster','stu')"]);
   if(E&&E.total>E.placed)todo.push(['','段考還有 '+(E.total-E.placed)+' 個科次沒排進考場','段考考場',"go('exam')"]);
-  if(cloudState==='local'||cloudState==='out'||cloudState==='part')todo.push(['info','資料只存在這台電腦，記得備份'+(cloudState==='out'?'或登入共用':''),cloudState==='out'?'共用':'備份','openShare()']);
+  if(cloudState==='local'||cloudState==='out'||cloudState==='part'){const lb=+localStorage.getItem(LBKEY)||0,dd=lb?Math.floor((Date.now()-lb)/864e5):-1;
+    if(dd<0||dd>=14)todo.push(['info','資料只存在這台電腦，'+(dd<0?'還沒下載過備份檔':'上次下載備份是 '+dd+' 天前')+(cloudState==='out'?'，或登入共用':''),cloudState==='out'?'共用':'備份','openShare()']);}
   h+=todo.length?'<ul class="todo">'+todo.map(([c,t,w,f])=>`<li class="${c}" onclick="${f}"><span>${esc(t)}</span><em>${w} ›</em></li>`).join('')+'</ul>':'<div class="allok">目前沒有待處理的事項。</div>';
   const res=D.teachers.filter(t=>t.role==='資源班');
   if(res.length){const ld=t=>{const ti=M.tIdx[t.id];return M.L.filter((x,l)=>M.G[x.g].t===ti&&ST.slot[l]>=0).length;},mx=Math.max(1,...res.map(ld));
@@ -120,10 +121,11 @@ function renderStu(){
 function renderTea(){
   const use={};D.groups.forEach(g=>{if(g.teacher)(use[g.teacher]=use[g.teacher]||[]).push(g.name);});
   M.G.forEach(g=>g.locks.forEach(k=>{if(k.t>=0){const id=D.teachers[k.t].id;(use[id]=use[id]||[]).push(k.cls+g.subject);}}));
+  for(const k in D.classSubj){const id=D.classSubj[k];(use[id]=use[id]||[]).push(k.replace('|',''));}
   let h=`<p class="guide">除了資源班老師，也要把<b>學生原班的任課老師</b>加進來，排課才知道哪些時段會卡到他們。資源班老師會自動成為段考的監考老師。</p>
-  <div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><span class="stat">共 <b>${D.teachers.length}</b> 位</span></div>
+  <div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><button class="b" onclick="pasteTL()">貼上任課老師名單</button><button class="b" onclick="go('roster','data')">上傳學校的 Excel</button><button class="b" onclick="pruneTeachers()">移除沒用到的任課老師</button><span class="stat">共 <b>${D.teachers.length}</b> 位</span></div>
   <datalist id="roleList">${ROLES.map(r=>`<option value="${r}">`).join('')}</datalist><p class="note">身分可以自己打（例：專輔、巡迴）；只有「資源班」會被當成資源班老師與監考老師。</p>
-  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>相關的組別與班級</th><th>備註</th><th></th></tr>`;
+  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>開的課、任課班級</th><th>備註</th><th></th></tr>`;
   D.teachers.forEach((t,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(t.name)}" onchange="setTea(${i},'name',this.value)"></td>
     <td><input type="text" class="w3" list="roleList" value="${esc(t.role)}" onchange="setTea(${i},'role',this.value||'普通班')"></td>
     <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('sched','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
@@ -178,16 +180,11 @@ function delPer(i){if(D.periods.length<2)return;if(!confirm('確定刪除「'+D.
 function openDlg(html,done){$('dlgBody').innerHTML=html;dlgDone=done||null;if(!$('dlg').open)$('dlg').showModal();}
 function closeDlg(){$('dlg').close();}
 $('dlg').addEventListener('close',()=>{const f=dlgDone;dlgDone=null;if(f)f();});
-function pasteStu(){openDlg(`<h3>從 Excel 貼上名單</h3><p class="note">在 Excel 選取「班級、座號、姓名」三欄後複製，貼到下面。每行一位；班級座號相同的會更新姓名，不會重複新增。</p>
+function pasteStu(){openDlg(`<h3>從 Excel 貼上名單</h3><p class="note">在 Excel 選取「班級、座號、姓名」三欄後複製，貼到下面，後面可以再多一欄<b>個管老師</b>、一欄<b>備註</b>。「701-13」或「701-13王小明」寫在同一格也可以；有標題列時會照標題找欄位。每行一位，班級座號相同的會更新，不會重複新增。</p>
   <textarea id="pasteBox" placeholder="701&#9;03&#9;王小明&#10;701&#9;10&#9;陳小華"></textarea>
   <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="pasteStuOk()">加入名冊</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function pasteStuOk(){let add=0,upd=0,skip=0;
-  $('pasteBox').value.split(/\r?\n/).forEach(line=>{const a=line.trim().split(/[\t,，\s]+/).filter(Boolean);if(!a.length)return;
-    if(a.length<2||!/^\d/.test(a[0])){skip++;return;}
-    const cls=a[0],seat=a.length>=3?a[1]:'',name=a.length>=3?a[2]:a[1];
-    const old=D.students.find(s=>s.cls===cls&&((seat&&s.seat&&+s.seat===+seat)||s.name===name));
-    if(old){old.name=name;if(seat)old.seat=seat;upd++;}else{D.students.push({id:uid('s'),cls,seat,name,caseMgr:'',note:''});add++;}});
-  changed();closeDlg();render();toast('新增 '+add+' 人，更新 '+upd+' 人'+(skip?'，略過 '+skip+' 行（看起來不是學生資料）':''));}
+function pasteStuOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上學生名單之前');const r=importStudents(D,txt);
+  changed();closeDlg();render();toast('新增 '+r.add+' 人，更新 '+r.upd+' 人'+(r.cm?'，指定個管老師 '+r.cm+' 人':'')+(r.noCM.length?'；找不到這些個管老師：'+r.noCM.join('、'):'')+(r.skip?'，略過 '+r.skip+' 行（看起來不是學生資料）':''));}
 
 /* ───── 排課｜分組 ───── */
 function grpCard(g,i,byId,grs){const c=M.G[i];
@@ -331,7 +328,7 @@ function pasteOff(){openDlg(`<h3>貼上不排課表</h3><p class="note">從 Exce
   <label class="note"><input type="checkbox" id="poAdd"> 名冊裡沒有的老師也新增進來（不勾就略過，只帶入名冊裡有的老師）</label>
   <textarea id="pasteBox" placeholder="701&#9;2&#9;2&#9;7&#9;7&#9;社團時間&#10;王小華&#9;5&#9;5&#9;3&#9;3&#9;導師會報"></textarea>
   <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteOffOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function pasteOffOk(){const txt=$('pasteBox').value;if(!txt.trim())return;const r=importOff(D,txt,{hard:$('poHard').value,addTeachers:$('poAdd').checked});
+function pasteOffOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上不排課表之前');const r=importOff(D,txt,{hard:$('poHard').value,addTeachers:$('poAdd').checked});
   if(!r.cls&&!r.tea){toast(r.skipT.length?'這些老師都不在名冊裡，沒有帶入。可以勾選「名冊裡沒有的老師也新增」':'沒有讀到資料，請確認是從 Excel 複製、而且有星期和節次');return;}
   changed();closeDlg();render();toast('帶入班級 '+r.cls+' 列、老師 '+r.tea+' 列，共 '+r.cells+' 格'+(r.newT?'；新增 '+r.newT+' 位老師':'')+(r.skipT.length?'；略過 '+r.skipT.length+' 位不在名冊的老師':'')+(r.bad?'；'+r.bad+' 列看不懂':''));offWarn();}
 function dayKeys(d){return D.periods.map(p=>d+'-'+p.id);}
@@ -359,7 +356,7 @@ function pickTog(id){const a=pickList.arr,k=a.indexOf(id);if(k>=0)a.splice(k,1);
 function renderTeach(){
   const need={},subs=[];M.G.forEach(g=>{if(!g.pull||!g.per)return;if(!subs.includes(g.subject))subs.push(g.subject);g.cls.forEach(c=>{(need[c]=need[c]||{})[g.subject]=1;});});
   const cls=Object.keys(need).sort(),tot=cls.reduce((n,c)=>n+Object.keys(need[c]).length,0),done=cls.reduce((n,c)=>n+Object.keys(need[c]).filter(sj=>D.classSubj[c+'|'+sj]).length,0);
-  let h=`<p class="guide">抽離課要和原班同一科同時上，所以要知道<b>每個班這一科是哪位老師</b>，他不排課的時段才會被算進去。直接打老師的名字就好：名冊裡沒有的會自動新增，之後再到「不排課時段」點他的時間。</p>`;
+  let h=`<div class="bar"><button class="b" onclick="pasteTL()">貼上任課老師名單</button><button class="b" onclick="go('roster','data')">上傳學校的 Excel</button></div><p class="guide">抽離課要和原班同一科同時上，所以要知道<b>每個班這一科是哪位老師</b>，他不排課的時段才會被算進去。直接打老師的名字就好：名冊裡沒有的會自動新增，之後再到「不排課時段」點他的時間。</p>`;
   if(!cls.length){$('page').innerHTML=h+`<div class="probs">還沒有抽離課的組別。請先到「老師開課」建立組別、放進學生，這裡就會列出需要填的班級與科目。</div>`;return;}
   h+=`<div class="bar"><span class="stat">已填 <b>${done}</b> / ${tot} 格</span></div><datalist id="tnames">${D.teachers.filter(t=>t.role!=='資源班').map(t=>`<option value="${esc(t.name)}">`).join('')}</datalist>
   <div class="scroll"><table class="ed"><tr><th>班級</th>${subs.map(s=>`<th>${esc(s)}</th>`).join('')}</tr>`+
@@ -377,7 +374,7 @@ function pasteCourses(){openDlg(`<h3>貼上課程一覽表</h3><p class="note">�
   <p class="note">每一組的節數照表上的來，所以同科目不同組可以不一樣（例：數學 7A 3 節、7B 4 節）。組名相同的課會更新，不會重複建立。學生名單遮名的（704林○哲）會用班級和姓名頭尾對回名冊，所以要先有名冊。右邊的教師鐘點表如果一起貼，會帶入基本鐘點。</p>
   <textarea id="pasteBox" placeholder="國文&#9;7&#9;A&#9;抽離&#9;704林○哲、704黃○侖&#9;3&#9;2&#9;6&#9;王老師"></textarea>
   <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteCoursesOk()">帶入課程</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function pasteCoursesOk(){const txt=$('pasteBox').value;if(!txt.trim())return;const r=importCourseTable(D,txt);
+function pasteCoursesOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上課程一覽表之前');const r=importCourseTable(D,txt);
   if(!r.added&&!r.updated){toast('沒有讀到任何一門課，請確認是從 Excel 複製（欄位之間是 Tab）、而且有節數');return;}
   D=normalize(D);changed();render();
   const miss=[...new Set(r.miss)];
@@ -465,7 +462,7 @@ function shownL(l){if(!view)return true;const g=M.G[M.L[l].g];if(view.slice(0,2)
 function runSolve(all){
   if(!M.L.length){toast('還沒有要排的組，請先到「老師開課」建立');return;}
   const part=view.slice(0,2)==='g:';if(all&&ST.pin.some((x,l)=>x&&(!part||shownL(l)))&&!confirm('重排會連已經固定的也一起重排，確定嗎？'))return;
-  pushUndo();$('busy').style.display='flex';
+  pushUndo();snapshot('一鍵排課之前');$('busy').style.display='flex';
   setTimeout(()=>{try{if(all)ST.pin.forEach((x,l)=>{if(!part||shownL(l))ST.pin[l]=0;});D.settings.seed=(D.settings.seed||1)+1;const sv=()=>{const R=solve(M,ST,{seed:D.settings.seed,only:part?shownL:null});setST({slot:R.slot,pin:R.pin,rfix:ST.rfix});};
       sv();let pl=null;const gv=part?+view.slice(2):0;
       if(needList(D).length){D.assign=fromState(M,ST);pl=placeStudents(D,gv?{filter:s=>gradeOfCls(s.cls)===gv}:null);if(pl.placed){rebuild();evaluate(M,ST.slot);if(M.viol)sv();}}
@@ -478,7 +475,7 @@ function runSolve(all){
 }
 function undo(){if(!undoStack.length){toast('沒有可以復原的動作');return;}const u=JSON.parse(undoStack.pop());D.assign=u.a;u.m.forEach(([id,st])=>{const g=D.groups.find(x=>x.id===id);if(g)g.students=st;});rebuild();commit();}
 function unpinAll(){pushUndo();ST.pin.fill(0);commit();}
-function clearAll(){if(!confirm('確定清空目前的排法？（可以按「復原」救回來）'))return;pushUndo();ST.slot.fill(-1);ST.pin.fill(0);ST.rfix.fill(-1);selL=-1;commit();}
+function clearAll(){if(!confirm('確定清空目前的排法？（可以按「復原」救回來）'))return;snapshot('清空排法之前');pushUndo();ST.slot.fill(-1);ST.pin.fill(0);ST.rfix.fill(-1);selL=-1;commit();}
 
 /* ───── 排課｜課表輸出 ───── */
 let outG='';
@@ -552,10 +549,118 @@ function renderOut(){
 function copyOut(){const el=$('outArea');if(!el)return;const r=document.createRange();r.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(r);
   let ok=false;try{ok=document.execCommand('copy');}catch(e){}s.removeAllRanges();toast(ok?'已複製，可以貼到 Word 或 LINE':'複製失敗，請手動選取後複製');}
 
+/* ───── 名冊｜匯入與新學期：讓學校自己把每學期的資料帶進來 ───── */
+const SNKEY='resource-class-snap',LBKEY='resource-class-lastbackup';
+function snaps(){try{return JSON.parse(localStorage.getItem(SNKEY))||[];}catch(e){return [];}}
+// 自動版本：最多留 12 份（每天一份，加上大動作之前各一份），空間不夠就丟掉最舊的
+function snapshot(label,json){let a=snaps();a.push({at:Date.now(),label,json:json||JSON.stringify(D)});a=a.slice(-12);
+  while(a.length){try{localStorage.setItem(SNKEY,JSON.stringify(a));return;}catch(e){a.shift();}}}
+function restoreSnap(i){const a=snaps(),x=a[i];if(!x)return;if(!confirm('要回到 '+fmtTime(x.at)+'（'+x.label+'）的版本嗎？\n目前的資料會先自動保留一份，之後還可以再換回來。'))return;
+  snapshot('回到舊版本之前');try{D=normalize(JSON.parse(x.json));}catch(e){toast('這個版本讀不出來');return;}undoStack=[];changed();$('title').value=D.title;paintSchool();render();toast('已回到 '+fmtTime(x.at)+' 的版本');}
+function fmtTime(t){const d=new Date(t),p=n=>String(n).padStart(2,'0');return (d.getMonth()+1)+'/'+d.getDate()+' '+p(d.getHours())+':'+p(d.getMinutes());}
+
+// 讀學校原本的 Excel（在這台電腦的瀏覽器裡讀，不會上傳）
+const XLSX_SRC=['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'];
+const XLT={stu:'學生名單',tl:'任課老師名單',course:'課程一覽表',off:'不排課時段'};
+let XL=[];
+async function needXLSX(){if(window.XLSX)return;for(const s of XLSX_SRC){try{await loadScript(s);if(window.XLSX)return;}catch(e){}}throw new Error('xlsx');}
+function sheetType(rows){
+  const top=rows.slice(0,6),has=re=>top.some(r=>r.some(c=>re.test(c)));
+  if(has(/起始星期/)&&has(/首節/))return 'off';
+  if(has(/學生名單/)&&has(/節數/))return 'course';
+  for(let i=0;i<rows.length;i++){const nums=rows[i].map((x,j)=>/^\d{3,4}$/.test(x)?j:-1).filter(j=>j>=0);
+    if(nums.some((v,k)=>k>=2&&nums[k-1]===v-1&&nums[k-2]===v-2)){const nx=rows.slice(i+1,i+3).find(r=>r.some(Boolean));if(nx&&/^(國語?文?|國語文|英語?文?|英語文|數學|理化|自然|社會)$/.test(nx.find(Boolean)))return 'tl';}}
+  if(has(/^(學生)?姓名$/)&&has(/班級/)&&!has(/科目/))return 'stu';
+  return '';
+}
+async function readXls(inp){const fs=[...inp.files];inp.value='';if(!fs.length)return;$('busy').style.display='flex';
+  try{await needXLSX();}catch(e){$('busy').style.display='none';toast('讀 Excel 的元件下載失敗，請確認有網路；或改用各頁的「貼上」');return;}
+  XL=[];let skip=0;
+  try{for(const f of fs){const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+    wb.SheetNames.forEach((n,i)=>{const w=wb.Workbook&&wb.Workbook.Sheets&&wb.Workbook.Sheets[i];if(w&&w.Hidden){skip++;return;}
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:false,defval:'',blankrows:false}).map(r=>r.map(c=>String(c).replace(/[\t\r\n]+/g,' ').trim()));
+      const t=sheetType(rows),tsv=rows.map(r=>r.join('\t')).join('\n');if(!t){skip++;return;}
+      // 先在副本上試一次，帶不出任何資料的工作表就不列出來
+      const X=JSON.parse(JSON.stringify(D)),got=t==='tl'?importTeacherList(X,tsv).set:t==='stu'?(r=>r.add+r.upd)(importStudents(X,tsv)):t==='course'?(r=>r.added+r.updated)(importCourseTable(X,tsv)):(r=>r.cls+r.tea)(importOff(X,tsv,{}));
+      if(!got){skip++;return;}
+      XL.push({file:f.name,sheet:n,type:t,on:true,n:rows.length,tsv});});}}
+  catch(e){toast('有檔案讀不出來：'+(e.message||e));}
+  finally{$('busy').style.display='none';}
+  XL.skip=skip;if(!XL.length)toast('這些檔案裡沒有認得的工作表（學生名單、任課老師名單、課程一覽表、不排課時段）');render();}
+function xlImport(){const on=XL.filter(x=>x.on);if(!on.length){toast('請先勾選要匯入的工作表');return;}
+  if(!confirm('要匯入勾選的 '+on.length+' 張工作表嗎？\n匯入前會自動保留一份目前的資料，匯錯了可以回到舊版本。'))return;
+  snapshot('匯入 Excel 之前');const order=['stu','tl','course','off'],out=[];
+  order.forEach(t=>on.filter(x=>x.type===t).forEach(x=>{const nm='「'+x.sheet+'」';
+    if(t==='stu'){const r=importStudents(D,x.tsv);out.push(nm+'：新增 '+r.add+' 位學生、更新 '+r.upd+' 位'+(r.cm?'，個管老師 '+r.cm+' 位':'')+(r.noCM.length?'；找不到的個管老師：'+r.noCM.join('、'):''));}
+    if(t==='tl'){const r=importTeacherList(D,x.tsv);out.push(nm+'：'+r.classes+' 個班、'+r.set+' 格任課老師'+(r.changed?'（其中 '+r.changed+' 格換了老師）':'')+(r.newT.length?'，新增 '+r.newT.length+' 位老師':''));}
+    if(t==='course'){const r=importCourseTable(D,x.tsv);out.push(nm+'：新增 '+r.added+' 門課、更新 '+r.updated+' 門，放進 '+r.members+' 人次'+(r.hours?'，基本鐘點 '+r.hours+' 位':'')+(r.miss.length?'；名冊找不到的學生：'+[...new Set(r.miss)].join('、'):''));}
+    if(t==='off'){const r=importOff(D,x.tsv,{hard:$('xlHard')?$('xlHard').value:'社團',addTeachers:$('xlAdd')&&$('xlAdd').checked});out.push(nm+'：班級 '+r.cls+' 列、老師 '+r.tea+' 列，新增 '+r.cells+' 格（已經有的不會重複加）'+(r.skipT.length?'；不在名冊、略過的老師 '+r.skipT.length+' 位':''));}}));
+  D=normalize(D);XL=[];changed();render();
+  openDlg(`<h3>匯入完成</h3><ul class="plain">${out.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul><p class="note">如果匯錯了，到「名冊 › 匯入與新學期」最下面的「自動保留的版本」回到匯入之前。</p><div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);offWarn();}
+
+function pasteTL(){openDlg(`<h3>貼上任課老師名單</h3><p class="note">兩種格式都可以：</p><ol class="note"><li>教務處的<b>教師名單</b>：一列是班級（701、702…），下面每一列是一科（國語文、英語文、數學、理化）和各班的老師。七、八、九年級可以一起貼。</li><li>一列一筆：<b>班級、科目、老師</b>。</li></ol>
+  <p class="note">名冊裡沒有的老師會自動新增；同一班同一科已經有老師的會換成新的。</p>
+  <textarea id="pasteBox" placeholder="&#9;701&#9;702&#9;703&#10;國語文&#9;王老師&#9;李老師&#9;陳老師&#10;英語文&#9;…"></textarea>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteTLOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+function pasteTLOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上任課老師名單之前');const r=importTeacherList(D,txt);
+  if(!r.set){toast('沒有讀到任課老師，請確認是從 Excel 複製（欄位之間是 Tab）');return;}
+  changed();closeDlg();render();toast(r.classes+' 個班、'+r.set+' 格任課老師'+(r.changed?'，'+r.changed+' 格換了老師':'')+(r.newT.length?'，新增 '+r.newT.length+' 位老師':''));}
+function pruneTeachers(){const used=new Set(Object.values(D.classSubj).concat(D.groups.map(g=>g.teacher),D.students.map(s=>s.caseMgr)));
+  const a=D.teachers.filter(t=>t.role!=='資源班'&&!used.has(t.id)&&!t.off.length&&!t.note);
+  if(!a.length){toast('沒有可以移除的老師');return;}
+  if(!confirm('這 '+a.length+' 位老師沒有任課、沒有開課、不是個管老師，也沒有不排課時段和備註：\n'+a.map(t=>t.name).join('、')+'\n\n要從名冊移除嗎？（會先自動保留一份）'))return;
+  snapshot('移除沒用到的老師之前');const ids=new Set(a.map(t=>t.id));D.teachers=D.teachers.filter(t=>!ids.has(t.id));changed();render();toast('已移除 '+a.length+' 位');}
+
+function startTerm(){const v=id=>$(id)&&$(id).checked,o={clearAssign:v('ntAssign'),clearGroups:v('ntGroups'),clearCS:v('ntCS'),clearClassOff:v('ntCOff'),clearTeaOff:v('ntTOff'),promote:v('ntUp'),title:$('ntTitle').value.trim()};
+  const what=[o.promote&&'升年級（九年級學生移出名冊）',o.clearAssign&&'清空排課結果',o.clearGroups&&'清空所有課程',o.clearCS&&'清空任課老師',o.clearClassOff&&'清空班級不排課',o.clearTeaOff&&'清空所有老師的不排課'].filter(Boolean);
+  if(!confirm('開始新學期：\n'+(what.length?what.map(x=>'・'+x).join('\n'):'只改學期名稱')+'\n\n目前的資料會先自動保留一份；也建議先按「下載備份檔」存一份在電腦裡。確定嗎？'))return;
+  snapshot('開始新學期之前');const r=newTerm(D,o);D=normalize(D);undoStack=[];changed();$('title').value=D.title;paintSchool();render();
+  toast('已開始新學期'+(o.promote?'：'+r.up+' 位學生升一個年級，'+r.grad+' 位畢業移出名冊':''));}
+
+function renderData(){
+  const need=new Set();M.G.forEach(g=>{if(g.need)g.cls.forEach(c=>need.add(c+'|'+g.subject));});
+  const csN=[...need].filter(k=>D.classSubj[k]).length,res=D.teachers.filter(t=>t.role==='資源班'),cOff=Object.keys(D.offBy).filter(k=>(k[0]==='c'||k[0]==='k')&&D.offBy[k].length).length;
+  const tOff=D.teachers.filter(t=>t.role!=='資源班'&&t.off.length).length,rOff=res.filter(t=>t.off.length).length,cm=D.students.filter(s=>s.caseMgr).length;
+  const st=(ok,t)=>`<span class="${ok?'ok':'warn'}">${t}</span>`;
+  const rows=[
+    ['學生名冊',st(D.students.length,D.students.length+' 位'),'個管學生一覽表',`<button class="b sm" onclick="pasteStu()">貼上</button>`],
+    ['個管老師',st(cm===D.students.length&&cm,cm+' / '+D.students.length+' 位已指定'),'個管學生一覽表',`<button class="b sm" onclick="go('roster','stu')">名冊</button>`],
+    ['資源班老師與基本鐘點',st(res.length&&res.every(t=>t.hours),res.length+' 位，'+res.filter(t=>t.hours).length+' 位有基本鐘點'),'課程一覽表右側的鐘點表',`<button class="b sm" onclick="go('sched','groups')">老師開課</button>`],
+    ['課程（分組、節數、學生）',st(D.groups.length,D.groups.length+' 門課'),'課程領域分組及節數一覽表',`<button class="b sm" onclick="pasteCourses()">貼上</button>`],
+    ['各班任課老師',st(!need.size||csN===need.size,need.size?csN+' / '+need.size+' 格':'還沒有抽離課'),'特教鎖課需求 › 教師名單',`<button class="b sm" onclick="pasteTL()">貼上</button>`],
+    ['班級不排課、不能鎖課',st(cOff,cOff+' 個班有設定'),'特教鎖課需求 › 班級不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
+    ['任課老師不排課',st(tOff,tOff+' 位有設定'),'特教鎖課需求 › 教師不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
+    ['資源班老師個人不排課',st(rOff===res.length&&res.length,rOff+' / '+res.length+' 位有設定'),'各位老師自己點',`<button class="b sm" onclick="go('sched','off')">不排課時段</button>`],
+    ['年級共同時段（社團等）',st(Object.keys(D.offBy).some(k=>k[0]==='g'&&D.offBy[k].length),Object.keys(D.offBy).filter(k=>k[0]==='g'&&D.offBy[k].length).map(k=>GRADE[k.slice(2)]).join('、')||'沒有設定'),'教學組',`<button class="b sm" onclick="offSel='g:7';go('sched','off')">不排課時段</button>`],
+    ['鎖課方式與上限',st(1,D.settings.lockMode==='flex'?'彈性鎖課'+(D.settings.lockCap?'（'+Object.keys(D.settings.lockCap).map(k=>k+D.settings.lockCap[k]).join(' ')+'）':''):'同一科同時上'),'和教學組確認',`<button class="b sm" onclick="go('roster','env')">規則</button>`]];
+  let h=`<p class="guide">每學期照下面的順序，把學校本來就有的表格帶進來，就能自己排課，不需要找人幫忙：<b>①</b> 視需要按「開始新學期」<b>②</b> 上傳學校的 Excel（或在各列按「貼上」）<b>③</b> 補上資源班老師自己的不排課時段 <b>④</b> 到「排課」按一鍵排課。</p>
+  <h3>上傳學校的 Excel</h3><p class="note">可以一次選好幾個檔案。系統會自己認出裡面的<b>學生名單、任課老師名單（教師名單）、課程一覽表、班級不排課、教師不排課</b>，其他工作表會略過。Google 試算表請先按「檔案 › 下載 › Microsoft Excel」。檔案只在這台電腦的瀏覽器裡讀，不會上傳到任何地方。</p>
+  <div class="bar"><input type="file" id="xlsIn" accept=".xlsx,.xls,.xlsm,.csv,.ods" multiple style="display:none" onchange="readXls(this)"><button class="b pri" onclick="$('xlsIn').click()">選擇 Excel 檔</button></div>`;
+  if(XL.length)h+=`<div class="xlbox"><table class="ed"><tr><th></th><th>檔案</th><th>工作表</th><th>認成</th><th>列數</th></tr>${XL.map((x,i)=>`<tr><td><input type="checkbox"${x.on?' checked':''} onchange="XL[${i}].on=this.checked"></td><td class="dim">${esc(x.file)}</td><td>${esc(x.sheet)}</td><td><b>${XLT[x.type]}</b></td><td class="dim">${x.n}</td></tr>`).join('')}</table>
+    ${XL.skip?`<p class="note">另外有 ${XL.skip} 張工作表看不出是哪一種，已略過。</p>`:''}
+    ${XL.some(x=>x.type==='off')?`<div class="bar"><span class="note" style="margin:0">班級不排課裡，原因含這些字的才算學生<b>不能被抽離</b>，其餘只是不能鎖課</span><input type="text" id="xlHard" class="w8" value="社團"></div><label class="note"><input type="checkbox" id="xlAdd"> 教師不排課裡名冊沒有的老師也新增（不勾就只帶入名冊裡有的老師）</label>`:''}
+    <div class="bar"><button class="b pri" onclick="xlImport()">匯入勾選的工作表</button><button class="b" onclick="XL=[];render()">取消</button></div></div>`;
+  h+=`<h3>資料清單</h3><div class="scroll"><table class="ed chklist"><tr><th>資料</th><th>目前</th><th>學校的哪一份表</th><th></th></tr>${rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="dim">${r[2]}</td><td class="nw">${r[3]}</td></tr>`).join('')}</table></div>
+  <h3>開始新學期</h3><p class="note">勾選要清掉的部分，沒勾的會留著。學生、老師、教室、作息、個管老師、年級共同時段都會保留。</p>
+  <div class="rules"><label>學期名稱 <input type="text" id="ntTitle" class="w12" value="${esc(D.title||'')}"></label>
+    <label><input type="checkbox" id="ntAssign" checked> 清空排課結果（課程留著，重新排）</label>
+    <label><input type="checkbox" id="ntGroups"> 清空所有課程（之後重新貼課程一覽表）</label>
+    <label><input type="checkbox" id="ntCS"> 清空各班任課老師</label>
+    <label><input type="checkbox" id="ntCOff"> 清空班級不排課、不能鎖課</label>
+    <label><input type="checkbox" id="ntTOff"> 清空所有老師的不排課時段</label>
+    <label><input type="checkbox" id="ntUp"> <b>新學年升年級</b>：七年級變八年級、八年級變九年級（701→801），九年級學生畢業移出名冊。班級號碼會變，所以課程、任課老師、班級不排課會一起清空</label></div>
+  <div class="bar"><button class="b pri" onclick="startTerm()">開始新學期</button><button class="b" onclick="exportJson()">先下載備份檔</button></div>
+  <h3>資料保存</h3><p class="note">${cloudState==='on'?'目前登入共用中，資料存在雲端，名單裡的老師都看得到同一份。':'目前資料只存在這台電腦的這個瀏覽器。換電腦或清除瀏覽器資料前，請先下載備份檔；想讓幾位老師共用同一份，可以設定學校自己的雲端。'}</p>
+  <div class="bar"><button class="b" onclick="exportJson()">下載備份檔</button><button class="b" onclick="openShare(1)">共用與學校自己的雲端</button>${(()=>{const lb=+localStorage.getItem(LBKEY)||0;return `<span class="note" style="margin:0">${lb?'上次下載備份：'+fmtTime(lb):'還沒下載過備份檔'}</span>`;})()}</div>
+  <h4>自動保留的版本</h4><p class="note">每天第一次修改，以及匯入、開始新學期、還原之前，都會在這台電腦自動留一份（最多 12 份）。改壞了可以回到之前的版本。</p>`;
+  const a=snaps();h+=a.length?`<div class="scroll"><table class="ed"><tr><th>時間</th><th>說明</th><th>學生／課程</th><th></th></tr>${a.map((x,i)=>{let n='';try{const o=JSON.parse(x.json);n=(o.students||[]).length+' 位／'+(o.groups||[]).length+' 門';}catch(e){}return `<tr><td>${fmtTime(x.at)}</td><td>${esc(x.label)}</td><td class="dim">${n}</td><td><button class="b sm" onclick="restoreSnap(${i})">回到這個版本</button></td></tr>`;}).reverse().join('')}</table></div>`:'<p class="note">還沒有。</p>';
+  $('page').innerHTML=h;
+}
+
 /* ───── 備份與還原（名冊、排課、段考考場、通知單一起） ───── */
 function reloadExam(){const f=$('examFrame');if(f.getAttribute('src'))f.src='exam.html?embed';}
 function exportJson(){const o=Object.assign({},D),g=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
-  o._exam=g(EXKEY);o._notice=g(NKEY);o._att=ATT;
+  o._exam=g(EXKEY);o._notice=g(NKEY);o._att=ATT;try{localStorage.setItem(LBKEY,String(Date.now()));}catch(e){}
   const a=document.createElement('a'),d=new Date(),p=n=>String(n).padStart(2,'0');
   a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,1)],{type:'application/json'}));a.download='資源班管理系統_備份_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'.json';
   document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
@@ -566,11 +671,11 @@ function importJson(inp){const f=inp.files[0];if(!f)return;const rd=new FileRead
     if(!confirm('還原後會取代目前的名冊、排課、段考考場與點名紀錄，確定嗎？'))return;
     const ex=o._exam,nt=o._notice,at=o._att;delete o._exam;delete o._notice;delete o._att;if(at&&typeof at==='object'){ATT=at;attSave();}
     try{if(ex)localStorage.setItem(EXKEY,JSON.stringify(ex));if(nt)localStorage.setItem(NKEY,JSON.stringify(nt));}catch(e){}
-    D=normalize(o);undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();if($('dlg').open)closeDlg();reloadExam();render();toast('已還原');};
+    snapshot('從備份檔還原之前');D=normalize(o);undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();if($('dlg').open)closeDlg();reloadExam();render();toast('已還原');};
   rd.readAsText(f);}
 function resetAll(){if(isRO()){toast('你是檢視權限，不能清空');return;}
   if(!confirm('確定全部清空？\n目前的名冊、分組、排法、段考考場與點名紀錄都會被清掉'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。'))return;
-  try{localStorage.removeItem(EXKEY);localStorage.removeItem(NKEY);}catch(e){}
+  snapshot('全部清空之前');try{localStorage.removeItem(EXKEY);localStorage.removeItem(NKEY);}catch(e){}
   ATT={};attSave();D=emptyData();undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();closeDlg();reloadExam();go('home');}
 
 /* 段考考場（另一個視窗框）改了名冊，或另一個分頁改了資料：這裡跟著更新 */

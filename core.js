@@ -113,7 +113,8 @@ function compile(D){
   // 鎖課方式：same＝原班和資源班同一節上同一科；flex＝鎖不到同一科可以改鎖其他主科，都不行就不鎖（排完再配鎖課）
   const flex=D.settings.lockMode==='flex',NR=D.rooms.length,strict=D.settings.regClash!==false&&!flex;
   const klay=classes.map(c=>OB['k:'+c]&&OB['k:'+c].length?mark(OB['k:'+c]):null);      // 這一班只是不能鎖課的時段
-  const copt=classes.map(()=>[]);for(const k in D.classSubj){const i=k.indexOf('|'),c=cIdx[k.slice(0,i)],tt=tIdx[D.classSubj[k]];if(c!=null&&tt!=null)copt[c].push({sj:k.slice(i+1),t:tt});}
+  const capSet=Object.keys((D.settings||{}).lockCap||{}).filter(k=>D.settings.lockCap[k]>0);
+  const copt=classes.map(()=>[]);for(const k in D.classSubj){const i=k.indexOf('|'),c=cIdx[k.slice(0,i)],tt=tIdx[D.classSubj[k]],sj=k.slice(i+1);if(c!=null&&tt!=null&&(!capSet.length||capSet.includes(sj)))copt[c].push({sj,t:tt});}
   const coff=classes.map(c=>{const a=new Uint8Array(NS);[OB['g:'+gradeOfCls(c)],OB['c:'+c],OB['k:'+c],D.blocked].forEach(li=>(li||[]).forEach(k=>{const s=key2s(k);if(s>=0)a[s]=1;}));
     P.forEach((p,pi)=>{if(p.extra)for(let dd=0;dd<5;dd++)a[dd*NP+pi]=1;});return a;});
   const idxOf=(map,k)=>(k!=null&&map[k]!=null)?map[k]:-1;
@@ -369,14 +370,19 @@ function importCourseTable(D,text){
     const a=c.indexOf('教師'),b=c.indexOf('總節數');
     if(a>=0&&b>a){ti=a;hi=b;}else if(ti>=0&&c[ti]&&+c[hi]>0&&!/節數|合計/.test(c[ti])){tOf(c[ti]).hours=+c[hi];R.hours++;}
     const per=+c[5];if(!c[0]||!c[2]||!(per>0)||/領域|名稱/.test(c[0]))return;
-    const subject=c[0],grade=/^[1-9]$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[];
+    const subject=canonSubj(D,c[0]),grade=/^[1-9]$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[];
     (c[4]||'').split(/[、,，;；\/\s]+/).filter(Boolean).forEach(m=>{const mm=m.match(/^(\d{3,4})[-－]?\d{0,2}(\D.*)$/);if(!mm){R.miss.push(m);return;}
       const nm=mm[2],k=nm.search(MK),f=k<0?nm:nm.slice(0,k),l=k<0?'':nm.replace(/^.*[○〇ＯO＊*]/,'');
       const hit=D.students.filter(s=>String(s.cls)===mm[1]&&(k<0?s.name===nm:s.name.length>=f.length+l.length&&s.name.startsWith(f)&&s.name.endsWith(l)));
       if(hit.length===1){if(!ids.includes(hit[0].id))ids.push(hit[0].id);}else R.miss.push(m);});
     let g=D.groups.find(x=>x.name===name);
+    const isNew=!g;
     if(g)R.updated++;else{g={id:uid('g'),name,subject,teacher:'',per,students:[],mode:'抽離',room:'',on:true,grade};D.groups.push(g);R.added++;}
-    g.subject=subject;g.grade=grade;g.per=Math.min(15,per);g.mode=/外加/.test(c[3]||'')?'外加':'抽離';if(c[8])g.teacher=tOf(c[8]).id;
+    g.subject=subject;g.grade=grade;g.per=Math.min(15,per);
+    // 表上只分抽離、外加；已經設成「不鎖課」的保留。彈性鎖課時，不在鎖課科目裡的新課（例：社會技巧）預設不鎖課
+    const caps=Object.keys((D.settings||{}).lockCap||{});
+    if(/外加/.test(c[3]||''))g.mode='外加';else if(g.mode!=='不鎖課')g.mode=(isNew&&D.settings.lockMode==='flex'&&caps.length&&!caps.includes(subject))?'不鎖課':'抽離';
+    if(c[8])g.teacher=tOf(c[8]).id;
     g.students=ids;R.members+=ids.length;
     ids.forEach(id=>{const s=D.students.find(x=>x.id===id);if(!Array.isArray(s.needs))s.needs=[];if(!s.needs.includes(subject))s.needs.push(subject);});});
   return R;
@@ -453,5 +459,76 @@ function importOff(D,text,opt){
   R.skipT=[...new Set(R.skipT)];return R;
 }
 
-const CORE={assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+/* ───── 讓學校自己維護資料：各種表格的匯入、新學期 ───── */
+// 科目名稱：國語文＝國文、英語文＝英文……。用這一份資料裡已經在用的寫法
+const SUBJ_FAM=[['國文','國語文','國語'],['英文','英語文','英語'],['數學'],['理化','自然'],['社會'],['社會技巧']];
+function canonSubj(D,name){
+  name=String(name||'').trim();const fam=SUBJ_FAM.find(f=>f.includes(name));if(!fam)return name;
+  const used=new Set(D.groups.map(g=>g.subject).concat(Object.keys(D.classSubj||{}).map(k=>k.split('|')[1])));
+  return fam.find(x=>used.has(x))||fam[0];
+}
+function findTeacher(D,name,role){
+  name=String(name||'').trim();if(!name)return null;
+  let t=D.teachers.find(x=>x.name===name);if(!t&&role){t={id:uid('t'),name,role,off:[],note:'',hours:0};D.teachers.push(t);t._new=1;}
+  return t;
+}
+/* 任課老師名單。兩種格式都可以：
+   1. 教務處的「教師名單」：一列班級（701 702 …），下面每列是一科（國語文、英語文、數學、理化）與各班老師
+   2. 一列一筆：班級、科目、老師 */
+function importTeacherList(D,text){
+  const R={set:0,changed:0,newT:[],classes:new Set()},rows=String(text).split(/\r?\n/).map(l=>l.split('\t').map(x=>x.trim().replace(/\.0$/,'')));
+  let head=null;
+  const okName=n=>/^[\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2ffff}·．A-Za-z （）()]{2,12}$/u.test(n)&&!SUBJ_FAM.some(f=>f.includes(n))&&!/節|星期|科目|教師|班級/.test(n);
+  const put=(cls,sj,name)=>{if(!name||!okName(name))return;const k=cls+'|'+canonSubj(D,sj),t=findTeacher(D,name,'普通班');
+    if(t._new){R.newT.push(name);delete t._new;}if(D.classSubj[k]!==t.id){if(D.classSubj[k])R.changed++;D.classSubj[k]=t.id;}R.set++;R.classes.add(cls);};
+  rows.forEach(c=>{
+    const nums=c.map((x,i)=>/^\d{3,4}$/.test(x)?i:-1).filter(i=>i>=0),run=nums.some((v,i)=>i>=2&&nums[i-1]===v-1&&nums[i-2]===v-2);
+    if(run){head=c;return;}if(nums.length>=3){head=null;return;}
+    const lead=c.findIndex(x=>x);if(lead<0){return;}
+    if(head&&SUBJ_FAM.some(f=>f.includes(c[lead]))&&nums.length===0){for(let i=lead+1;i<c.length;i++)if(/^\d{3,4}$/.test(head[i]||''))put(head[i],c[lead],c[i]);return;}
+    if(/^\d{3,4}$/.test(c[lead])&&c[lead+1]&&c[lead+2]){head=null;put(c[lead],c[lead+1],c[lead+2]);}
+  });
+  R.classes=R.classes.size;R.newT=[...new Set(R.newT)];return R;
+}
+/* 學生名單：班級、座號、姓名，可以再加個管老師、備註。也接受「701-13」或「701-13王小明」寫在同一格。
+   有標題列時照標題找欄位（班級、座號、姓名、個管、備註/導師）。班級座號相同的會更新，不會重複新增 */
+function importStudents(D,text){
+  const R={add:0,upd:0,skip:0,cm:0,noCM:[]};let col=null;
+  String(text).split(/\r?\n/).forEach(line=>{
+    let a=line.split(line.includes('\t')?'\t':/[,，\s]+/).map(x=>x.trim());if(!a.some(Boolean))return;
+    if(!col&&a.some(x=>/^(學生)?姓名$/.test(x))&&a.some(x=>/班級/.test(x))){const f=re=>a.findIndex(x=>re.test(x));col={cls:f(/班級/),seat:f(/座號/),name:f(/^(學生)?姓名$/),cm:f(/個管/),note:f(/備註|導師/)};return;}
+    let cls,seat='',name,cm='',note='';
+    if(col){cls=a[col.cls];seat=col.seat>=0?a[col.seat]:'';name=a[col.name];cm=col.cm>=0?a[col.cm]:'';note=col.note>=0?a[col.note]:'';}
+    else{a=a.filter(Boolean);[cls,seat,name,cm,note]=a.length>=3?a:[a[0],'',a[1]];}
+    const m=String(cls||'').match(/^(\d{3,4})\s*[-－]\s*(\d{1,2})\s*(.*)$/);
+    if(m){cls=m[1];if(!seat||!name){name=m[3]||seat||name;seat=m[2];}}
+    if(!/^\d{3,4}$/.test(String(cls||''))||!name){R.skip++;return;}
+    seat=seat?String(+seat||seat).padStart(2,'0'):'';
+    let s=D.students.find(x=>String(x.cls)===cls&&((seat&&x.seat&&+x.seat===+seat)||x.name===name));
+    if(s){s.name=name;if(seat)s.seat=seat;R.upd++;}else{s={id:uid('s'),cls,seat,name,caseMgr:'',note:'',needs:[]};D.students.push(s);R.add++;}
+    if(cm){const t=D.teachers.find(x=>x.name===cm.replace(/老師$/,''))||D.teachers.find(x=>x.name===cm);if(t){s.caseMgr=t.id;R.cm++;}else R.noCM.push(cm);}
+    if(note)s.note=note;
+  });
+  R.noCM=[...new Set(R.noCM)];return R;
+}
+/* 開始新學期。opt：clearAssign 清空排課結果、clearGroups 清空課程、clearCS 清空任課老師、clearClassOff 清空班級不排課、
+   clearTeaOff 清空所有老師的不排課、promote 升年級（七→八、八→九，九年級畢業移出名冊；國小一到六年級同理）。
+   升年級時班級號碼會變，所以課程、任課老師、班級不排課一定一起清空 */
+function newTerm(D,opt){
+  const R={grad:0,up:0};
+  if(opt.promote){opt.clearAssign=opt.clearGroups=opt.clearCS=opt.clearClassOff=true;
+    const gone=[];D.students=D.students.filter(s=>{const g=gradeOfCls(s.cls);if(g===9||g===6){gone.push(s.id);R.grad++;return false;}
+      if(g>=1&&g<=8&&/^\d{3,4}$/.test(String(s.cls))){s.cls=String(g+1)+String(s.cls).slice(1);R.up++;}return true;});
+    D.gone=(D.gone||[]).concat(gone).slice(-500);
+    gone.forEach(id=>{delete D.offBy['s:'+id];});D.sets.forEach(x=>{x.students=x.students.filter(id=>!gone.includes(id));});}
+  if(opt.clearAssign)D.assign={};
+  if(opt.clearGroups){D.groups=[];D.assign={};}
+  if(opt.clearCS)D.classSubj={};
+  if(opt.clearClassOff)Object.keys(D.offBy).forEach(k=>{if(k[0]==='c'||k[0]==='k')delete D.offBy[k];});
+  if(opt.clearTeaOff)D.teachers.forEach(t=>{t.off=[];});
+  if(opt.title!=null)D.title=opt.title;
+  return R;
+}
+
+const CORE={canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;

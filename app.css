@@ -364,3 +364,9 @@ table.pt td{height:62px;padding:4px;width:17%}
 /* 彈性鎖課 */
 .chk span.mid{background:var(--warn-l);color:var(--warn)}
 .rules select{max-width:100%}
+
+/* 匯入與新學期 */
+.xlbox{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--card);margin-bottom:14px}
+.chklist td .ok{color:var(--ok)}.chklist td .warn{color:var(--warn)}
+ul.plain{padding-left:18px;margin:6px 0}ul.plain li{margin:4px 0}
+.w12{width:22em;max-width:100%}
