@@ -358,6 +358,21 @@ function token(n){n=n||24;const cr=typeof globalThis!=='undefined'?globalThis.cr
   let out='';while(out.length<n){for(const x of cr.getRandomValues(new Uint8Array(n*2)))if(x<248&&out.length<n)out+=B62[x%62];}
   return out;}
 const TOKEN_RE=/^[A-Za-z0-9]{24,64}$/;
+// SHA-256（同步版，鑰匙只有英數字）：共用資料裡只存鑰匙的雜湊，算雜湊不用等瀏覽器的非同步 API。結果和 tokHash、Function 端一樣
+function sha256hex(str){const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const b=[];const s=unescape(encodeURIComponent(String(str)));for(let i=0;i<s.length;i++)b.push(s.charCodeAt(i));
+  const bits=b.length*8;b.push(0x80);while(b.length%64!==56)b.push(0);for(let i=7;i>=0;i--)b.push(i>=4?0:(bits>>>(i*8))&255);
+  let H=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];const W=new Array(64),r=(x,n)=>(x>>>n)|(x<<(32-n));
+  for(let o=0;o<b.length;o+=64){for(let i=0;i<16;i++)W[i]=(b[o+4*i]<<24)|(b[o+4*i+1]<<16)|(b[o+4*i+2]<<8)|b[o+4*i+3];
+    for(let i=16;i<64;i++){const s0=r(W[i-15],7)^r(W[i-15],18)^(W[i-15]>>>3),s1=r(W[i-2],17)^r(W[i-2],19)^(W[i-2]>>>10);W[i]=(W[i-16]+s0+W[i-7]+s1)|0;}
+    let [a,c,d,e,f,g,h,k]=H;
+    for(let i=0;i<64;i++){const t1=(k+(r(f,6)^r(f,11)^r(f,25))+((f&g)^(~f&h))+K[i]+W[i])|0,t2=((r(a,2)^r(a,13)^r(a,22))+((a&c)^(a&d)^(c&d)))|0;k=h;h=g;g=f;f=(e+t1)|0;e=d;d=c;c=a;a=(t1+t2)|0;}
+    H=[H[0]+a,H[1]+c,H[2]+d,H[3]+e,H[4]+f,H[5]+g,H[6]+h,H[7]+k].map(x=>x|0);}
+  return H.map(x=>(x>>>0).toString(16).padStart(8,'0')).join('');}
+const HASH_RE=/^[0-9a-f]{64}$/;
 // 雲端文件名稱用鑰匙的 SHA-256，不直接用鑰匙：資料庫被看到也拿不到能用的連結（Function 端算法相同）
 async function tokHash(t){const b=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(t)));return Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('');}
 // 調查範圍：日期區間的週一到週五 × 勾選的節次
@@ -367,8 +382,33 @@ function setRange(D,R,d1,d2,ps){R.d1=d1||'';R.d2=d2||'';R.ps=(ps||[]).filter(p=>
 function expMs(R){const d=parseDate(R.due);return d?new Date(d.getFullYear(),d.getMonth(),d.getDate(),23,59,59).getTime():0;}
 // 要發連結的人：老師一定有；家長、專業人員要勾 R.par 才發
 function webPeople(D,R){return consolidate(D,R,{all:!!R.par});}
-function ensureTokens(D,R){R.tok=R.tok&&typeof R.tok==='object'?R.tok:{};const list=webPeople(D,R);
-  list.forEach(o=>{if(!R.tok[o.k]||!TOKEN_RE.test(R.tok[o.k]))R.tok[o.k]=token();});return list;}
+/* 鑰匙放哪裡：
+   ・共用資料（rc/main）只放雜湊：R.tokH＝{出席者代號: sha256(鑰匙)}，R.pub＝已經寫到雲端的 iepTok 文件名稱（雜湊）。
+   ・鑰匙本身只放在發布的那台電腦（app 的 localStorage「rc-iep-tok」）：local＝{出席者代號: [鑰匙, 雜湊]}。
+   ・別台電腦沒有鑰匙，就做不出連結：按「重新產生連結」換一把新的（舊的 iepTok 文件刪掉，舊連結失效）。
+   更新線上內容不需要鑰匙（文件名稱就是雜湊）。 */
+// 舊資料：鑰匙直接存在 R.tok、R.pub 也是鑰匙 → 搬到 local，共用資料只留雜湊。回傳有沒有搬
+function migrateTok(R,local){if(!R)return false;let ch=false;R.tokH=R.tokH&&typeof R.tokH==='object'?R.tokH:{};
+  if(R.tok&&typeof R.tok==='object'){for(const k in R.tok){const t=R.tok[k];if(typeof t==='string'&&TOKEN_RE.test(t)){const h=sha256hex(t);R.tokH[k]=h;if(local)local[k]=[t,h];}}delete R.tok;ch=true;}
+  if(Array.isArray(R.pub)&&R.pub.some(t=>!HASH_RE.test(String(t)))){R.pub=R.pub.map(t=>HASH_RE.test(String(t))?t:sha256hex(t));ch=true;}
+  return ch;}
+// 要發連結的每一位：已經有雜湊的沿用（重新發布不換鑰匙）；新的人產生鑰匙（鑰匙進 local、雜湊進 R.tokH）
+function ensureTokens(D,R,local){local=local||{};migrateTok(R,local);const list=webPeople(D,R);
+  list.forEach(o=>{if(R.tokH[o.k]&&HASH_RE.test(R.tokH[o.k]))return;const t=token(),h=sha256hex(t);local[o.k]=[t,h];R.tokH[o.k]=h;});return list;}
+// 這台電腦能不能做出這個人的連結：local 有鑰匙、而且和共用資料的雜湊對得上（別台電腦重新產生過就對不上）
+function linkTok(R,local,pk){const x=local&&local[pk],h=R&&R.tokH&&R.tokH[pk];return Array.isArray(x)&&h&&x[1]===h&&TOKEN_RE.test(x[0])?x[0]:'';}
+// 重新產生一個人的鑰匙：回傳舊的雜湊（要刪掉的 iepTok 文件）與新的雜湊
+function regenTok(R,local,pk){R.tokH=R.tokH||{};const old=R.tokH[pk]||'',t=token(),h=sha256hex(t);local[pk]=[t,h];R.tokH[pk]=h;return {old,h,t};}
+// 安全規則的上限：一份連結最多 400 個節次、80 位學生；到期最多 120 天後。超過的列出來（發布前先擋）
+const PUB_MAX={keys:400,stu:80,days:120};
+function pubLimits(D,R,now){const out=[],list=webPeople(D,R),lim=(now||Date.now())+PUB_MAX.days*864e5;
+  list.forEach(o=>{if(o.keys.length>PUB_MAX.keys)out.push({k:o.k,name:o.name,what:'keys',n:o.keys.length,max:PUB_MAX.keys});
+    if(o.meets.length>PUB_MAX.stu)out.push({k:o.k,name:o.name,what:'stu',n:o.meets.length,max:PUB_MAX.stu});});
+  const e=expMs(R);if(e&&e>lim)out.push({what:'due',n:Math.ceil((e-(now||Date.now()))/864e5),max:PUB_MAX.days});
+  return out;}
+function pubLimitText(x){return x.what==='keys'?(x.name+'：要回覆的節次有 '+x.n+' 個，一份連結最多 '+x.max+' 個。請縮短日期範圍或少勾幾節'):
+  x.what==='stu'?(x.name+'：要回覆 '+x.n+' 位學生的會議，一份連結最多 '+x.max+' 位。請把這次調查拆成兩次'):
+  ('回覆期限在 '+x.n+' 天後，連結最多只能開 '+x.max+' 天。請把回覆期限提早');}
 // 公開頁上的「有課」只寫種類，不寫組別名稱、不寫別的學生
 function shortBusy(why){why=String(why||'');return /資源班上課/.test(why)?'資源班課':/原班上課/.test(why)?'原班課':/IEP/.test(why)?'已有會議':/不排課/.test(why)?'不排課':'有事';}
 // 寫到 iepTok/{鑰匙的雜湊} 的公開內容（app 另外加上 exp 時間戳記、r 調查 id、pk 出席者代號；Function 只回傳公開欄位）
@@ -397,7 +437,7 @@ function remindText(D,R,o,url){const n=o.meets.length,first=o.meets[0];
   return salute(o.name,o.meets.map(x=>x.role).join('、'),o.teacher)+'您好：提醒您填寫 IEP 會議時間調查'+(first?'（學生 '+stuShow(first.s,'cls')+(n>1?' 等 '+n+' 位':'')+'）':'')+
     '，請'+(R.due?'於 '+fmtDate(R.due)+' 前':'儘快')+'打開連結，點選您有空的節次：'+url+'　謝謝！'+(hostLabel(D,R)?'（'+hostLabel(D,R)+'）':'');}
 
-const IEP={token,tokHash,TOKEN_RE,setRange,expMs,webPeople,ensureTokens,shortBusy,publicDoc,applyWeb,webGrid,webInit,progress,remindText,KINDS,stuShow,salute,slipItems,quickMeet,ROLES,DEF_REQ,ANS,W,ensure,round,normRound,newRound,addMeet,delMeet,derive,rederive,addPerson,addOther,removePerson,setReq,subjTeachers,subjOptions,
+const IEP={token,tokHash,sha256hex,HASH_RE,TOKEN_RE,setRange,expMs,webPeople,ensureTokens,migrateTok,linkTok,regenTok,pubLimits,pubLimitText,PUB_MAX,shortBusy,publicDoc,applyWeb,webGrid,webInit,progress,remindText,KINDS,stuShow,salute,slipItems,quickMeet,ROLES,DEF_REQ,ANS,W,ensure,round,normRound,newRound,addMeet,delMeet,derive,rederive,addPerson,addOther,removePerson,setReq,subjTeachers,subjOptions,
   tKey,pName,isTeacher,stuOf,stuLabel,key,splitKey,keysOf,slotInfo,fmtDate,dateRange,genSlots,sortSlots,overlap,ctxOf,busyOf,
   record,fillRest,status,cycle,meetSlots,consolidate,grid,rank,schedule,applyPlan,conflicts,crossConflicts,notices,
   hostId,hostLabel,mineStu,ownRounds,canEdit,invited,addMeetAs,newRoundAs,selfAnswer};
@@ -431,7 +471,17 @@ function setCur(id){if(SC)U.cur[SC]=id;else D.iep.cur=id;}
 function findM(mid){for(const R of IEP.ownRounds(D,SC)){const m=R.meets.find(x=>x.id===mid);if(m)return {R,m};}return {};}
 function busyOf(R){try{return IEP.busyOf(D,R,{M,slot:ST.slot,room:ROOM});}catch(e){return {};}}
 function cloudOK(){return typeof cloudState!=='undefined'&&cloudState==='on'&&!!(CLOUD&&CLOUD.db&&CLOUD.user)&&!isRO();}
-function urlOf(R,pk){return R.tok&&R.tok[pk]?location.origin+location.pathname.replace(/[^/]*$/,'')+'iep.html?k='+R.tok[pk]:'';}
+// 連結的鑰匙只存在發布的那台電腦：localStorage「rc-iep-tok」＝{調查 id: {出席者代號: [鑰匙, 雜湊]}}（共用資料只有雜湊）
+const LTKEY='rc-iep-tok';let LT=null;
+function ltAll(){if(!LT){try{LT=JSON.parse(localStorage.getItem(LTKEY))||{};}catch(e){LT={};}if(!LT||typeof LT!=='object')LT={};}return LT;}
+function ltRound(rid){const a=ltAll();return a[rid]=a[rid]&&typeof a[rid]==='object'?a[rid]:{};}
+function ltSave(){const a=ltAll();Object.keys(a).forEach(k=>{if(!a[k]||!Object.keys(a[k]).length)delete a[k];});
+  try{if(Object.keys(a).length)localStorage.setItem(LTKEY,JSON.stringify(a));else localStorage.removeItem(LTKEY);}catch(e){}}
+function ltDrop(rid){const a=ltAll();delete a[rid];ltSave();}
+// 舊資料把鑰匙存在共用資料裡：搬到這台電腦，共用資料只留雜湊（檢視權限不能改共用資料，就不搬）
+function migrateAll(){if(typeof isRO==='function'&&isRO())return;let ch=false;
+  ((D.iep&&D.iep.rounds)||[]).forEach(R=>{if(IEP.migrateTok(R,ltRound(R.id)))ch=true;});if(ch){ltSave();save();}}
+function urlOf(R,pk){const t=R&&IEP.linkTok(R,ltRound(R.id),pk);return t?location.origin+location.pathname.replace(/[^/]*$/,'')+'iep.html?k='+t:'';}
 function keep(){save();render();}
 function host(R){return IEP.hostLabel(D,R)||(SC?'':'特教組');}
 function empty(t,btn){return '<div class="iepempty"><span>'+E(t)+'</span>'+(btn||'')+'</div>';}
@@ -511,40 +561,60 @@ function paper(R,o,busy){const G=IEP.grid(D,o.keys),b=busy[o.k]||{},bz=w=>/上�
     G.dates.map(d=>'<tr><th>'+E(d.label)+'</th>'+G.cols.map(c=>{const k=G.cell(d.date,c.p);return k?'<td>'+(b[k]?'<span class="bz">'+bz(b[k])+'</span>':'')+'</td>':'<td class="x"></td>';}).join('')+'</tr>').join('')+'</table>'+
     '<p>備註：<span class="ln" style="min-width:30em"></span></p><p class="sg">填表人：<span class="ln"></span></p></div>';}
 function s3(R){const busy=busyOf(R),list=IEP.webPeople(D,R),pg=IEP.progress(D,R),st=new Map(pg.people.map(o=>[o.k,o.done])),pub=(R.pub||[]).length;let h='';
+  const noKey=pub?list.filter(o=>R.tokH&&R.tokH[o.k]&&!urlOf(R,o.k)):[];
   if(!cloudOK())h+='<p class="note iepui">'+(typeof isRO==='function'&&isRO()?'檢視權限不能發布連結':'登入雲端共用後才能發布連結')+'；也可以印紙本時段表。</p>';
   const miss=[!R.due&&'回覆期限',!R.slots.length&&'日期與節次',!R.meets.length&&'學生'].filter(Boolean);
   if(miss.length)h+='<p class="note iepwarn iepui">還沒填：'+E(miss.join('、'))+'</p>';
+  const over=IEP.pubLimits(D,R);if(over.length)h+='<p class="note iepwarn iepui">'+over.map(x=>E(IEP.pubLimitText(x))).join('<br>')+'</p>';
+  if(noKey.length)h+='<p class="note iepwarn iepui">這台電腦沒有 '+noKey.length+' 位的連結（在別台電腦發布的，連結的鑰匙只存在那台電腦）。要在這裡發，請按「重新產生連結」：會換新的連結，舊的立刻失效。'+
+    (noKey.length>1&&cloudOK()?' <button class="b sm"'+A('regenAll')+'>全部重新產生</button>':'')+'</p>';
   h+='<div class="bar iepui"><button class="b pri"'+A('publish')+(cloudOK()&&!miss.length?'':' disabled')+'>'+(pub?'更新線上內容':'發布連結')+'</button>'+
     (pub?'<button class="b danger"'+A('unpub')+(cloudOK()?'':' disabled')+'>結束調查</button><span class="note" style="margin:0">已發布 '+pub+' 份'+(R.pubAt?'・'+E(new Date(R.pubAt).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})):'')+'</span>':'')+'</div>';
   h+='<div class="scroll iepui"><table class="ed"><tr><th>姓名</th><th>身分</th><th>學生</th><th>狀態</th><th></th></tr>'+list.map(o=>{const url=pub?urlOf(R,o.k):'';
     return '<tr><td>'+E(o.name)+'</td><td class="dim">'+E([...new Set(o.meets.map(x=>x.role.split('、')[0]))].join('、'))+'</td><td class="dim">'+E(o.meets.map(x=>IEP.stuShow(x.s,'cls')).join('、'))+'</td><td>'+(st.get(o.k)?'<span class="iepok">填了</span>':'還沒填')+'</td>'+
-      '<td class="nw">'+(url?'<button class="b sm"'+A('copyUrl',{k:o.k})+'>複製連結</button><button class="b sm"'+A('showQR',{k:o.k})+'>QR</button>':'')+'</td></tr>'+
+      '<td class="nw">'+(url?'<button class="b sm"'+A('copyUrl',{k:o.k})+'>複製連結</button><button class="b sm"'+A('showQR',{k:o.k})+'>QR</button>':pub&&R.tokH&&R.tokH[o.k]?'<button class="b sm"'+A('regen',{k:o.k})+(cloudOK()?'':' disabled')+'>重新產生連結</button>':'')+'</td></tr>'+
       (U.qr===o.k&&url?'<tr><td colspan="5"><div class="iepqr big" data-t="'+E(url)+'"></div></td></tr>':'');}).join('')+'</table></div>';
-  const pk=list.filter(o=>!U.only||!st.get(o.k));
+  const pk=list.filter(o=>(!U.only||!st.get(o.k))&&(U.pm!=='qr'||!pub||urlOf(R,o.k)));
   h+='<h3 class="iepui">列印</h3><div class="bar iepui">'+SEL('iv',{f:'pm'},[['qr','QR 小單'],['paper','紙本時段表（A4）']],U.pm)+
     (U.pm==='qr'?SEL('iv',{f:'per'},[[4,'一張裁 4'],[3,'一張裁 3']],U.per):'')+SEL('iv',{f:'priv'},[['full','班級座號＋姓名'],['cls','只印班級座號'],['mask','姓名遮字']],U.priv)+
     '<label class="iepchk"><input type="checkbox"'+(U.only?' checked':'')+C('iv',{f:'only'})+'> 只印還沒填的</label><button class="b"'+A('print')+'>印出</button><span class="note" style="margin:0">'+pk.length+' 人</span></div>';
   h+=U.pm==='qr'&&!pub?'<p class="note iepui">發布後才有 QR</p>':'<div id="outArea">'+(U.pm==='qr'?cut(pk,o=>slipQR(R,o)):pk.map(o=>paper(R,o,busy)).join(''))+'</div>';
   return h;}
 function drawQR(){const els=[...document.querySelectorAll('#page .iepqr')];if(!els.length)return;
-  libLoad(()=>window.QRCode,'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js').then(()=>{els.forEach(el=>{el.innerHTML='';new QRCode(el,{text:el.dataset.t,width:220,height:220,correctLevel:QRCode.CorrectLevel.M});});})
+  libLoad(()=>window.QRCode,'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',QR_SRI).then(()=>{els.forEach(el=>{el.innerHTML='';new QRCode(el,{text:el.dataset.t,width:220,height:220,correctLevel:QRCode.CorrectLevel.M});});})
     .catch(()=>{els.forEach(el=>{el.textContent='QR Code 載入失敗，請檢查網路';});});}
 // 發布：每位出席者一份 iepTok/{鑰匙的雜湊}；老師自己開的調查，承辦顯示老師姓名（公開頁不出現老師 id）
-async function publish(){const R=curR();if(!R||!cloudOK())return;
+const PUB_FIELDS=['v','who','once','name','title','round','kind','d1','d2','due','host','keys','ps','busy','stu','keep','exp','r','pk','by','pubAt'];
+function pubDoc(R,o,busy){const F=firebase.firestore,d=IEP.publicDoc(D,R,o,busy);d.exp=F.Timestamp.fromMillis(d.expMs);delete d.expMs;d.r=R.id;d.pk=o.k;d.by=CLOUD.user.email;d.pubAt=F.FieldValue.serverTimestamp();return d;}
+// 發布：先檢查安全規則的上限；寫到一半失敗時，已經寫上去的記進 R.pub（「結束調查」才刪得到）
+async function publish(){const R=curR();if(!R||!cloudOK()||!canR(R))return;
   if(IEP.expMs(R)<Date.now()){toast('回覆期限已過，請先改期限');return;}
-  const list=IEP.ensureTokens(D,R),busy=busyOf(R),db=CLOUD.db,F=firebase.firestore,kept=new Set(list.map(o=>R.tok[o.k]));
-  const fields=['v','who','once','name','title','round','kind','d1','d2','due','host','keys','ps','busy','stu','keep','exp','r','pk','by','pubAt'];
-  try{for(const o of list){const d=IEP.publicDoc(D,R,o,busy);d.exp=F.Timestamp.fromMillis(d.expMs);delete d.expMs;d.r=R.id;d.pk=o.k;d.by=CLOUD.user.email;d.pubAt=F.FieldValue.serverTimestamp();
-      await db.doc('iepTok/'+await IEP.tokHash(R.tok[o.k])).set(d,{mergeFields:fields});}
-    for(const t of (R.pub||[]))if(!kept.has(t))await db.doc('iepTok/'+await IEP.tokHash(t)).delete().catch(()=>{});
-    Object.keys(R.tok).forEach(k=>{if(!list.some(o=>o.k===k))delete R.tok[k];});
-    R.pub=[...kept];R.pubAt=Date.now();keep();toast('已發布 '+list.length+' 份');}
-  catch(e){toast('發布失敗：'+(e.code||e.message));}}
-async function unpub(R,quiet){if(!R||!(R.pub||[]).length)return true;if(!cloudOK()){toast('要先登入雲端共用');return false;}
-  try{for(const t of R.pub)await CLOUD.db.doc('iepTok/'+await IEP.tokHash(t)).delete();
-    const rs=await CLOUD.db.collection('iepResp/'+R.id+'/r').get();for(const d of rs.docs)await d.ref.delete();
-    R.pub=[];R.tok={};if(!quiet)keep();toast('舊連結都失效了');return true;}
-  catch(e){toast('刪除失敗：'+(e.code||e.message));return false;}}
+  const over=IEP.pubLimits(D,R);if(over.length){listDlg('沒有發布：超過一份連結的上限','',[{h:'請先修改',items:over.map(IEP.pubLimitText)}]);return;}
+  const local=ltRound(R.id),list=IEP.ensureTokens(D,R,local),busy=busyOf(R),db=CLOUD.db,kept=new Set(list.map(o=>R.tokH[o.k])),done=[];ltSave();
+  try{for(const o of list){const h=R.tokH[o.k];await db.doc('iepTok/'+h).set(pubDoc(R,o,busy),{mergeFields:PUB_FIELDS});done.push(h);}
+    const left=[];for(const h of (R.pub||[]))if(!kept.has(h))await db.doc('iepTok/'+h).delete().catch(()=>{left.push(h);});
+    Object.keys(R.tokH).forEach(k=>{if(!list.some(o=>o.k===k)){delete R.tokH[k];delete local[k];}});ltSave();
+    R.pub=[...kept].concat(left);R.pubAt=Date.now();keep();toast('已發布 '+list.length+' 份'+(left.length?'；有 '+left.length+' 份舊連結沒刪掉，按「結束調查」會再刪一次':''));}
+  catch(e){R.pub=[...new Set((R.pub||[]).concat(done))];if(done.length&&!R.pubAt)R.pubAt=Date.now();keep();
+    toast('發布到一半失敗（寫上去 '+done.length+'/'+list.length+' 份）：'+(e.code||e.message)+'。請再按一次；要撤回請按「結束調查」');}}
+// 結束調查：刪掉所有發布過的 iepTok 與線上回覆；有刪不掉的就留在 R.pub，下次再刪
+async function unpub(R,quiet){if(!R)return true;migrateAll();
+  if(!(R.pub||[]).length){R.tokH={};ltDrop(R.id);return true;}
+  if(!cloudOK()){toast('要先登入雲端共用');return false;}
+  const left=[];for(const h of R.pub){try{await CLOUD.db.doc('iepTok/'+h).delete();}catch(e){left.push(h);}}
+  if(left.length){R.pub=left;keep();toast('有 '+left.length+' 份連結沒刪掉，請稍後再按一次「結束調查」');return false;}
+  try{const rs=await CLOUD.db.collection('iepResp/'+R.id+'/r').get();for(const d of rs.docs)await d.ref.delete();}
+  catch(e){R.pub=[];keep();toast('連結都失效了，但線上回覆沒刪掉：'+(e.code||e.message));return false;}
+  R.pub=[];R.tokH={};ltDrop(R.id);if(!quiet)keep();toast('舊連結都失效了');return true;}
+// 重新產生連結（這台電腦沒有鑰匙時）：寫一份新的 iepTok、刪掉舊的；舊連結立刻失效。刪不掉的舊文件留在 R.pub，結束調查時再刪
+async function regen(R,keys){if(!R||!cloudOK()||!canR(R))return;const local=ltRound(R.id),busy=busyOf(R),ppl=IEP.webPeople(D,R).filter(o=>keys.includes(o.k)&&R.tokH&&R.tokH[o.k]);
+  let n=0,left=0;
+  for(const o of ppl){const prev=local[o.k],r=IEP.regenTok(R,local,o.k);
+    try{await CLOUD.db.doc('iepTok/'+r.h).set(pubDoc(R,o,busy),{mergeFields:PUB_FIELDS});}
+    catch(e){R.tokH[o.k]=r.old;if(prev)local[o.k]=prev;else delete local[o.k];toast('重新產生失敗：'+(e.code||e.message));break;}
+    let gone=true;if(r.old&&r.old!==r.h)try{await CLOUD.db.doc('iepTok/'+r.old).delete();}catch(e){gone=false;left++;}
+    R.pub=(R.pub||[]).filter(h=>gone?h!==r.old:true).concat([r.h]);n++;}
+  ltSave();keep();if(n)toast('已重新產生 '+n+' 個連結，舊的連結失效了'+(left?'（有 '+left+' 份舊連結沒刪掉，結束調查時會再刪）':''));}
 async function pull(R,quiet){if(!R||!cloudOK()||!(R.pub||[]).length)return;U.pullAt=Date.now();let n=0;
   try{const by=new Map(IEP.webPeople(D,R).map(o=>[o.k,o])),rs=await CLOUD.db.collection('iepResp/'+R.id+'/r').get();
     rs.forEach(d=>{const x=d.data(),o=by.get(x.pk);if(o&&IEP.applyWeb(R,o,{free:x.free,note:x.note,at:x.at&&x.at.toMillis?x.at.toMillis():+x.at||0}))n++;});}
@@ -639,6 +709,7 @@ const ACT={
     R.ps=D.periods.filter(p=>!p.extra).map(p=>p.id);setCur(R.id);U.step[SC]=1;save();go(page,'survey');},
   async delR(){const R=curR();if(!canR(R)||!confirm('刪除「'+(R.name||'這次調查')+'」？出席名單和回覆都會刪掉。'))return;
     if((R.pub||[]).length&&!(await unpub(R,true))&&!confirm('線上資料沒有刪掉，連結會到期限才失效。仍要刪除嗎？'))return;
+    ltDrop(R.id);
     if(typeof snapshot==='function')snapshot('刪除 IEP 調查之前');D.iep.rounds=D.iep.rounds.filter(r=>r!==R);keep();},
   stuAll(){const R=curR();if(!canR(R))return;IEP.mineStu(D,SC).filter(s=>SC||!U.cm||s.caseMgr===U.cm).forEach(s=>IEP.addMeetAs(D,R,s.id,SC));keep();},
   stuNone(){const R=curR();if(!canR(R))return;if(R.meets.length&&!confirm('移除全部學生？名單的修改也會清掉。'))return;R.meets.slice().forEach(m=>IEP.delMeet(R,m.id));keep();},
@@ -650,6 +721,9 @@ const ACT={
   publish(){publish();},
   async unpub(){const R=curR();if(!canR(R)||!confirm('結束線上調查？連結會立刻失效，線上的回覆會刪掉（已抓回的留著）。'))return;await pull(R,true);await unpub(R);},
   copyUrl(el){copyText(urlOf(curR(),el.dataset.k),'已複製連結');},
+  regen(el){const R=curR();if(!canR(R)||!confirm('重新產生這位的連結？舊的連結（QR）會立刻失效，要把新的連結再給對方一次。'))return;regen(R,[el.dataset.k]);},
+  regenAll(){const R=curR();if(!canR(R))return;const ks=IEP.webPeople(D,R).filter(o=>R.tokH&&R.tokH[o.k]&&!urlOf(R,o.k)).map(o=>o.k);
+    if(!ks.length||!confirm('重新產生 '+ks.length+' 位的連結？舊的連結（QR）會立刻失效，要把新的連結再給他們一次。'))return;regen(R,ks);},
   showQR(el){U.qr=U.qr===el.dataset.k?'':el.dataset.k;render();},
   copyRem(el){const R=curR(),o=IEP.webPeople(D,R).find(x=>x.k===el.dataset.k);if(o)copyText(IEP.remindText(D,R,o,urlOf(R,o.k)),'已複製提醒');},
   copyAll(){const R=curR(),pg=IEP.progress(D,R);copyText(pg.people.filter(o=>!o.done&&urlOf(R,o.k)).map(o=>IEP.remindText(D,R,o,urlOf(R,o.k))).join('\n\n'),'已複製提醒');},
@@ -693,11 +767,13 @@ const CHG={
   hr(el){if(SC)return;const v=el.value.trim();if(!v)delete D.classHead[el.dataset.c];else D.classHead[el.dataset.c]=v;save();}
 };
 const meTid=()=>String((typeof ME_TID!=='undefined'?ME_TID:window.ME_TID)||'');
+// qrcodejs 1.0.0 的完整性檢查碼（和 checkin.js 同一個檔案）
+const QR_SRI='sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU';
 const onIep=()=>typeof page!=='undefined'&&(page==='iep'||page==='me_iep');
 
 // scope：''＝全部（管理者）；老師 id＝只有他的。老師頁沒有綁定老師時不顯示任何調查
 function draw(scope,teacherPage){if(teacherPage&&!scope){out(empty('還沒有綁定老師'));return;}
-  SC=scope||'';IEP.ensure(D);({survey:vSurvey,plan:vPlan,quick:vQuick,inv:SC?vInv:vSurvey}[sub]||vSurvey)();}
+  SC=scope||'';IEP.ensure(D);migrateAll();({survey:vSurvey,plan:vPlan,quick:vQuick,inv:SC?vInv:vSurvey}[sub]||vSurvey)();}
 let wired=false;
 function install(){if(typeof PAGES==='undefined')return false;
   PAGES.iep={t:'IEP 會議',subs:[['survey','調查'],['plan','排定與通知'],['quick','直接開會']],render:()=>draw('')};

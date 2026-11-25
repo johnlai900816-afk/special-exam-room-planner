@@ -143,11 +143,16 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   const n=I.setRange(D,R,'2026-11-30','2026-12-11',['1','2','3','4','5','6','7']);
   ok(n===10*7,'日期範圍只取週一到週五（11/30～12/11 共 10 天 × 7 節）');
   const t=I.token();ok(I.TOKEN_RE.test(t)&&t.length>=24&&I.token()!==t,'連結鑰匙 24 碼英數亂數（超過 128 位元），每次不同');
-  const list=I.ensureTokens(D,R),tok=Object.assign({},R.tok);
-  ok(list.length&&list.every(o=>I.TOKEN_RE.test(R.tok[o.k])),'每位出席的老師都有自己的鑰匙');
-  ok(new Set(Object.values(R.tok)).size===Object.keys(R.tok).length,'鑰匙不重複');
+  const LOC={},list=I.ensureTokens(D,R,LOC),tok=Object.assign({},R.tokH);
+  ok(list.length&&list.every(o=>I.TOKEN_RE.test(I.linkTok(R,LOC,o.k))),'每位出席的老師都有自己的鑰匙（存在這台電腦）');
+  ok(new Set(Object.values(LOC).map(x=>x[0])).size===Object.keys(LOC).length,'鑰匙不重複');
+  ok(!R.tok&&list.every(o=>I.HASH_RE.test(R.tokH[o.k])&&R.tokH[o.k]===I.sha256hex(LOC[o.k][0]))&&!JSON.stringify(R).includes(LOC[list[0].k][0]),'共用資料（調查）只存鑰匙的雜湊，不存鑰匙');
   const cm=list.find(o=>o.k==='t:r1');ok(cm&&cm.meets.length>=2,'被好幾場邀請的老師還是只有一個連結（'+(cm?cm.meets.length:0)+' 場）');
-  I.ensureTokens(D,R);ok(JSON.stringify(R.tok)===JSON.stringify(tok),'重新發布不會換掉已經發出去的鑰匙');
+  I.ensureTokens(D,R,LOC);ok(JSON.stringify(R.tokH)===JSON.stringify(tok),'重新發布不會換掉已經發出去的鑰匙');
+  const other={};I.ensureTokens(D,R,other);ok(!Object.keys(other).length&&JSON.stringify(R.tokH)===JSON.stringify(tok)&&!I.linkTok(R,other,list[0].k),'別台電腦更新線上內容不換鑰匙，但做不出連結（要重新產生）');
+  const rg=I.regenTok(R,other,list[0].k);ok(rg.old===tok[list[0].k]&&rg.h!==rg.old&&I.linkTok(R,other,list[0].k)===rg.t&&!I.linkTok(R,LOC,list[0].k),'重新產生：換新鑰匙，舊電腦上的舊連結對不上了');
+  const old={tok:{'t:r1':'A'.repeat(24)},pub:['A'.repeat(24)]},L2={};ok(I.migrateTok(old,L2)&&!old.tok&&old.tokH['t:r1']===I.sha256hex('A'.repeat(24))&&old.pub[0]===old.tokH['t:r1']&&L2['t:r1'][0]==='A'.repeat(24),'舊資料的鑰匙搬到這台電腦，共用資料只留雜湊');
+  ok(!I.migrateTok(old,L2),'搬過就不再搬');
   ok(!list.some(o=>!o.teacher),'預設不發給家長');
   I.addOther(D,R,R.meets[0],'王媽媽','家長',1);R.par=1;const l2=I.ensureTokens(D,R),par=l2.find(o=>!o.teacher);
   const busy=I.busyOf(D,R),doc=I.publicDoc(D,R,cm,busy),pdoc=I.publicDoc(D,R,par,busy),txt=JSON.stringify(doc);
@@ -270,6 +275,19 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   const x=Object.assign({},tg,{examSvc:{ext:'*'},contacts:[1]}),v=T.studentView(x,'r2','teacher');
   ok(!('examSvc' in v)&&!('contacts' in v)&&v.name===tg.name&&x.examSvc,'不是個管的看不到段考服務、家長聯絡（只拿掉副本的欄位，名冊不動）');
   ok(T.studentView(Object.assign({},cm,{examSvc:{ext:'*'}}),'r2','teacher').examSvc.ext==='*','個管看得到');
+}
+
+// 13. 發布前檢查安全規則的上限：一份連結最多 400 個節次、80 位學生、到期最多 120 天後
+{
+  const D=sample(),R=I.newRound(D,{stu:['s1']});R.due='2026-12-05';I.setRange(D,R,'2026-11-30','2026-12-04',['1','2']);
+  const now=new Date(2026,10,20).getTime();
+  ok(I.pubLimits(D,R,now).length===0,'一般大小的調查沒有超過');
+  I.setRange(D,R,'2026-09-01','2027-06-30',['1','2','3','4','5','6','7']);const o1=I.pubLimits(D,R,now).filter(x=>x.what==='keys');
+  ok(o1.length&&o1[0].n>400&&/縮短日期範圍/.test(I.pubLimitText(o1[0])),'節次超過 400：擋下來並建議縮短範圍');
+  const R2=I.newRound(D,{stu:[]});R2.due='2026-12-05';I.setRange(D,R2,'2026-11-30','2026-12-04',['1']);
+  for(let i=0;i<85;i++){const s={id:'z'+i,cls:'701',seat:String(i),name:'學生'+i,caseMgr:'r1',needs:[]};D.students.push(s);I.addMeet(D,R2,s.id);}
+  const o2=I.pubLimits(D,R2,now).filter(x=>x.what==='stu');ok(o2.length&&o2.some(x=>x.k==='t:r1'&&x.n>=85)&&/拆成兩次/.test(I.pubLimitText(o2[0])),'同一位要回覆超過 80 位學生：擋下來並建議拆開');
+  R2.due='2027-06-30';ok(I.pubLimits(D,R2,now).some(x=>x.what==='due'),'回覆期限超過 120 天後：擋下來');
 }
 
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');

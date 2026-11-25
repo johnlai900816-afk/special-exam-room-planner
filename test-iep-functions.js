@@ -17,12 +17,12 @@ const errOf=async p=>{try{await p;return null;}catch(e){return e.code||'?';}};
   const D=C.defaultData();D.classHead={'701':'張老師（國）'};
   const R=I.newRound(D,{stu:['s1','s2']});R.due='2026-12-05';I.setRange(D,R,'2026-11-30','2026-12-04',['1','2','3']);
   I.addOther(D,R,R.meets[0],'王媽媽','家長',1);R.par=1;
-  const list=I.ensureTokens(D,R),tea=list.find(o=>o.teacher),par=list.find(o=>!o.teacher);
+  const LOC={},list=I.ensureTokens(D,R,LOC),tea=list.find(o=>o.teacher),par=list.find(o=>!o.teacher);
   const db=fakeDb();let T=new Date(2026,10,28,9).getTime();
   const api=F.makeIep({db,now:()=>T});
-  for(const o of list){const d=I.publicDoc(D,R,o,{}),h=await I.tokHash(R.tok[o.k]);d.exp=d.expMs;delete d.expMs;d.r=R.id;d.pk=o.k;db.S.set('iepTok/'+h,d);}
-  const kT=R.tok[tea.k],kP=R.tok[par.k];
-  ok(await I.tokHash(kT)===F.sha(kT),'瀏覽器和 Function 算出來的鑰匙雜湊一樣（文件名稱不是鑰匙本身）');
+  for(const o of list){const d=I.publicDoc(D,R,o,{}),h=R.tokH[o.k];d.exp=d.expMs;delete d.expMs;d.r=R.id;d.pk=o.k;db.S.set('iepTok/'+h,d);}
+  const kT=I.linkTok(R,LOC,tea.k),kP=I.linkTok(R,LOC,par.k);
+  ok(await I.tokHash(kT)===F.sha(kT)&&I.sha256hex(kT)===F.sha(kT)&&R.tokH[tea.k]===F.sha(kT),'瀏覽器（同步、非同步）和 Function 算出來的鑰匙雜湊一樣（文件名稱不是鑰匙本身）');
 
   const g=await api.getSurvey({k:kT},{ip:'1.2.3.4'});
   ok(g.name===I.salute(tea.name,'',true)&&g.keys.length===15&&g.resp===null,'拿得到公開內容：稱呼、15 個節次，還沒有回覆');
