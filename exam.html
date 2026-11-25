@@ -250,9 +250,18 @@ details.more .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   table.out thead{display:table-header-group}
   .pg{page-break-after:always;break-after:page;page-break-inside:avoid;break-inside:avoid;overflow:hidden}
   .pg:last-child{page-break-after:auto;break-after:auto}
+  .pg.hs{page:hsP;max-width:none;margin:0}
+  @page hsP{size:A4 portrait;margin:10mm}
   .pg .rep{display:block}
   #outArea h2{margin:0 0 4px}
 }
+/* 交卷名單：照學校原本的紙本格式 */
+.pg.hs{font-family:"標楷體","DFKai-SB","BiauKai","Kaiti TC",serif;color:#000;background:#fff;max-width:760px;margin:0 auto 28px;padding:4px 0}
+.hs .hst{text-align:center}.hs .hst span{display:inline-block;border:1.5px solid #000;padding:1px 10px;font-size:22px;font-weight:bold;letter-spacing:1px}
+.hs .hsc{font-size:22px;margin:2px 0 2px 12px}.hs .hsc b{background:#d9d9d9;font-weight:normal;padding:0 2px}
+.hs table{width:100%;border-collapse:collapse;table-layout:fixed}.hs td{border:1.5px solid #000;vertical-align:top;padding:6px 6px 12px}
+.hs .it{font-size:16.5px;line-height:1.55;white-space:nowrap}.hs .nm{background:#d9d9d9;padding:0 2px}.hs .rv{font-size:16.5px;line-height:1.6;margin:0 0 3px}
+.hs .bl{display:inline-block;width:5em;border-bottom:1px solid #000}.hsn{font-size:13px;color:var(--mute);margin:0 0 12px;line-height:1.6}
 /* 併入資源班管理系統時的外觀：和外殼同一套顏色與分頁樣式 */
 body.embed{--bg:#f6f2ea;--card:#fffdf8;--line:#e6dfd2;--line2:#d3c9b8;--ink:#2a2620;--ink2:#4d463c;--mute:#857b6c;--acc:#2f6a5b;--acc-d:#235044;--acc-l:#e3efe9;--ok:#2f6a5b;--ok-l:#e6f1ea;--bad:#a8321f;--bad-l:#fbe9e4;--warn:#96590a;--warn-l:#fcf1dc;--r:12px;font-size:14.5px}
 body.embed header.top{background:transparent;border:0;padding:4px 28px 2px}
@@ -341,6 +350,7 @@ body.embed button.b{border-radius:10px}
     <button class="b on" id="ov1" onclick="showOut('svc')">段考服務表</button>
     <button class="b" id="ov2" onclick="showOut('itin')">學生動線表</button>
     <button class="b" id="ov3" onclick="showOut('proc')">監考分配表</button>
+    <button class="b" id="ov4" onclick="showOut('hand')">交卷名單</button>
     <span class="vsep"></span>
     <button class="b pri" onclick="window.print()">🖨 列印／存 PDF</button>
     <button class="b" onclick="copyOut()">複製表格（貼到 Word／Google 文件）</button>
@@ -1230,16 +1240,44 @@ function renderFind(bar){
 /* ---------- 列印：服務表每天一頁，內容太多就自動縮小到剛好一頁 ---------- */
 const PGW=1056,PGH=716; // A4 橫向、邊界 8mm 的可用範圍（px）
 function fitPrint(){if(curTab!=='out')return;
-  document.querySelectorAll('#outArea .pg').forEach(el=>{el.style.zoom='';
-    const fits=z=>{el.style.width=(PGW/z)+'px';return el.offsetHeight*z<=PGH;};
+  document.querySelectorAll('#outArea .pg').forEach(el=>{el.style.zoom='';const hs=el.classList.contains('hs'),PW=hs?718:PGW,PH=hs?1050:PGH;   // 交卷名單是 A4 直式
+    const fits=z=>{el.style.width=(PW/z)+'px';return el.offsetHeight*z<=PH;};
     let z=1;if(!fits(1)){let lo=0.4,hi=1;if(fits(lo)){for(let i=0;i<9;i++){const m=(lo+hi)/2;if(fits(m))lo=m;else hi=m;}}z=lo;}
-    el.style.width=(PGW/z)+'px';el.style.zoom=z;});}
+    el.style.width=(PW/z)+'px';el.style.zoom=z;});}
 function unfitPrint(){document.querySelectorAll('#outArea .pg').forEach(el=>{el.style.zoom='';el.style.width='';});}
 window.addEventListener('beforeprint',fitPrint);window.addEventListener('afterprint',unfitPrint);
 
+/* ---------- 交卷名單：每一科一張，依年級分三欄，每位學生寫上批閱教師（從全校課表或任課老師來） ---------- */
+const EXAM_TT={'國文':['國語文'],'作文':['國語文'],'國語文':['國語文'],'英文':['英語文'],'英聽':['英語文'],'英語文':['英語文'],'數學':['數學'],
+  '社會':['歷史','地理','公民與社會'],'歷史':['歷史'],'地理':['地理'],'公民':['公民與社會'],'公民與社會':['公民與社會'],
+  '自然':['生物','理化','地球科學','地科'],'生物':['生物'],'理化':['理化'],'地科':['地球科學','地科'],'地球科學':['地球科學','地科']};
+// 名冊裡的全校課表和任課老師，抄一份放進段考資料，雲端上其他老師打開也看得到
+function ttSnap(R){if(!R)return null;const tn=id=>{const t=(R.teachers||[]).find(x=>x.id===id);return t?t.name:'';},cs={};
+  Object.keys(R.classSubj||{}).forEach(k=>{const n=tn(R.classSubj[k]);if(n)cs[k]=n;});return {tt:R.tt||{},cs};}
+function graderOf(G,cls,subj){if(!G)return '';const want=EXAM_TT[subj]||[subj],c=G.tt[String(cls)];
+  let names=c?[...new Set(want.flatMap(s=>(c.subj[s]||[]).slice(0,1).map(x=>x[0])))]:[];
+  if(!names.length){const m={'國語文':['國文','國語文'],'英語文':['英文','英語文'],'數學':['數學'],'理化':['理化']};
+    want.forEach(s=>(m[s]||[]).forEach(k=>{const n=G.cs[cls+'|'+k];if(n&&!names.includes(n))names.push(n);}));}
+  return names.join('、');}
+function handHtml(){evaluate(M,ST);const G=ttSnap(rosterRead())||D.ttCopy||null;
+  const subs=[];M.ses.slice().sort((a,b)=>a.key-b.key).forEach(T=>{const s=T.ref.subject;if(!subs.includes(s))subs.push(s);});
+  const grades=[...new Set(M.parts.map(p=>p.g))].filter(g=>g>=7&&g<=9).sort();const GR=grades.length?grades:[7,8,9];
+  const NUM=['','一','二','三','四','五','六','七','八','九'];let miss=0,h='';
+  subs.forEach(sj=>{const seen=new Set(),by={};
+    M.parts.filter(p=>p.subject===sj).forEach(p=>{const s=p.stu;if(seen.has(s.id))return;seen.add(s.id);(by[p.g]=by[p.g]||[]).push(s);});
+    if(!seen.size)return;
+    const cnt=GR.map(g=>(by[g]||[]).length),tot=cnt.reduce((a,b)=>a+b,0);
+    h+='<div class="pg hs"><div class="hst"><span>特教組特殊考場學生交卷名單 - '+esc(sj)+'</span></div>'+
+      '<div class="hsc">'+GR.map((g,i)=>g+'年級：<b>'+cnt[i]+'</b>名').join('、')+'，總計：<b>'+tot+'</b>名</div><table><tr>'+
+      GR.map(g=>'<td>'+(by[g]||[]).sort((a,b)=>String(a.cls).localeCompare(String(b.cls))||(+a.seat||0)-(+b.seat||0)).map(s=>{const t=graderOf(G,s.cls,sj);if(!t)miss++;
+        return '<div class="it"><span class="nm">'+esc(s.cls)+'-'+esc(String(s.seat||'').padStart(2,'0'))+'　'+esc(s.name)+'</span>□已交□未到</div><div class="rv">批閱教師：'+(t?esc(t):'<span class="bl"></span>')+'</div>';}).join('')+'</td>').join('')+
+      '</tr></table></div>';});
+  const note='<div class="noprint hsn">每一科一張（A4 直式），批閱教師取自名冊「全校課表」：作文、國文找國語文老師，英文找英語文老師，社會找歷史、地理、公民老師，自然找生物、理化、地科老師；沒有課表時改用各班任課老師。'+(miss?'<b>有 '+miss+' 格找不到批閱教師，留白讓學校手寫；可以到名冊的「全校課表」讀入課表。</b>':'')+'</div>';
+  return h?note+h:'<p class="note">還沒有學生要到特殊考場考試。</p>';}
+
 /* ---------- 輸出 ---------- */
-function showOut(m){outMode=m;$('ov1').classList.toggle('pri',m==='svc');$('ov2').classList.toggle('pri',m==='itin');$('ov3').classList.toggle('pri',m==='proc');renderOut();}
-function renderOut(){$('outArea').innerHTML=outMode==='svc'?svcHtml():outMode==='proc'?'<div class="pg"><h2>'+esc(D.title)+'｜監考分配表</h2>'+procMatrix('out')+'</div>':itinHtml();}
+function showOut(m){outMode=m;$('ov1').classList.toggle('pri',m==='svc');$('ov2').classList.toggle('pri',m==='itin');$('ov3').classList.toggle('pri',m==='proc');$('ov4').classList.toggle('pri',m==='hand');renderOut();}
+function renderOut(){$('outArea').innerHTML=outMode==='hand'?handHtml():outMode==='svc'?svcHtml():outMode==='proc'?'<div class="pg"><h2>'+esc(D.title)+'｜監考分配表</h2>'+procMatrix('out')+'</div>':itinHtml();}
 const SVT={'延長':'x','口頭':'o','誦讀':'r','電腦':'p','獨立':'s'};
 const svTags=l=>l.split('+').map(t=>'<span class="tg2 t-'+(SVT[t]||'s')+'">'+esc(t)+'</span>').join('');
 function svcHtml(){
@@ -1294,7 +1332,7 @@ function copyOut(){const el=$('outArea'),r=document.createRange();r.selectNodeCo
 function dl(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
 function downloadDoc(){
   const css='table.svt{table-layout:fixed;border:2px solid #1f2a44}table.svt th,table.svt td{border:1px solid #8a93a6}table.svt th.dayh{background:#1f2a44;color:#fff;font-size:15px;text-align:left;padding:6px 12px;letter-spacing:1px}table.svt th{background:#e4e8f2;font-size:13px;padding:5px 4px}table.svt .c0{width:84px}table.svt td.sh2{background:#f1f3f9;vertical-align:middle;line-height:1.5}table.svt .sj{font-size:16px}table.svt .pd,table.svt .tm{font-weight:normal;font-size:12px;color:#333}table.svt .tx{font-weight:bold;font-size:12px;color:#b45309}table.svt td.em{background:#f7f7f8}table.svt .gp{margin:0 0 3px;line-height:1.55}table.svt .tg2{display:inline-block;font-size:11px;font-weight:bold;border-radius:4px;padding:0 4px;margin-right:3px;border:1px solid #999;line-height:1.45}table.svt .t-x,.lg .t-x{color:#b45309;border-color:#f0c58a;background:#fff6e8}table.svt .t-o,.lg .t-o{color:#15803d;border-color:#a7d7b5;background:#eefaf1}table.svt .t-r,.lg .t-r{color:#1d4ed8;border-color:#b0c4f5;background:#eef3ff}table.svt .t-p,.lg .t-p{color:#7e22ce;border-color:#d3b5f0;background:#f7efff}table.svt .t-s,.lg .t-s{color:#475569;border-color:#c5ccd6;background:#f3f4f6}table.svt .ft{margin-top:4px;padding-top:3px;border-top:1px dashed #8a93a6;font-size:12px;line-height:1.5}table.svt .ft b{margin-right:8px;white-space:nowrap}table.svt .ft .sp{color:#0f766e}table.svt .ft span{color:#555;white-space:nowrap}table.svt .nt{font-size:11.5px;color:#555}.lg{font-size:12px;color:#555;text-align:center;margin:0 0 8px}.lg .tg2{display:inline-block;font-size:11px;font-weight:bold;border-radius:4px;padding:0 4px;margin:0 3px 0 10px;border:1px solid #999}'+'body{font-family:"Microsoft JhengHei"}table{border-collapse:collapse;width:100%}th,td{border:1px solid #000;padding:3px 4px;vertical-align:top;font-size:10pt}th,td.sh2{background:#d9d9d9;text-align:center}td.chg{background:#fff3c4}h2{text-align:center;font-size:14pt}@page{size:29.7cm 21cm;margin:1cm}';
-  dl((D.title||'段考服務表')+(outMode==='itin'?'_學生動線':outMode==='proc'?'_監考分配':'')+'.doc','﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+$('outArea').innerHTML+'</body></html>','application/msword');
+  dl((D.title||'段考服務表')+(outMode==='itin'?'_學生動線':outMode==='proc'?'_監考分配':outMode==='hand'?'_交卷名單':'')+'.doc','﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+$('outArea').innerHTML+'</body></html>','application/msword');
 }
 const NKEY='exam-notice-v1'; // 學生通知單（notice.html）自己補的資料：全名、注意事項、導師…
 function exportJson(){const o=Object.assign({},D);try{o._notice=JSON.parse(localStorage.getItem(NKEY));}catch(e){}
@@ -1501,6 +1539,7 @@ function rosterPull(){
   const wk={};(R.groups||[]).forEach(g=>{const c=((R.assign||{})[g.id]||[]).filter(e=>e&&e.s).length;if(g.teacher)wk[g.teacher]=(wk[g.teacher]||0)+c;});
   (R.teachers||[]).filter(t=>t.role==='資源班'&&t.name).forEach(t=>{if(!D.proctors.includes(t.name)){D.proctors.push(t.name);ch=true;}
     const f=pinfo(t.name);if(!f.temp&&(f.quota===''||f.quota==null||f.auto)&&wk[t.id]&&String(f.quota)!==String(wk[t.id])){f.quota=String(wk[t.id]);f.auto=1;ch=true;}});
+  const snap=ttSnap(R);if(snap&&(Object.keys(snap.tt).length||Object.keys(snap.cs).length)&&JSON.stringify(snap)!==JSON.stringify(D.ttCopy)){D.ttCopy=snap;ch=true;}   // 批閱教師用
   return ch;
 }
 // 考場 → 名冊：在這裡新增或匯入的學生、改過的班級座號姓名，寫回名冊

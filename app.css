@@ -370,3 +370,9 @@ table.pt td{height:62px;padding:4px;width:17%}
 .chklist td .ok{color:var(--ok)}.chklist td .warn{color:var(--warn)}
 ul.plain{padding-left:18px;margin:6px 0}ul.plain li{margin:4px 0}
 .w12{width:22em;max-width:100%}
+
+/* 全校課表：認不出來的名字 */
+input.warn{background:var(--warn-l);border-color:var(--warn)}
+button.b.warn{border-color:var(--warn);color:var(--warn)}
+#page td span.warn,#page li span.warn,#page h3 span.warn{color:var(--warn);font-weight:600}
+#page li span.ok{color:var(--ok)}

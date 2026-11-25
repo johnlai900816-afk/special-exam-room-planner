@@ -244,5 +244,24 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   C.newTerm(D,{clearAssign:true});ok(!D.lockFix.length,'新學期清空排課結果時一併清掉手排鎖課');
 }
 
+// 15. 全校課表：OCR 的錯字、黏在一起的數字、認班級；備用教室
+{
+  console.log('\n15. 全校課表與備用教室');
+  const D=C.defaultData();D.offPool={'李惠婷':[],'房素琴':[],'蔡侑珊':[],'嚴于涵':[],'郭嘉琳':[]};
+  const known=C.ttKnown(D);
+  const txt='國語文   李惠婷”5 海洋之心A  李惠婷“1 類語文  房素琴 3 英語文  郭豆琳 1\n數學   蔡依珊4 歷史  嚴于涵“1\n髓育  李次萍“2';
+  const L=C.ttParse(txt,known);const f=s=>L.find(x=>x.sj===s);
+  ok(f('國語文')&&f('國語文').t==='李惠婷'&&f('國語文').n===5,'名字和節數黏在一起、前後的引號雜字都能拆開');
+  ok(f('數學')&&f('數學').t==='蔡侑珊'&&!f('數學').unk,'名字錯一個字（蔡依珊）會對回已知的老師');
+  const P=C.ttParseAll(D,[{text:txt,cls:'701',page:0},{text:'英語文 房素琴 3 國語文 李惠婷 5',cls:'702',page:1}],known),L1=P[0].list;
+  ok(L1.filter(x=>x.sj==='英語文').map(x=>x.t).sort().join()===['房素琴','郭嘉琳'].sort().join(),'科目錯一個字（類語文）：整份一起讀，看老師在別班教什麼判斷是英語文');
+  ok(f('體育')&&f('體育').t,'兩個字的科目錯一個字（髓育）也認得');
+  ok(C.ttClassNo('2708')==='708'&&C.ttClassNo('04')==='','班級編號多讀的雜字會去掉，太短的不猜');
+  C.ttStore(D,'701',L1,'test');ok(C.ttTeachers(D.tt,'701','作文').join()==='李惠婷'&&C.ttTeachers(D.tt,'701','英文').join()==='房素琴','作文找國語文老師、英文找節數最多的英語文老師');
+  // 備用教室：平常用的教室夠就不會用到備用的
+  const E=C.defaultData();E.rooms=[{id:'a',name:'一'},{id:'b',name:'二',spare:true}];const M=C.compile(E);
+  ok(M.mainR===1&&M.roomOrder[0]===0,'勾備用的教室排在最後，平常只算沒勾的');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

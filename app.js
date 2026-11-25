@@ -24,7 +24,7 @@ function colorOf(g){const i=M.rts.indexOf(g.t);return i<0?6:i%6;}
 /* ───── 頁面切換 ───── */
 const PAGES={
   home:{t:'總覽'},
-  roster:{t:'名冊',subs:[['stu','學生'],['tea','老師'],['env','教室與作息'],['data','匯入與新學期']]},
+  roster:{t:'名冊',subs:[['stu','學生'],['tea','老師'],['env','教室與作息'],['tt','全校課表'],['data','匯入與新學期']]},
   sched:{t:'排課',subs:[['groups','老師開課'],['need','學生編組'],['teach','任課老師'],['off','不排課時段'],['board','排課'],['out','課表輸出']]},
   exam:{t:'段考考場'},
   checkin:{t:'簽到退',subs:[['now','點名'],['log','出缺席紀錄'],['cards','學生卡']]}
@@ -42,7 +42,7 @@ function render(){
   $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button class="${k===sub?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
   if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed';return;}
-  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/data':renderData,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
+  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/tt':renderTT,'roster/data':renderData,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
 }
 document.querySelectorAll('#nav button[data-p]').forEach(b=>{b.onclick=()=>go(b.dataset.p);});
 
@@ -136,8 +136,10 @@ function renderTea(){
   $('page').innerHTML=h+'</table></div>';
 }
 function renderEnv(){
-  let h=`<h3>教室</h3><div class="bar">`+D.rooms.map((r,i)=>`<span class="stu"><input type="text" class="w5" style="border:0;background:transparent" value="${esc(r.name)}" onchange="D.rooms[${i}].name=this.value;changed()"><button class="x" onclick="delRoom(${i})">✕</button></span>`).join('')+
-  `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>
+  const nMain=D.rooms.filter(r=>!r.spare).length,nSp=D.rooms.length-nMain;
+  let h=`<h3>教室</h3><p class="note">教室名稱可以直接改。勾「備用」的教室平常不排：同一節最多排 <b>${nMain}</b> 組（平常用的教室數）${nSp?`，真的排不下才會用到備用的 ${nSp} 間，最多 <b>${D.rooms.length}</b> 組`:''}。排課時會照這個上限，不會在同一節塞進比教室還多的課。</p>
+  <div class="bar">`+D.rooms.map((r,i)=>`<span class="stu${r.spare?' dim':''}"><input type="text" class="w5" style="border:0;background:transparent" value="${esc(r.name)}" onchange="D.rooms[${i}].name=this.value;changed()"><label class="note" style="margin:0 4px" title="平常不排，排不下才用"><input type="checkbox"${r.spare?' checked':''} onchange="D.rooms[${i}].spare=this.checked;changed();render()"> 備用</label><button class="x" onclick="delRoom(${i})">✕</button></span>`).join('')+
+  `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>${D.rooms.length?'':'<p class="note warn">還沒有教室：排課時不會限制同一節的組數。請至少新增一間。</p>'}
   <h3>作息</h3><p class="note">勾「外加」的時段（早自習、午休、第 8 節）只會排外加課；抽離課只排在一般節次。</p>
   <div class="scroll"><table class="ed"><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加時段</th><th></th></tr>`;
   D.periods.forEach((p,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(p.name)}" onchange="setPer(${i},'name',this.value)"></td>
@@ -717,6 +719,84 @@ window.addEventListener('storage',e=>{
   else if(e.key===AKEY){try{ATT=JSON.parse(e.newValue)||{};}catch(x){}if(page==='checkin'||page==='home')render();}
   else if(e.key===EXKEY&&page!=='exam'&&(page==='home'||sub==='stu'))render();
 });
+
+/* ───── 全校課表：讀學校每班一頁的課程表 PDF（文字檔直接讀，掃描檔用文字辨識），得到各班各科老師 ───── */
+const PDFJS_SRC='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/',TESS_SRC='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let TTJOB=null;const TTIMG={};   // 辨識時截下的統計區圖片，只留在這次開著的頁面，方便核對
+async function ttPdf(){if(!window.pdfjsLib){await loadScript(PDFJS_SRC+'pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_SRC+'pdf.worker.min.js';}}
+async function ttWorkers(){if(!window.Tesseract)await loadScript(TESS_SRC);
+  if(!ttWorkers.zh){ttWorkers.zh=await Tesseract.createWorker('chi_tra');await ttWorkers.zh.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});}
+  if(!ttWorkers.en){ttWorkers.en=await Tesseract.createWorker('eng');await ttWorkers.en.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});}}
+function ttCrop(c,xa,xb,ya,yb,th){const W=c.width,H=c.height,d=document.createElement('canvas');d.width=Math.round((xb-xa)*W);d.height=Math.round((yb-ya)*H);const x=d.getContext('2d');
+  x.drawImage(c,xa*W,ya*H,d.width,d.height,0,0,d.width,d.height);
+  if(th){const im=x.getImageData(0,0,d.width,d.height),a=im.data;for(let i=0;i<a.length;i+=4){const g=(a[i]*0.3+a[i+1]*0.59+a[i+2]*0.11)<th?0:255;a[i]=a[i+1]=a[i+2]=g;}x.putImageData(im,0,0);}return d;}
+function ttThumb(c){const w=Math.min(1100,c.width),d=document.createElement('canvas');d.width=w;d.height=Math.round(c.height*w/c.width);d.getContext('2d').drawImage(c,0,0,d.width,d.height);return d.toDataURL('image/jpeg',0.7);}
+async function readTT(inp){const fs=[...inp.files];inp.value='';if(!fs.length||TTJOB)return;
+  TTJOB={done:0,total:0,msg:'讀取 PDF…',pages:[]};render();
+  try{await ttPdf();
+    for(const f of fs){const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer(),cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true}).promise;
+      TTJOB.total+=pdf.numPages;
+      for(let n=1;n<=pdf.numPages;n++){const pg=await pdf.getPage(n),tc=await pg.getTextContent();
+        const items=tc.items.filter(i=>i.str.trim()),src=f.name+' 第 '+n+' 頁';
+        if(items.reduce((a,i)=>a+i.str.length,0)>80){   // 文字 PDF：依位置排成一行一行，從「總時數／編號」以下讀統計
+          const rows=[];items.forEach(i=>{const y=Math.round(i.transform[5]/3);let r=rows.find(o=>Math.abs(o.y-y)<=1);if(!r)rows.push(r={y,it:[]});r.it.push(i);});
+          const lines=rows.sort((a,b)=>b.y-a.y).map(r=>r.it.sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' '));
+          const all=lines.join('\n'),k=lines.findIndex(l=>/總時數|編\s*號/.test(l));
+          const no=(all.match(/編\s*號[:：\s]*(\d{3,4})/)||all.match(/班\s*級[:：\s]*(\d{3,4})/)||[])[1]||'';
+          TTJOB.pages.push({text:(k>=0?lines.slice(k):lines).join('\n'),cls:ttClassNo(no),src,page:TTJOB.pages.length});}
+        else{   // 掃描檔：放大、轉黑白，辨識底下的統計和左下角的編號
+          TTJOB.msg='第一次會下載文字辨識資料（約 20MB），請稍候…';render();await ttWorkers();
+          const vp=pg.getViewport({scale:6}),c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+          const no=(await ttWorkers.en.recognize(ttCrop(c,0.17,0.30,0.765,0.788))).data.text;
+          const box=ttCrop(c,0,1,0.79,0.895,150),txt=(await ttWorkers.zh.recognize(box)).data.text;
+          TTJOB.pages.push({text:txt,cls:ttClassNo(no),src,page:TTJOB.pages.length,img:ttThumb(box)});c.width=c.height=0;}
+        TTJOB.done++;TTJOB.msg='已讀 '+TTJOB.done+' 頁';render();}}
+    const R=ttParseAll(D,TTJOB.pages,ttKnown(D));snapshot('讀入全校課表之前');let miss=0;
+    R.forEach((o,i)=>{const cls=o.cls||('?'+(i+1));if(!o.cls)miss++;ttStore(D,cls,o.list,o.src);D.tt[cls].guessCls=o.guessCls?1:0;const img=TTJOB.pages[o.page]&&TTJOB.pages[o.page].img;if(img)TTIMG[cls]=img;});
+    TTJOB=null;changed();render();toast('讀了 '+R.length+' 頁課表'+(miss?'；'+miss+' 頁認不出班級，請點進去填':'')+'。橘色是認不出的老師，請點班級核對');}
+  catch(e){TTJOB=null;render();toast('課表讀不出來：'+(e.message||e));}}
+const TT_MAIN=['國語文','英語文','數學','歷史','地理','公民與社會','生物','理化','地球科學','地科'];
+const TT_COL=[['國語文','國文'],['英語文','英文'],['數學','數學'],['社會',['歷史','地理','公民與社會']],['自然',['生物','理化','地球科學','地科']]];
+function ttCell(c,subs){const arr=[].concat(subs).flatMap(s=>(c.subj[s]||[]).slice(0,1).map(x=>({s,x})));
+  if(!arr.length)return '<span class="dim">－</span>';
+  return arr.map(({s,x})=>`<span class="${x[2]?'warn':''}" title="${esc(s+' '+x[1]+' 節'+(x[2]?'（認不出，請核對）':''))}">${esc(x[0])}</span>`).join('<br>');}
+function renderTT(){const tt=D.tt||{},cls=Object.keys(tt).sort();
+  const stuCls=[...new Set(D.students.map(s=>String(s.cls)).filter(c=>/^\d{3,4}$/.test(c)))].sort(),noTT=stuCls.filter(c=>!tt[c]);
+  const unk=cls.reduce((a,c)=>a+Object.values(tt[c].subj).flat().filter(x=>x[2]).length,0);
+  let h=`<p class="guide">學期初拿到的<b>全校課表 PDF</b>（每班一頁、下面有「科目、老師、節數」統計的那種）直接選進來，系統會讀出每一班每一科的老師。文字 PDF 一下就讀完；掃描成圖片的 PDF 會用文字辨識，大約一頁一秒，第一次要先下載辨識資料。檔案只在這台電腦的瀏覽器裡讀，不會上傳。</p>
+  <div class="bar"><input type="file" id="ttIn" accept=".pdf" multiple style="display:none" onchange="readTT(this)"><button class="b pri" onclick="$('ttIn').click()"${TTJOB?' disabled':''}>選擇課表 PDF</button>
+  ${cls.length?`<button class="b" onclick="ttApplyCS()">用課表更新任課老師</button><button class="b" onclick="ttClear()">清除課表</button>`:''}<span class="note" style="margin:0">七、八、九年級的檔案可以一次選，重讀同一班會蓋掉舊的。</span></div>`;
+  if(TTJOB)h+=`<div class="chk"><b>${esc(TTJOB.msg)}</b>${TTJOB.total?`<span class="mid">${TTJOB.done} / ${TTJOB.total} 頁</span>`:''}</div>`;
+  if(cls.length){
+    h+=`<h3>各班老師 <span class="note" style="font-weight:normal">${cls.length} 個班${unk?`，<span class="warn">${unk} 個名字認不出來（橘色）</span>`:''}；點班級可以核對、修改</span></h3><div class="scroll"><table class="ed"><tr><th>班級</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}<th>其他</th><th></th></tr>`+
+      cls.map(c=>{const o=tt[c],other=Object.keys(o.subj).filter(s=>!TT_MAIN.includes(s)),u=Object.values(o.subj).flat().filter(x=>x[2]).length;
+        return `<tr><td><button class="b sm${c[0]==='?'||o.guessCls?' warn':''}" onclick="ttEdit('${esc(c)}')">${esc(c)}</button></td>${TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join('')}<td class="dim">${other.length} 科${u?` <span class="warn">${u} 個待核對</span>`:''}</td><td class="dim">${esc(o.src||'')}</td></tr>`;}).join('')+`</table></div>`;
+    // 勾稽
+    const diff=[];const tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
+    cls.forEach(c=>[['國語文','國文'],['英語文','英文'],['數學','數學'],['理化','理化']].forEach(([a,b])=>{const k=c+'|'+canonSubj(D,b),x=(tt[c].subj[a]||[])[0];if(!x||x[2])return;const cur=D.classSubj[k]?tn(D.classSubj[k]):'';if(cur!==x[0])diff.push({c,s:b,cur,tt:x[0]});}));
+    h+=`<h3>和學生名單對照</h3><ul class="plain">
+      <li>${noTT.length?`<span class="warn">名冊裡有學生、但課表沒有的班級：${noTT.map(esc).join('、')}</span>`:`<span class="ok">名冊裡學生的 ${stuCls.length} 個班，課表都有。</span>`}</li>
+      <li>${diff.length?`<span class="warn">任課老師（國英數理）和課表不一樣的有 ${diff.length} 格：</span>${diff.slice(0,30).map(d=>esc(d.c+d.s+'：任課老師 '+(d.cur||'沒填')+'，課表 '+d.tt)).join('；')}${diff.length>30?'…':''}。按上面「用課表更新任課老師」可以一次改成課表的。`:'<span class="ok">任課老師（國英數理）和課表一致。</span>'}</li></ul>`;
+    const S=D.students.slice().sort((a,b)=>String(a.cls).localeCompare(String(b.cls))||String(a.seat||'').localeCompare(String(b.seat||''),undefined,{numeric:true}));
+    h+=`<div class="scroll"><table class="ed"><tr><th>班級座號</th><th>姓名</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}</tr>`+S.map(s=>{const o=tt[String(s.cls)];
+      return `<tr><td>${esc(s.cls)}${s.seat?'-'+esc(String(s.seat).padStart(2,'0')):''}</td><td>${esc(s.name)}</td>${o?TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join(''):`<td colspan="${TT_COL.length}" class="warn">課表沒有這一班</td>`}</tr>`;}).join('')+`</table></div>
+      <p class="note">段考頁的「交卷名單」會用這裡的老師當批閱教師（作文、國文找國語文老師，社會找歷史、地理、公民老師，自然找生物、理化、地科老師）。</p>`;}
+  $('page').innerHTML=h;}
+function ttEdit(c){const o=D.tt[c];if(!o)return;const rows=Object.keys(o.subj).flatMap(s=>o.subj[s].map(x=>[s,x[0],x[1],x[2]]));
+  openDlg(`<h3>核對課表：${esc(c)}</h3>${TTIMG[c]?`<img src="${TTIMG[c]}" style="width:100%;border:1px solid var(--line);border-radius:6px" alt="課表統計">`:`<p class="note">${esc(o.src||'')}</p>`}
+  <div class="bar"><label class="note" style="margin:0">班級 <input type="text" id="ttCls" class="w5" value="${esc(c[0]==='?'?'':c)}" placeholder="例：701"></label><span class="note" style="margin:0">橘色是認不出來的，對照上面的圖改成正確的名字；整列清空就會刪掉。</span></div>
+  <div class="scroll" style="max-height:50vh"><table class="ed" id="ttRows"><tr><th>科目</th><th>老師</th><th>節數</th></tr>${rows.concat([['','','']]).map(r=>`<tr><td><input type="text" class="w8" value="${esc(r[0])}"></td><td><input type="text" class="w5${r[3]?' warn':''}" value="${esc(r[1])}"></td><td><input type="text" class="w3" value="${esc(r[2])}"></td></tr>`).join('')}</table></div>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="ttEditOk('${esc(c)}')">儲存</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+function ttEditOk(c){const nc=$('ttCls').value.trim()||c,list=[];
+  [...$('ttRows').querySelectorAll('tr')].slice(1).forEach(tr=>{const v=[...tr.querySelectorAll('input')].map(i=>i.value.trim());if(v[0]&&v[1])list.push({sj:v[0],t:v[1],n:+v[2]||1,unk:false});});
+  snapshot('修改課表之前');const src=D.tt[c].src;delete D.tt[c];if(TTIMG[c]){TTIMG[nc]=TTIMG[c];}ttStore(D,nc,list,src);changed();closeDlg();render();toast('已儲存 '+nc+' 的課表');}
+function ttApplyCS(){const tt=D.tt||{};let n=0;const list=[];
+  Object.keys(tt).filter(c=>/^\d{3,4}$/.test(c)).forEach(c=>[['國語文','國文'],['英語文','英文'],['數學','數學'],['理化','理化']].forEach(([a,b])=>{const x=(tt[c].subj[a]||[])[0];if(!x||x[2])return;list.push([c,b,x[0]]);}));
+  if(!list.length){toast('課表裡沒有可以用的國英數理老師');return;}
+  if(!confirm('用課表裡的國英數理老師更新各班任課老師（'+list.length+' 格）？認不出來的名字不會用。'))return;
+  snapshot('用課表更新任課老師之前');list.forEach(([c,b,name])=>{const t=findTeacher(D,name,'普通班'),k=c+'|'+canonSubj(D,b);if(D.classSubj[k]!==t.id){D.classSubj[k]=t.id;n++;}});
+  D=normalize(D);changed();render();toast('更新了 '+n+' 格任課老師');}
+function ttClear(){if(!confirm('清除讀進來的全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
 
 /* ───── 啟動 ───── */
 D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();
