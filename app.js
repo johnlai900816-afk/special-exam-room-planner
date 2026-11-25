@@ -168,7 +168,9 @@ function setStu(i,k,v){D.students[i][k]=String(v).trim();changed();}
 function addStu(){D.students.push({id:uid('s'),cls:'',seat:'',name:'',caseMgr:'',note:''});changed();render();$('main').scrollTo(0,1e6);}
 function delStu(i){const s=D.students[i];if(!confirm('確定刪除 '+stuLabel(s)+'？\n會從所屬組別移除，段考考場裡他的考評服務也會一起清掉。'))return;
   D.groups.forEach(g=>{g.students=g.students.filter(id=>id!==s.id);});D.students.splice(i,1);D.gone=(D.gone||[]).concat([s.id]).slice(-500);delete D.offBy['s:'+s.id];D.sets.forEach(x=>{x.students=x.students.filter(id=>id!==s.id);});changed();render();}
-function setTea(i,k,v){D.teachers[i][k]=String(v).trim();changed();if(k==='role')render();}
+function setTea(i,k,v){const t=D.teachers[i];t[k]=String(v).trim();
+  if(k==='name'&&!(t.off||[]).length&&D.offPool&&D.offPool[t.name]){t.off=D.offPool[t.name].slice();toast('帶入 '+t.name+' 先前匯入的不排課時段 '+t.off.length+' 格');}
+  changed();if(k==='role')render();}
 function addTeacher(){D.teachers.push({id:uid('t'),name:'新老師',role:'普通班',off:[],note:''});changed();render();$('main').scrollTo(0,1e6);}
 function delTeacher(i){const t=D.teachers[i];if(!confirm('確定刪除 '+t.name+'？他負責的組別與任課設定會變成未指定。'))return;
   D.groups.forEach(g=>{if(g.teacher===t.id)g.teacher='';});for(const k in D.classSubj)if(D.classSubj[k]===t.id)delete D.classSubj[k];
@@ -370,7 +372,7 @@ function renderTeach(){
 }
 function setCSName(el){const k=el.dataset.k,name=el.value.trim();
   if(!name){delete D.classSubj[k];changed();render();return;}
-  let t=D.teachers.find(x=>x.name===name);if(!t){t={id:uid('t'),name,role:'普通班',off:[],note:''};D.teachers.push(t);toast('已把 '+name+' 加進老師名冊');}
+  let t=D.teachers.find(x=>x.name===name);if(!t){t=newTeacher(D,name,'普通班');toast('已把 '+name+' 加進老師名冊');}
   D.classSubj[k]=t.id;changed();
   const all=[...document.querySelectorAll('#page input[data-k]')],i=all.indexOf(el);render();const nx=document.querySelectorAll('#page input[data-k]')[i+1];if(nx)nx.focus();}
 

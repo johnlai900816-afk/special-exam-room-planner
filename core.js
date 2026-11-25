@@ -364,7 +364,7 @@ function aiApply(D,text){
    同一列右邊如果有「教師…總節數」的鐘點表，也一起讀成老師的基本鐘點。 */
 function importCourseTable(D,text){
   const R={added:0,updated:0,members:0,miss:[],teachers:0,hours:0},MK=/[○〇ＯO＊*]/;
-  const tOf=name=>{let t=D.teachers.find(x=>x.name===name);if(!t){t={id:uid('t'),name,role:'資源班',off:[],note:'',hours:0};D.teachers.push(t);R.teachers++;}return t;};
+  const tOf=name=>{let t=D.teachers.find(x=>x.name===name);if(!t){t=newTeacher(D,name,'資源班');R.teachers++;}return t;};
   let ti=-1,hi=-1;
   String(text).split(/\r?\n/).forEach(line=>{const c=line.split('\t').map(x=>x.trim());
     const a=c.indexOf('教師'),b=c.indexOf('總節數');
@@ -440,20 +440,23 @@ function refineLocks(M,S,opt){
 /* 貼上不排課表：名稱、起始星期、結束星期、首節、末節、（原因）。名稱是三四位數就是班級，其他當老師姓名。
    原因可以只寫在每一段的第一列。班級的時段預設當成「不能鎖課」（學生仍可被抽離，排課時盡量避開）；
    opt.hard：原因含這些字的（例：社團）才當成學生不能被抽離，寫 * 表示全部都是。 */
+/* 新增老師：先前匯入過、但當時不在名冊裡的老師不排課時段（offPool）會自動帶上 */
+function newTeacher(D,name,role){const P=D.offPool||{},t={id:uid('t'),name,role,off:(P[name]||[]).slice(),note:'',hours:0};D.teachers.push(t);return t;}
 function importOff(D,text,opt){
   opt=opt||{};const R={cls:0,tea:0,cells:0,skipT:[],newT:0,bad:0};
   const kw=String(opt.hard||'').split(/[,，、\s]+/).filter(Boolean),reg=D.periods.filter(p=>!p.extra);
   const pOf=n=>D.periods.find(p=>String(p.name).replace(/\s/g,'')==='第'+n+'節')||reg[n-1];
   let why='';
   String(text).split(/\r?\n/).forEach(line=>{const c=line.split('\t').map(x=>x.trim());if(!c[0])return;
-    const name=c[0].replace(/\.0$/,''),d1=parseInt(c[1],10),d2=parseInt(c[2],10),p1=parseInt(c[3],10),p2=parseInt(c[4],10);
+    const name=c[0].replace(/\.0$/,'');let d1=parseInt(c[1],10),d2=parseInt(c[2],10),p1=parseInt(c[3],10),p2=parseInt(c[4],10);
+    if(d1>d2)[d1,d2]=[d2,d1];if(p1>p2)[p1,p2]=[p2,p1];   // 起訖填反了也照收
     if(!(d1>=1&&d2>=d1&&d2<=7&&p1>=1&&p2>=p1&&p2<=20)){if(!/名稱|姓名/.test(name))R.bad++;return;}
     if(c[5])why=c[5];
     const keys=[];for(let dd=d1;dd<=Math.min(d2,5);dd++)for(let p=p1;p<=p2;p++){const per=pOf(p);if(per)keys.push((dd-1)+'-'+per.id);}
     let arr;
     if(/^\d{3,4}$/.test(name)){const k=(kw.includes('*')||kw.some(w=>why.includes(w))?'c:':'k:')+name;arr=D.offBy[k]=D.offBy[k]||[];R.cls++;}
     else{let t=D.teachers.find(x=>x.name===name);
-      if(!t){if(!opt.addTeachers){R.skipT.push(name);return;}t={id:uid('t'),name,role:'普通班',off:[],note:'',hours:0};D.teachers.push(t);R.newT++;}
+      if(!t){if(!opt.addTeachers){R.skipT.push(name);const P=D.offPool=D.offPool||{},a=P[name]=P[name]||[];keys.forEach(k=>{if(!a.includes(k))a.push(k);});return;}t=newTeacher(D,name,'普通班');R.newT++;}
       arr=t.off;R.tea++;}
     keys.forEach(k=>{if(!arr.includes(k)){arr.push(k);R.cells++;}});});
   R.skipT=[...new Set(R.skipT)];return R;
@@ -469,7 +472,7 @@ function canonSubj(D,name){
 }
 function findTeacher(D,name,role){
   name=String(name||'').trim();if(!name)return null;
-  let t=D.teachers.find(x=>x.name===name);if(!t&&role){t={id:uid('t'),name,role,off:[],note:'',hours:0};D.teachers.push(t);t._new=1;}
+  let t=D.teachers.find(x=>x.name===name);if(!t&&role){t=newTeacher(D,name,role);t._new=1;}
   return t;
 }
 /* 任課老師名單。兩種格式都可以：
@@ -525,7 +528,7 @@ function newTerm(D,opt){
   if(opt.clearGroups){D.groups=[];D.assign={};}
   if(opt.clearCS)D.classSubj={};
   if(opt.clearClassOff)Object.keys(D.offBy).forEach(k=>{if(k[0]==='c'||k[0]==='k')delete D.offBy[k];});
-  if(opt.clearTeaOff)D.teachers.forEach(t=>{t.off=[];});
+  if(opt.clearTeaOff){D.teachers.forEach(t=>{t.off=[];});D.offPool={};}
   if(opt.title!=null)D.title=opt.title;
   return R;
 }

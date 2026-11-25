@@ -218,5 +218,17 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(M5.copt.every(a=>a.every(x=>x.sj!=='英文')),'彈性鎖課只會改鎖有設上限的科目');
 }
 
+// 13. 學校原表：班級不排課全部鎖定、起訖填反、名冊外老師先記著
+{
+  console.log('\n13. 學校原表的不排課');
+  const D=C.defaultData();D.offBy={};
+  const r=C.importOff(D,'班級名稱\t起始星期\t結束星期\t首節\t末節\n701\t2\t2\t7\t7\t社團時間\n702\t2\t2\t7\t7\n教師姓名\t起始星期\t結束星期\t首節\t末節\n新來的\t4\t2\t5\t7\t資訊領域\n',{hard:'*'});
+  ok(r.cls===2&&D.offBy['c:702']&&!Object.keys(D.offBy).some(k=>k[0]==='k'),'全部鎖定時，班級時段都當成不能被抽離');
+  ok(r.bad===0&&D.offPool['新來的']&&D.offPool['新來的'].length===9,'起訖星期填反也照收，名冊外的老師先記著');
+  C.importTeacherList(D,'\t701\t702\t703\n國語文\t新來的\t新來的\t新來的\n');
+  const t=D.teachers.find(x=>x.name==='新來的');ok(t&&t.off.length===9,'之後加進名冊的老師自動帶上不排課時段');
+  C.newTerm(D,{clearTeaOff:true});ok(!Object.keys(D.offPool).length,'新學期清老師不排課時一併清掉');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);
