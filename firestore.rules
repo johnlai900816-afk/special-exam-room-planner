@@ -40,8 +40,12 @@ service cloud.firestore {
         && (!(request.auth.uid in incoming()) || presOk(incoming()[request.auth.uid]));
     }
     function accessShape() {
-      return incoming().keys().hasOnly(['admin', 'emails', 'viewers', 'link'])
+      // vcls／vk：段考考場「某班專用」連結的班級文件名稱；bind：新版（Next.js）帳號綁定老師
+      return incoming().keys().hasOnly(['admin', 'emails', 'viewers', 'link', 'vcls', 'vk', 'bind'])
         && incoming().admin is string
+        && incoming().get('vcls', {}) is map && incoming().get('vcls', {}).size() <= 200
+        && incoming().get('vk', []) is list && incoming().get('vk', []).size() <= 200
+        && incoming().get('bind', {}) is map && incoming().get('bind', {}).size() <= 300
         && incoming().emails is list && incoming().emails.size() <= 100
         && incoming().get('viewers', []) is list && incoming().get('viewers', []).size() <= 100
         && incoming().get('link', '') is string && incoming().get('link', '').matches('([0-9a-f]{32})?');
@@ -106,7 +110,7 @@ service cloud.firestore {
     function linkKey() { return access().get('link', ''); }
     function linkDoc(t) {
       return linkKey().matches('[0-9a-f]{32}')
-        && (t == linkKey() || t.matches(linkKey() + '_[^/]{1,40}'));
+        && (t == linkKey() || t.matches(linkKey() + '_[^/]{1,40}') || t in access().get('vk', []));
     }
     match /view/{t} {
       allow get: if resource.data.get('exp', null) is timestamp && resource.data.exp > request.time;
@@ -115,6 +119,27 @@ service cloud.firestore {
         && incoming().get('exp', null) is timestamp
         && incoming().exp > request.time && incoming().exp < request.time + duration.value(400, 'd');
       allow delete: if editor() && linkDoc(t);
+    }
+
+    // IEP 會議線上時間調查（functions/iep.js）：iepTok 只有編輯的人能建，網頁讀不到；回覆只由伺服器寫入；iepRate 只給伺服器
+    match /iepTok/{h} {
+      allow read: if false;
+      allow create, update: if editor()
+        && h.matches('^[0-9a-f]{64}$')
+        && request.resource.data.exp is timestamp
+        && request.resource.data.r is string && request.resource.data.r.matches('^[A-Za-z0-9_-]{1,60}$')
+        && request.resource.data.keys is list && request.resource.data.keys.size() <= 400
+        && request.resource.data.stu is list && request.resource.data.stu.size() <= 80
+        && request.resource.data.who in ['t', 'p'];
+      allow delete: if editor();
+    }
+    match /iepResp/{round}/r/{h} {
+      allow read: if member();
+      allow create, update: if false;
+      allow delete: if editor();
+    }
+    match /iepRate/{k} {
+      allow read, write: if false;
     }
   }
 }
