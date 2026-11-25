@@ -102,6 +102,7 @@ function setCloudUI(state){
   document.body.classList.toggle('ro',isRO());
   paintBadge();
   if(shareOpen)renderShare();
+  applyBind();
   if(typeof page!=='undefined'&&typeof M!=='undefined'&&M&&(g0!==gateOn()||page==='home'))render();
 }
 // 學校自己的雲端（設定存在這台瀏覽器，school.js 讀）
@@ -168,13 +169,15 @@ function renderShare(){
     '<div class="bar" style="margin:0"><button class="b pri" data-t="'+esc(u?u.email:'')+'" onclick="copyText(this.dataset.t,\'已複製信箱\')">複製我的信箱</button><button class="b" onclick="location.reload()">重新整理</button><button class="b" onclick="cloudLogout()">換一個帳號</button></div>';
   else{
     const A=CLOUD.access||{},emails=A.emails||[],admin=A.admin===u.email,onSet=new Set(onlineList().map(x=>x.email)),L=CLOUD.last,V=A.viewers||[];
-    const roleSel=e=>'<select data-e="'+esc(e)+'" onchange="setRole(this.dataset.e,this.value)"><option value="e"'+(V.includes(e)?'':' selected')+'>編輯</option><option value="v"'+(V.includes(e)?' selected':'')+'>檢視</option></select>';
+    const tName=id=>{const t=(D.teachers||[]).find(x=>x.id===id);return t?t.name:'';};
+    const bindSel=e=>'<select class="bindSel" data-e="'+esc(e)+'" onchange="setBindFor(this.dataset.e,this.value)" aria-label="綁定老師"><option value="">不綁定老師</option>'+(D.teachers||[]).slice().sort((a,b)=>(a.role==='資源班'?0:1)-(b.role==='資源班'?0:1)).map(t=>'<option value="'+esc(t.id)+'"'+(bindOf(e)===t.id?' selected':'')+'>'+esc(t.name)+'</option>').join('')+'</select>';
+    const roleSel=e=>'<select data-e="'+esc(e)+'" onchange="setMemberRole(this.dataset.e,this.value)"><option value="e"'+(V.includes(e)?'':' selected')+'>編輯</option><option value="v"'+(V.includes(e)?' selected':'')+'>檢視</option></select>';
     h+='<h3>共用與協作</h3><div class="box '+(cloudErr?'bad':'ok')+'"><div class="bar" style="margin:0"><b>'+(cloudErr?'還沒存上雲端':'已同步')+'</b><span class="grow"></span><span>'+esc(u.email)+'</span><button class="b sm" onclick="cloudLogout()">登出</button></div>'+
       '<div>'+(isRO()?'主持人和編輯的老師一改，你的畫面會即時更新。':'所有修改都會自動儲存，名單內的老師會即時看到。')+(L&&L.by?'<br>最後更新：<b>'+esc(who(L.by))+'</b>　'+fmtAt(L.at):'')+'</div></div>';
     if(isRO())h+='<div class="box bad">你是「檢視」權限：可以看、列印，不能修改。</div>';
-    h+='<h4>可以使用的老師（'+emails.length+' 人）</h4><p class="note" style="margin-top:0">編輯＝可以改；檢視＝每一頁都看得到，但不能改。這份名單同時管名冊、排課與段考考場。</p><div>'+
+    h+='<h4>可以使用的老師（'+emails.length+' 人）</h4><p class="note" style="margin-top:0">綁定老師的人登入後只看到自己的頁面。</p><div>'+
       emails.map(e=>'<div class="mem">'+avatar({email:e})+'<span class="e">'+esc(e)+(e===u.email?'（我）':'')+'</span>'+(onSet.has(e)?'<span class="tag on">在線上</span>':'')+
-        (e===A.admin?'<span class="tag">主持人</span>':admin?roleSel(e)+'<button class="b sm" data-e="'+esc(e)+'" onclick="transferAdmin(this.dataset.e)">交給他當主持人</button><button class="b sm danger" data-e="'+esc(e)+'" onclick="removeMember(this.dataset.e)">移除</button>':'<span class="tag">'+(V.includes(e)?'檢視':'編輯')+'</span>')+'</div>').join('')+'</div>';
+        (e===A.admin?'<span class="tag">主持人</span>':admin?roleSel(e)+bindSel(e)+(bindOf(e)&&tName(bindOf(e))&&typeof setRole==='function'?'<button class="b sm" data-t="'+esc(bindOf(e))+'" onclick="previewAs(this.dataset.t)">預覽</button>':'')+'<button class="b sm" data-e="'+esc(e)+'" onclick="transferAdmin(this.dataset.e)">交給他當主持人</button><button class="b sm danger" data-e="'+esc(e)+'" onclick="removeMember(this.dataset.e)">移除</button>':'<span class="tag">'+(V.includes(e)?'檢視':'編輯')+'</span>'+(bindOf(e)&&tName(bindOf(e))?'<span class="tag">'+esc(tName(bindOf(e)))+'</span>':''))+'</div>').join('')+'</div>';
     if(admin)h+='<div class="addrow"><input id="memIn" type="email" placeholder="輸入老師的 Gmail，例：teacher@gmail.com" onkeydown="if(event.key===\'Enter\')addMember()"><select id="memRole"><option value="e">編輯</option><option value="v">檢視</option></select><button class="b pri" onclick="addMember()">加入</button></div>'+
       '<p class="note">加入後把網址傳給對方，對方用同一個 Gmail 登入就可以了。權限隨時可以改。</p><button class="b" onclick="copyText(location.href.split(\'#\')[0],\'已複製網址，貼給老師就可以了\')">複製網址</button>';
     else h+='<p class="note">要增減老師或改權限，請找主持人 '+esc(A.admin||'')+'。</p>';
@@ -186,14 +189,30 @@ function openShare(x){shareOpen=x?2:true;openDlg('',()=>{shareOpen=false;});rend
 function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
 async function setMembers(emails,viewers,msg,admin){admin=admin||CLOUD.access.admin;viewers=viewers.filter(e=>emails.includes(e)&&e!==admin);
   const o={emails,viewers};if(admin!==CLOUD.access.admin)o.admin=admin;
+  const B=CLOUD.access.bind;if(B&&typeof TEACH!=='undefined'){const nb=TEACH.cleanBind(B,emails,admin);if(JSON.stringify(nb)!==JSON.stringify(B))o.bind=nb;}
   try{await CLOUD.db.doc('config/access').update(o);Object.assign(CLOUD.access,o);setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
-function setRole(e,r){const v=viewersOf().filter(x=>x!==e);if(r==='v')v.push(e);setMembers(CLOUD.access.emails||[],v,e+' 已改成「'+(r==='v'?'檢視':'編輯')+'」');}
+function setMemberRole(e,r){const v=viewersOf().filter(x=>x!==e);if(r==='v')v.push(e);setMembers(CLOUD.access.emails||[],v,e+' 已改成「'+(r==='v'?'檢視':'編輯')+'」');}
 function addMember(){const el=$('memIn'),v=el.value.trim().toLowerCase();
   if(!EMAIL_RE.test(v)||v.length>120){toast('請輸入完整的信箱，例如 teacher@gmail.com（不能有空白、引號或括號）');el.focus();return;}
   const cur=CLOUD.access.emails||[];if(cur.includes(v)){toast('這位老師已經在名單裡了');return;}
   if(cur.length>=100){toast('共用名單最多 100 人');return;}
   const ro=$('memRole').value==='v';setMembers(cur.concat([v]),viewersOf().concat(ro?[v]:[]),'已加入 '+v+'（'+(ro?'檢視':'編輯')+'），把網址傳給對方就可以了');}
 function removeMember(e){if(!confirm('確定把 '+e+' 移出共用名單？對方之後就看不到這一份了。'))return;setMembers((CLOUD.access.emails||[]).filter(x=>x!==e),viewersOf(),'已移除 '+e);}
+/* ───── 綁定老師：config/access.bind＝{信箱: 老師 id}。綁定的人登入後是「老師」畫面；主持人和沒綁定的維持管理者 ───── */
+function bindOf(e){const B=(CLOUD&&CLOUD.access&&CLOUD.access.bind)||{},k=String(e||'').toLowerCase();for(const x in B)if(x.toLowerCase()===k)return String(B[x]||'');return '';}
+async function setBindFor(e,tid){if(!isAdmin()||typeof TEACH==='undefined')return;const A=CLOUD.access,b=TEACH.cleanBind(TEACH.setBind(A.bind,e,tid),A.emails,A.admin);
+  const t=(D.teachers||[]).find(x=>x.id===tid);
+  try{await CLOUD.db.doc('config/access').update({bind:b});A.bind=b;setCloudUI('on');toast(t?e+' 綁定為 '+t.name:'已取消 '+e+' 的綁定');}catch(err){toast('更新失敗：'+(err.code||err.message));}}
+// 主持人預覽某位老師看到的畫面（不寫入雲端）
+function previewAs(tid){closeDlg();if(typeof setRole==='function')setRole('teacher',tid);}
+// 登入、名單或名冊有變時：照綁定切換身分。bindAuto＝是綁定自動切成老師的（登出、解除綁定時切回來）
+let bindAuto=false;
+function applyBind(){if(typeof TEACH==='undefined'||typeof setRole!=='function'||typeof page==='undefined')return;
+  const cur=String((typeof APPROLE!=='undefined'?APPROLE:window.APPROLE)||'admin'),tid0=String((typeof ME_TID!=='undefined'?ME_TID:window.ME_TID)||'');
+  if(cloudState!=='on'||!CLOUD||!CLOUD.user||!CLOUD.access){if(bindAuto){bindAuto=false;setRole('admin');}return;}
+  const r=TEACH.roleFor(CLOUD.access,CLOUD.user.email,(typeof D!=='undefined'&&D&&D.teachers)||[]);
+  if(r.role==='teacher'){if(cur!=='teacher'||tid0!==r.tid){bindAuto=true;setRole('teacher',r.tid);}}
+  else if(bindAuto){bindAuto=false;setRole('admin');}}
 // 主持人交接：交給名單裡的另一位老師，自己變成「編輯」
 function transferAdmin(e){if(!confirm('把主持人交給 '+e+' 嗎？\n交出去之後你會變成「編輯」，共用名單和權限改由對方管理，你自己沒辦法拿回來。'))return;
   setMembers(CLOUD.access.emails||[],viewersOf().filter(x=>x!==e),'已把主持人交給 '+e,e);}
@@ -256,7 +275,7 @@ function applyRemote(x,msg){
   let o;try{o=normalize(JSON.parse(x.json));}catch(e){return false;}
   D=o;lastPushed=x.json;cloudRev=x.rev|0;setSync(cloudRev,false);cloudErr='';
   localSave();rebuild();undoStack=[];$('title').value=D.title||'';paintSchool();if(page!=='exam')render();
-  if(msg)toast(msg);return true;
+  applyBind();if(msg)toast(msg);return true;
 }
 const KEYNAME={students:'學生名冊',teachers:'老師',groups:'課程',assign:'排課',classSubj:'任課老師',offBy:'不排課時段',sets:'學生群組',rooms:'教室',periods:'作息',settings:'排課規則',title:'學期名稱',tt:'全校課表',lockFix:'手排鎖課',blocked:'不排課時段'};
 const keyNames=ks=>ks.map(k=>KEYNAME[k]||k).filter((v,i,a)=>a.indexOf(v)===i).join('、');

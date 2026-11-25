@@ -181,5 +181,76 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   ok(D2.iep.rounds.length===1&&D2.iep.rounds[0].meets.length===1&&D2.classHead['701']==='張老師（國）','存檔讀回來 IEP 資料還在');
 }
 
+// 10. 老師模式：每位個管只看得到、只能動自己的學生和調查
+{
+  const T=require('./teacher.js'),D=sample();I.ensure(D);
+  const mine=I.mineStu(D,'r2');
+  ok(mine.length&&mine.every(s=>s.caseMgr==='r2')&&I.mineStu(D,'').length===D.students.length,'學生選單：老師只有自己個管的，管理者是全部');
+  const other=D.students.find(s=>s.caseMgr==='r1');
+  const R2=I.newRoundAs(D,'r2',{name:'王老師的調查',stu:[mine[0].id,other.id]});
+  ok(R2.host==='r2'&&I.hostId(D,R2)==='r2'&&I.hostLabel(D,R2)==='王老師','老師開的調查記 host＝老師 id，顯示成姓名');
+  ok(R2.meets.length===1&&R2.meets[0].s===mine[0].id,'老師開的調查放不進別人個管的學生');
+  ok(I.addMeetAs(D,R2,other.id,'r2')===null&&!!I.addMeetAs(D,R2,mine[1].id,'r2'),'addMeetAs：別人的學生加不進去，自己的可以');
+  const R1=I.newRoundAs(D,'r1',{name:'林組長的調查',stu:[other.id]}),RA=I.newRound(D,{name:'特教組'});RA.host='特教組';
+  ok(I.ownRounds(D,'r2',0).map(r=>r.id).join()===R2.id,'老師只看到自己開的調查');
+  ok(I.ownRounds(D,'',0).length===3,'管理者看到全部調查');
+  ok(I.canEdit(D,R2,'r2')&&!I.canEdit(D,R1,'r2')&&!I.canEdit(D,RA,'r2')&&I.canEdit(D,R1,''),'只能改自己的調查；管理者都可以');
+  ok(I.hostId(D,RA)===''&&I.hostLabel(D,RA)==='特教組','文字的承辦（特教組）不是任何老師的');
+  // 被邀請：r2 在 R1 的名單裡（例如他教這位學生）
+  const m1=R1.meets[0];if(!m1.p.some(x=>x[0]==='t:r2'))I.addPerson(D,R1,m1,'t:r2','資源班',1);
+  I.setRange(D,R1,'2026-12-07','2026-12-11',['1','2','3']);I.setRange(D,R2,'2026-12-07','2026-12-11',['1','2','3']);
+  ok(I.invited(D,'r2').includes(R1)&&!I.invited(D,'m1').includes(R1),'邀請我的會議：有在名單裡才看得到');
+  ok(I.selfAnswer(D,R1,'t:r2',['2026-12-08|2'],'可以調課')&&R1.ans['t:r2']['2026-12-08|2']==='y'&&R1.ans['t:r2']['2026-12-08|3']==='n'&&R1.web['t:r2'].note==='可以調課','直接填空堂：點的是可，其他是不可，和線上回覆同格式');
+  ok(I.progress(D,R1).people.find(o=>o.k==='t:r2').done==='web','填完之後顯示「填了」');
+  ok(I.selfAnswer(D,R1,'t:r2',['2026-12-08|3'])&&R1.ans['t:r2']['2026-12-08|3']==='y','可以再改（時間戳記比上次新）');
+  ok(T.iepOwed(D,'r2','2026-12-01').every(x=>x.R!==R1),'待辦：填過的不再列出');
+  // 跨老師：別人的會議已經排在那一節，我的調查不能排同一個人在同一節（就算他回覆「可」）
+  m1.at='2026-12-08|3';m1.pin=1;R1.rooms=['會議室'];m1.room='會議室';
+  const m2=R2.meets[0];if(!m2.p.some(x=>x[0]==='t:r2'))I.addPerson(D,R2,m2,'t:r2','個管',1);
+  R2.meets.forEach(m=>{m.p.forEach(x=>I.fillRest(R2,x[0],'y'));});R2.rooms=['會議室'];
+  const b2=I.busyOf(D,R2);
+  ok(b2.__iep['t:r2']&&b2.__iep['t:r2']['2026-12-08|3'],'別人開的、已排定的會議記成硬限制');
+  ok(b2.__rooms['會議室']&&b2.__rooms['會議室']['2026-12-08|3'],'別人的會議占用的地點也標出來');
+  const res=I.schedule(D,R2,{busy:b2});
+  ok(Object.keys(res.at).length===R2.meets.length&&Object.values(res.at).every(k=>k!=='2026-12-08|3'),'排時間時不會和別位老師已排定的會議撞到（同一個人、同一間）');
+  ok(I.rank(D,R2,m2,b2).find(r=>r.k==='2026-12-08|3').ok===false,'那一節在排名裡是不能開');
+  m2.at='2026-12-08|3';m2.room='會議室';ok(I.crossConflicts(D,R2).some(c=>c.k==='t:r2')&&I.crossConflicts(D,R2).some(c=>c.room==='會議室'),'手動排到同一節會提醒（人和地點）');
+  ok(!I.crossConflicts(D,R2).some(c=>c.m.includes(other.name)),'提醒不寫出別場的學生');
+  const R3=I.newRoundAs(D,'r2',{stu:[mine[0].id]});R3.due='2026-12-05';I.setRange(D,R3,'2026-12-07','2026-12-08',['1']);
+  const pd=I.publicDoc(D,R3,I.webPeople(D,R3)[0],{});
+  ok(pd.host==='王老師'&&!JSON.stringify(pd).includes('"r2"'),'公開頁的承辦是老師姓名，不是老師 id');
+  // 學生與私密欄位
+  const S=T.myStudents(D,'r2');
+  ok(S.cm.every(s=>s.caseMgr==='r2')&&S.taught.every(s=>s.caseMgr!=='r2'&&D.groups.some(g=>g.teacher==='r2'&&g.students.includes(s.id))),'我的學生：個管的＋我教的（不重複）');
+  ok(S.taught.length>0,'範例資料裡王老師也教別人個管的學生');
+  const x=Object.assign({},S.taught[0],{privNote:'私密',iepDate:'2026-12-01'}),y=Object.assign({},S.cm[0],{privNote:'私密'});
+  ok(!T.canSeePriv(x,'r2','teacher')&&T.canSeePriv(y,'r2','teacher')&&T.canSeePriv(x,'','admin'),'私密欄位只給個管本人和管理者');
+  ok(!('privNote' in T.studentView(x,'r2','teacher'))&&!('iepDate' in T.studentView(x,'r2','teacher'))&&T.studentView(y,'r2','teacher').privNote==='私密','不是個管的看不到私密備註和日期');
+  ok(T.myGroups(D,'r2').every(g=>g.teacher==='r2')&&T.myGroups(D,'r2').length===3,'我的組別：只有我教的');
+  D.students.find(s=>s.id===S.cm[0].id).reviewDate='2026-12-10';
+  ok(T.dueSoon(D,'r2','2026-12-01',30).some(d=>d.k==='reviewDate'&&d.left===9)&&!T.dueSoon(D,'r1','2026-12-01',30).some(d=>d.s.caseMgr!=='r1'),'到期提醒只算我個管的');
+  const E={sessions:[{id:'d1p1',date:'12/1',dow:'二',period:'第1節',subject:'作文',start:'08:20',end:'09:05'}],rooms:[{id:'A',name:'環教中心'}],proctorOf:{'d1p1|A':'王老師'},supportOf:{'d1p1|A':'林組長'}};
+  ok(T.proctorDuties(E,'王老師').length===1&&T.proctorDuties(E,'王').length===1&&T.proctorDuties(E,'林組長')[0].sup===true&&!T.proctorDuties(E,'李老師').length,'我的監考：從段考資料找自己的姓名（含支援）');
+}
+
+// 11. 綁定：信箱 → 老師 → 身分
+{
+  const T=require('./teacher.js'),D=C.defaultData();
+  const A={admin:'boss@school.tw',emails:['boss@school.tw','wang@school.tw','lin@school.tw','new@school.tw'],viewers:['lin@school.tw'],bind:{'wang@school.tw':'r2','lin@school.tw':'r1','boss@school.tw':'r3'}};
+  ok(T.roleFor(A,'wang@school.tw',D.teachers).role==='teacher'&&T.roleFor(A,'wang@school.tw',D.teachers).tid==='r2','綁定的信箱登入是老師，帶老師 id');
+  ok(T.roleFor(A,'Wang@School.tw',D.teachers).tid==='r2','信箱大小寫不影響');
+  ok(T.roleFor(A,'lin@school.tw',D.teachers).role==='teacher','檢視權限的人綁定了也是老師畫面');
+  ok(T.roleFor(A,'boss@school.tw',D.teachers).role==='admin','主持人一律是管理者（就算被綁定）');
+  ok(T.roleFor(A,'new@school.tw',D.teachers).role==='admin','沒綁定的編輯維持管理者');
+  ok(T.roleFor(null,'wang@school.tw').role==='admin'&&T.roleFor(A,'').role==='admin','沒有共用名單或沒登入：管理者（單機）');
+  ok(T.roleFor(Object.assign({},A,{bind:{'wang@school.tw':'gone'}}),'wang@school.tw',D.teachers).role==='admin','綁到已刪除的老師：不切成老師');
+  const b=T.setBind(A.bind,'NEW@school.tw','m1');
+  ok(b['new@school.tw']==='m1'&&T.setBind(b,'new@school.tw','')['new@school.tw']===undefined,'設定、取消綁定');
+  const c=T.cleanBind(b,['boss@school.tw','wang@school.tw'],'boss@school.tw');
+  ok(JSON.stringify(c)==='{"wang@school.tw":"r2"}','移出名單的人、主持人的綁定都清掉');
+  const keys=Object.keys(Object.assign({},A,{bind:c}));
+  ok(keys.every(k=>['admin','emails','viewers','link','vcls','vk','bind'].includes(k)),'寫回 config/access 的欄位都在安全規則允許的範圍');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

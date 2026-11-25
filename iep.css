@@ -1,24 +1,38 @@
-/* IEP 會議：畫面用暖色、列印用黑白（調查單、小通知單照學校紙本的樸素樣子） */
-.iepcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
-.iepcard h4{font-family:var(--serif);font-size:15.5px;margin:0 0 8px;letter-spacing:.03em;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
-.iepcard h4 small{font-family:inherit;font-weight:normal;color:var(--mute);font-size:12.5px}
+/* IEP 會議與老師頁（teacher.js）：DESIGN.md 的卡片、膠囊按鈕、紅色區段編號；列印用黑白（調查單、小通知單照學校紙本的樸素樣子） */
+.iepcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(31,36,48,.04)}
+.iepcard h4{font-size:17px;font-weight:700;letter-spacing:-.02em;margin:0 0 12px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.iepcard h4 small{font-weight:normal;color:var(--mute);font-size:14px;letter-spacing:0}
+.iepcard details.more{margin-top:12px}
+.iepv{font-weight:500}
+/* 步驟列 ①②③④ */
+.iepsteps{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.iepsteps button{min-height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line2);background:var(--card);color:var(--ink2);font:inherit;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.iepsteps button i{font-style:normal;color:var(--red,#b8423a);font-weight:700}
+.iepsteps button.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.iepsteps button.on i{color:inherit}
+.iepnext{justify-content:flex-end;margin-top:8px}
+.iepempty{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:24px 0;color:var(--mute)}
+.iepchip{background:var(--sunk);color:var(--ink2);border-radius:999px;padding:2px 10px;font-size:13px}
+.iepnote{flex:1;min-width:0}
+table.iepme td button.c{width:44px;height:40px}
+table.iepme th{white-space:nowrap}
 .iepf{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;max-width:720px}
 .iepf>span{color:var(--mute);font-size:13px;white-space:nowrap}
 .iepf input[type=text],.iepf input[type=date],.iepf select{padding:6px 9px;max-width:100%}
 .iepchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
-.iepchips span{background:var(--acc-l);color:var(--acc-d);border-radius:99px;padding:2px 6px 2px 11px;font-size:13px;display:inline-flex;align-items:center;gap:4px}
+.iepchips span{background:var(--sunk);color:var(--ink2);border-radius:99px;padding:2px 6px 2px 11px;font-size:13px;display:inline-flex;align-items:center;gap:4px}
 .iepchips span button{border:0;background:none;color:inherit;cursor:pointer;font-size:13px;padding:0 3px}
 .iepchk{display:inline-flex;align-items:center;gap:4px;margin:2px 12px 2px 0;font-size:13.5px;white-space:nowrap}
-.iepcls{margin:6px 0 10px}.iepcls b{display:inline-block;min-width:3.5em;font-family:var(--serif)}
+.iepcls{margin:6px 0 10px}.iepcls b{display:inline-block;min-width:3.5em}
 table.iepans{border-collapse:collapse}
 table.iepans th,table.iepans td{border:1px solid var(--line);padding:3px 5px;font-size:12.5px;text-align:center}
-table.iepans th{background:#f3eee4;color:var(--ink2);font-weight:600}
+table.iepans th{background:var(--sunk);color:var(--mute);font-weight:600;font-size:13px}
 table.iepans td.nm{text-align:left;white-space:nowrap}
-table.iepans td button.c{width:30px;height:26px;border:1px solid var(--line2);background:#fff;border-radius:6px;cursor:pointer;font-size:14px;font-family:inherit}
+table.iepans td button.c{width:34px;height:32px;border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:6px;cursor:pointer;font-size:14px;font-family:inherit}
 table.iepans td button.c.y{background:var(--ok-l);color:var(--ok);border-color:#a9cdb9}
 table.iepans td button.c.n{background:var(--bad-l);color:var(--bad);border-color:#e6b7ab}
 table.iepans td button.c.m{background:var(--warn-l);color:var(--warn);border-color:#e8cf9f}
-table.iepans td button.c.a{background:#efebe3;color:var(--mute);font-size:11.5px}
+table.iepans td button.c.a{background:var(--sunk);color:var(--mute);font-size:11.5px}
 .ieplegend{font-size:12.5px;color:var(--mute)}
 .iepwarn{color:var(--bad)}.iepok{color:var(--ok)}
 
@@ -70,3 +84,44 @@ table.iepans td button.c.a{background:#efebe3;color:var(--mute);font-size:11.5px
 }
 @page iepP{size:A4 portrait;margin:12mm}
 @page iepC{size:A4 portrait;margin:8mm 10mm}
+
+/* ── 老師頁（teacher.js）：手機優先 ── */
+.tp{max-width:760px}
+.tp-hello{margin:0 0 8px}.tp-hello span{color:var(--mute);font-size:14px}.tp-hello h2{font-size:28px;font-weight:700;letter-spacing:-.02em;margin:2px 0 0}
+.tp-h{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:28px 0 12px;display:flex;align-items:baseline;gap:10px}
+.tp-h i{font-style:normal;font-size:13px;letter-spacing:.08em;color:var(--red,#b8423a);font-weight:700}
+.tp-h small{font-size:14px;font-weight:normal;color:var(--mute);letter-spacing:0}
+.tp-none{color:var(--mute);font-size:14px;margin:4px 0}
+.tp-list{display:flex;flex-direction:column;gap:8px}
+.tp-row{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 16px}
+.tp-row.now{border-color:var(--blue,#2f5c8a);box-shadow:0 0 0 2px var(--blue,#2f5c8a) inset}
+.tp-tm{min-width:4.2em;display:flex;flex-direction:column}.tp-tm small{color:var(--mute);font-size:13px;font-variant-numeric:tabular-nums}
+.tp-ev{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}.tp-ev span{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.tp-ev small{color:var(--mute);font-size:14px}
+.tp-todo{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.tp-todo li>button,.tp-todo li>div{display:flex;gap:10px;align-items:center;width:100%;min-height:48px;padding:10px 16px;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
+.tp-todo li>div{cursor:default}
+.tp-todo span{flex:1;min-width:0}.tp-todo em{font-style:normal;color:var(--blue,#2f5c8a);font-size:14px;white-space:nowrap}
+.tp-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.tp-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:0}
+.tp-card summary{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:14px 16px;min-height:48px;cursor:pointer;list-style:none}
+.tp-card summary::-webkit-details-marker{display:none}
+.tp-card summary b{font-size:17px}.tp-card summary span{color:var(--mute);font-size:14px}
+.tp-card dl{display:grid;grid-template-columns:5.5em 1fr;gap:8px 10px;margin:0;padding:0 16px 16px;font-size:14px}
+.tp-card dt{color:var(--mute)}.tp-card dd{margin:0;min-width:0}
+.tp-card dd input,.tp-card dd textarea{width:100%;box-sizing:border-box;min-height:40px;border:1px solid var(--line2);border-radius:10px;padding:6px 10px;font:inherit;background:var(--card);color:var(--ink)}
+.tp-chip{border-radius:999px;padding:1px 10px;font-size:13px;background:var(--sunk);color:var(--ink2)}
+.tp-chip.warn{background:var(--warn-l);color:var(--warn)}
+.tp-search input{flex:1;min-width:0;min-height:40px}
+table.tp-off{border-collapse:collapse}
+table.tp-off th{font-size:13px;color:var(--mute);font-weight:600;padding:4px 6px;text-align:left}
+table.tp-off th small{display:block;font-weight:normal}
+table.tp-off td{padding:3px}
+table.tp-off td button{width:48px;height:40px;border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+table.tp-off td button.on{background:var(--bad-l);color:var(--bad);border-color:var(--bad)}
+@media (max-width:600px){
+  .iepf{grid-template-columns:1fr}
+  .iepsteps button{padding:0 12px}
+  table.tp-off td button{width:40px}
+  table.iepme td button.c{width:38px}
+  .tp-hello h2{font-size:24px}
+}
