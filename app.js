@@ -12,8 +12,8 @@ function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';cle
 function setST(S){ST=S;if(!ST.rfix)ST.rfix=new Int16Array(M.L.length).fill(-1);M.lroom=ST.rfix;}
 function rebuild(){M=compile(D);setST(toState(M,D));ROOM=assignRooms(M,ST.slot);selL=-1;}
 function changed(){rebuild();D.assign=fromState(M,ST);save();}                                  // 名冊、分組、不排時段有改
-function commit(){D.assign=fromState(M,ST);ROOM=assignRooms(M,ST.slot);save();render();}        // 排法有改
-function pushUndo(){undoStack.push(JSON.stringify({a:D.assign,m:D.groups.map(g=>[g.id,g.students])}));if(undoStack.length>40)undoStack.shift();}
+function commit(){if(onDraftST())D.sched.draft.a=packAssign(fromState(M,ST));else D.assign=fromState(M,ST);ROOM=assignRooms(M,ST.slot);save();render();}        // 排法有改
+function pushUndo(){undoStack.push(JSON.stringify({a:D.assign,d:(D.sched&&D.sched.draft)||null,m:D.groups.map(g=>[g.id,g.students])}));if(undoStack.length>40)undoStack.shift();}
 function tOpts(sel,first){const rk=t=>t.role==='資源班'?0:1,list=D.teachers.slice().sort((a,b)=>first==='res'?rk(a)-rk(b):rk(b)-rk(a));
   return '<option value="">（未指定）</option>'+list.map(t=>`<option value="${esc(t.id)}"${t.id===sel?' selected':''}>${esc(t.name)}${t.role==='普通班'||t.role==='資源班'?'':'・'+esc(t.role)}</option>`).join('');}
 function stuLabel(s){return s.cls+' '+s.name;}
@@ -42,7 +42,9 @@ function render(){
   $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button class="${k===sub?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
   if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed';return;}
+  syncST();   // 排課頁有試排草稿時看的是草稿，其他頁是正式課表
   ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/tt':renderTT,'roster/data':renderData,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
+  draftBanner();
 }
 document.querySelectorAll('#nav button[data-p]').forEach(b=>{b.onclick=()=>go(b.dataset.p);});
 
@@ -125,12 +127,13 @@ function renderTea(){
   let h=`<p class="guide">除了資源班老師，也要把<b>學生原班的任課老師</b>加進來，排課才知道哪些時段會卡到他們。資源班老師會自動成為段考的監考老師。</p>
   <div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><button class="b" onclick="pasteTL()">貼上任課老師名單</button><button class="b" onclick="go('roster','data')">上傳學校的 Excel</button><button class="b" onclick="pruneTeachers()">移除沒用到的任課老師</button><span class="stat">共 <b>${D.teachers.length}</b> 位</span></div>
   <datalist id="roleList">${ROLES.map(r=>`<option value="${r}">`).join('')}</datalist><p class="note">身分可以自己打（例：專輔、巡迴）；只有「資源班」會被當成資源班老師與監考老師。</p>
-  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>開的課、任課班級</th><th>備註</th><th></th></tr>`;
+  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>開的課、任課班級</th><th>偏好教室</th><th>備註</th><th></th></tr>`;
   D.teachers.forEach((t,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(t.name)}" onchange="setTea(${i},'name',this.value)"></td>
     <td><input type="text" class="w3" list="roleList" value="${esc(t.role)}" onchange="setTea(${i},'role',this.value||'普通班')"></td>
     <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('sched','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
     <td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length||''}</td>
     <td class="dim">${esc([...new Set(use[t.id]||[])].join('、'))}</td>
+    <td>${t.role==='資源班'?prefCell(i):''}</td>
     <td><input type="text" class="w8" value="${esc(t.note)}" onchange="setTea(${i},'note',this.value)"></td>
     <td><button class="x" title="刪除" onclick="delTeacher(${i})">✕</button></td></tr>`;});
   $('page').innerHTML=h+'</table></div>';
@@ -139,7 +142,7 @@ function renderEnv(){
   const nMain=D.rooms.filter(r=>!r.spare).length,nSp=D.rooms.length-nMain;
   let h=`<h3>教室</h3><p class="note">教室名稱可以直接改。勾「備用」的教室平常不排：同一節最多排 <b>${nMain}</b> 組（平常用的教室數）${nSp?`，真的排不下才會用到備用的 ${nSp} 間，最多 <b>${D.rooms.length}</b> 組`:''}。排課時會照這個上限，不會在同一節塞進比教室還多的課。</p>
   <div class="bar">`+D.rooms.map((r,i)=>`<span class="stu${r.spare?' dim':''}"><input type="text" class="w5" style="border:0;background:transparent" value="${esc(r.name)}" onchange="D.rooms[${i}].name=this.value;changed()"><label class="note" style="margin:0 4px" title="平常不排，排不下才用"><input type="checkbox"${r.spare?' checked':''} onchange="D.rooms[${i}].spare=this.checked;changed();render()"> 備用</label><button class="x" onclick="delRoom(${i})">✕</button></span>`).join('')+
-  `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>${D.rooms.length?'':'<p class="note warn">還沒有教室：排課時不會限制同一節的組數。請至少新增一間。</p>'}
+  `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>${D.rooms.length?'':'<p class="note warn">還沒有教室：排課時不會限制同一節的組數。請至少新增一間。</p>'}${prefBox()}
   <h3>作息</h3><p class="note">勾「外加」的時段（早自習、午休、第 8 節）只會排外加課；抽離課只排在一般節次。</p>
   <div class="scroll"><table class="ed"><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加時段</th><th></th></tr>`;
   D.periods.forEach((p,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(p.name)}" onchange="setPer(${i},'name',this.value)"></td>
@@ -420,7 +423,7 @@ function pasteGroupsOk(){
 
 /* ───── 排課｜排課板 ───── */
 function chipHtml(l,errs){const g=M.G[M.L[l].g],r=ROOM[l],names=g.stu.map(i=>stuLabel(D.students[i])).join('、');
-  return `<span class="chip c${colorOf(g)}${ST.pin[l]?' pin':''}${errs[l]?' err':''}${selL===l?' sel':''}" draggable="true" data-l="${l}" title="${esc((g.t>=0?M.T[g.t].name+'｜':'')+names+(errs[l]?'\n'+errs[l]:''))}">${esc(g.name)}<small>${esc(ST.slot[l]>=0&&r>=0?D.rooms[r].name:(g.t>=0?M.T[g.t].name:''))}</small></span>`;}
+  return `<span class="chip c${colorOf(g)}${ST.pin[l]?' pin':''}${errs[l]?' err':''}${selL===l?' sel':''}" data-l="${l}" title="${esc((g.t>=0?M.T[g.t].name+'｜':'')+names+roomNote(l)+(errs[l]?'\n'+errs[l]:''))}">${esc(g.name)}<small>${esc(ST.slot[l]>=0&&r>=0?D.rooms[r].name:(g.t>=0?M.T[g.t].name:''))}</small></span>`;}
 function renderBoard(){
   const out=[];evaluate(M,ST.slot,out);
   const errs={},msg=new Map(),cnt={};out.forEach(o=>{cnt[o.k]=(cnt[o.k]||0)+1;if(o.k!=='un')errs[o.l]=(errs[o.l]?errs[o.l]+'\n':'')+o.m;const e=msg.get(o.m);if(e)e.n++;else msg.set(o.m,{n:1,l:o.l,k:o.k});});
@@ -429,8 +432,8 @@ function renderBoard(){
   const placed=[...ST.slot].filter(s=>s>=0).length,total=M.L.length,gv=view.slice(0,2)==='g:'?+view.slice(2):0,ti=view&&!gv?M.tIdx[view]:-1;
   const show=shownL,gOff=gv?new Set(D.offBy[view]||[]):null,gname=gv?GRADE[gv]:'';
   const at={},un=[];M.L.forEach((x,l)=>{if(!show(l))return;const s=ST.slot[l];if(s<0)un.push(l);else(at[s]=at[s]||[]).push(l);});
-  let h=`<p class="guide">按<b>一鍵排課</b>，系統會先排出每位老師的課，再把「待安排」的學生編進不衝堂的課，最後確認老師、學生、教室都不撞。排完可以直接拖曳調整（或點一下組別、再點要放的格子）；動過的會<b>固定</b>住，再按一次排課時不會被移走。</p>
-  <div class="bar"><button class="b pri big" onclick="runSolve(false)">${gv?'排'+gname:'一鍵排課'}</button><button class="b" onclick="runSolve(true)">${gv?gname+'重排':'全部重排'}</button><button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><button class="b" onclick="aiOpen()">用 AI 排</button><button class="b danger" onclick="clearAll()">清空排法</button>
+  let h=`<p class="guide">按<b>一鍵試排</b>，系統會先排出每位老師的課，再把「待安排」的學生編進不衝堂的課，最後確認老師、學生、教室都不撞。排出來的是<b>草稿</b>，會和正式課表並排比較，滿意了再按<b>確定採用</b>。可以直接拖曳調整（或點一下組別、再點要放的格子）；動過的會<b>固定</b>住，按重排時不會被移走。</p>
+  <div class="bar">${solveBtns(gv,gname)}<button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><button class="b" onclick="aiOpen()">用 AI 排</button><button class="b danger" onclick="clearAll()">清空排法</button>
     <span class="stat">已排 <b>${placed}</b> / ${total} 節</span><span class="stat${out.length?' bad':''}">問題 <b>${out.length}</b></span><span class="grow"></span>
     <select onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select></div>`;
   if(!total)h+=`<div class="probs">還沒有要排的組，請先到「老師開課」建立。</div>`;
@@ -454,18 +457,13 @@ function renderBoard(){
 function pickL(l){if(!(l>=0))return;selL=l;if(view&&!shownL(l))view='';render();const c=document.querySelector('#page .chip[data-l="'+l+'"]');if(c&&c.scrollIntoView)c.scrollIntoView({block:'center',inline:'center'});}
 function setLRoom(v){if(selL<0)return;pushUndo();const l=selL;ST.rfix[l]=+v;commit();selL=l;render();}
 function togPin(){if(selL<0||ST.slot[selL]<0)return;pushUndo();const l=selL;ST.pin[l]=ST.pin[l]?0:1;commit();selL=l;render();}
-function markCells(l){document.querySelectorAll('#page td[data-s]').forEach(td=>{const s=+td.dataset.s;if(s===ST.slot[l])return;
-  const ok=canPlace(M,ST.slot,l,s);td.classList.add(ok?'ok':'no');if(!ok){const r=why(M,M.L[l].g,s);td.title=r.length?r.join('、'):'放這裡會和別組衝突';}});}
+function markCells(l){const b=probSet();document.querySelectorAll('#page td[data-s]').forEach(td=>{const s=+td.dataset.s;if(s===ST.slot[l])return;
+  const r=cellInfo(l,s,b);td.classList.add(r.ok?'ok':'no');td.title=r.t;});}
 function clearMarks(){document.querySelectorAll('#page td[data-s]').forEach(td=>{td.classList.remove('ok','no','over');td.removeAttribute('title');});const t=document.querySelector('.tray');if(t)t.classList.remove('over');}
 function moveLesson(l,s){if(ST.slot[l]===s){selL=-1;render();return;}pushUndo();const bad=s>=0&&!canPlace(M,ST.slot,l,s);
   ST.slot[l]=s;ST.pin[l]=s>=0?1:0;selL=-1;commit();if(bad)toast('放進去了，但這一格有衝突，請看上方說明');}
-(function(){const B=$('page');let dragL=-1;const onBoard=()=>page==='sched'&&sub==='board'&&!isRO();
-  B.addEventListener('dragstart',e=>{const c=onBoard()&&e.target.closest&&e.target.closest('.chip[data-l]');if(!c)return;dragL=+c.dataset.l;e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',String(dragL));}catch(x){}
-    setTimeout(()=>{clearMarks();if(dragL>=0)markCells(dragL);},0);});
-  B.addEventListener('dragend',()=>{if(dragL<0)return;dragL=-1;clearMarks();if(selL>=0)markCells(selL);});
-  B.addEventListener('dragover',e=>{const td=e.target.closest('[data-s]');if(!td||dragL<0)return;e.preventDefault();
-    B.querySelectorAll('.over').forEach(x=>{if(x!==td)x.classList.remove('over');});td.classList.add('over');});
-  B.addEventListener('drop',e=>{const td=e.target.closest('[data-s]');if(!td||dragL<0)return;e.preventDefault();const l=dragL;dragL=-1;moveLesson(l,+td.dataset.s);});
+(function(){const B=$('page');const onBoard=()=>page==='sched'&&sub==='board'&&!isRO();
+  // 拖曳改用 pointer 事件（滑鼠和平板都能用），寫在檔案後面的「拖曳調整」
   B.addEventListener('dblclick',e=>{const c=onBoard()&&e.target.closest('.chip[data-l]');if(!c)return;const l=+c.dataset.l;if(ST.slot[l]<0)return;pushUndo();ST.pin[l]=ST.pin[l]?0:1;selL=-1;commit();});
   B.addEventListener('click',e=>{if(!onBoard())return;const c=e.target.closest('.chip[data-l]');
     if(c){const l=+c.dataset.l;selL=selL===l?-1:l;render();return;}
@@ -487,7 +485,7 @@ function runSolve(all){
       const n=part?M.L.filter((x,l)=>shownL(l)).length:M.L.length;const o2=[];evaluate(M,ST.slot,o2);const v=o2.filter(o=>!part||shownL(o.l)).length;toast((v?'排好了，但還有 '+v+' 個問題排不開，請看上方說明':'排好了：'+(part?GRADE[+view.slice(2)]+' ':'')+n+' 節全部排入，沒有衝突')+runSolve.msg);}
     finally{$('busy').style.display='none';}},40);
 }
-function undo(){if(!undoStack.length){toast('沒有可以復原的動作');return;}const u=JSON.parse(undoStack.pop());D.assign=u.a;u.m.forEach(([id,st])=>{const g=D.groups.find(x=>x.id===id);if(g)g.students=st;});rebuild();commit();}
+function undo(){if(!undoStack.length){toast('沒有可以復原的動作');return;}const u=JSON.parse(undoStack.pop());D.assign=u.a;if('d' in u){if(u.d)schedBox().draft=u.d;else if(D.sched)delete D.sched.draft;draftST=null;}u.m.forEach(([id,st])=>{const g=D.groups.find(x=>x.id===id);if(g)g.students=st;});rebuild();commit();}
 function unpinAll(){pushUndo();ST.pin.fill(0);commit();}
 function clearAll(){if(!confirm('確定清空目前的排法？（可以按「復原」救回來）'))return;snapshot('清空排法之前');pushUndo();ST.slot.fill(-1);ST.pin.fill(0);ST.rfix.fill(-1);selL=-1;commit();}
 
@@ -797,6 +795,162 @@ function ttApplyCS(){const tt=D.tt||{};let n=0;const list=[];
   snapshot('用課表更新任課老師之前');list.forEach(([c,b,name])=>{const t=findTeacher(D,name,'普通班'),k=c+'|'+canonSubj(D,b);if(D.classSubj[k]!==t.id){D.classSubj[k]=t.id;n++;}});
   D=normalize(D);changed();render();toast('更新了 '+n+' 格任課老師');}
 function ttClear(){if(!confirm('清除讀進來的全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
+
+/* ═════ 排課引擎的畫面：試排草稿、老師偏好教室、拖曳調整（這一段整塊是同一個功能，方便合併） ═════ */
+
+/* ───── 試排、確定、重排 ─────
+   正式課表是 D.assign：總覽、課表輸出、點名都讀它。試排的結果先放在 D.sched.draft，按「確定採用」才換成正式的，
+   所以老師在排課頁反覆試，其他人看到的課表不會跟著跳。確定時留一個版本（D.sched.vers，最多 VERMAX 份）可以拿回來。
+   D.sched={draft:{a,label,at,seed},vers:[{a,label,at}]}；a 是 core 的 packAssign 壓縮過的排法，一份只有幾百字 */
+const VERMAX=6;
+var draftST=null;   // ST 正在顯示草稿時，兩個是同一個物件；ST 被換掉（rebuild 等）就自動不算草稿
+function schedBox(){if(!D.sched||typeof D.sched!=='object')D.sched={};if(!Array.isArray(D.sched.vers))D.sched.vers=[];return D.sched;}
+function hasDraft(){return !!(D.sched&&D.sched.draft&&D.sched.draft.a);}
+function onDraftST(){return !!draftST&&ST===draftST;}
+function draftState(){return toState(M,Object.assign({},D,{assign:unpackAssign(D.sched.draft.a)}));}
+// 排課頁有草稿時，看的、拖的、固定的都是草稿；其他頁一律是正式課表
+function syncST(){const want=hasDraft()&&page==='sched'&&sub==='board';
+  if(want&&!onDraftST()){draftST=draftState();setST(draftST);ROOM=assignRooms(M,ST.slot);}
+  else if(!want&&onDraftST()){draftST=null;setST(toState(M,D));ROOM=assignRooms(M,ST.slot);}}
+function writeDraft(a,label,seed){const box=schedBox();box.draft={a:packAssign(a),label:String(label||'試排'),at:Date.now()};if(seed)box.draft.seed=seed;draftST=null;}
+function placedOf(p){let n=0;for(const id in p||{})String(p[id]).split(',').forEach(e=>{if(e&&e[0]!=='*'&&e[0]!=='@')n++;});return n;}
+
+/* 給其他功能（例如 AI 排課）用的入口：把任何一份排法放進草稿，不動正式課表，回傳和正式課表的比較。
+   x 可以是：(1) 和 M.L 對齊的陣列，每格是時段編號（0～M.NS-1）或時段代碼（'0-1'＝週一第1節），-1、null、'' 表示不排；
+             (2) assign 格式 {組id:[{s:'0-1',pin:true}]}。
+   opt.pin：和 M.L 對齊的固定旗標；沒給的話，時段和正式課表一樣的那幾節沿用正式課表的固定。 */
+function setDraft(x,label,opt){opt=opt||{};let a;
+  if(x&&(Array.isArray(x)||ArrayBuffer.isView(x))){const base=toState(M,D),n=M.L.length,S={slot:new Int16Array(n).fill(-1),pin:new Uint8Array(n),rfix:base.rfix};
+    for(let l=0;l<n;l++){const v=x[l];let s=typeof v==='string'?(v?M.key2s(v):-1):v==null?-1:+v;if(!(s>=0&&s<M.NS))s=-1;S.slot[l]=s;
+      S.pin[l]=s<0?0:opt.pin?(opt.pin[l]?1:0):(base.pin[l]&&base.slot[l]===s?1:0);}
+    a=fromState(M,S);}
+  else if(x&&typeof x==='object')a=x;
+  else throw new Error('setDraft：要給時段陣列或 assign 物件');
+  writeDraft(a,label||'外部排法');save();render();return draftCompare();}
+
+// 正式課表和草稿並排比較；movedL 是換了時段的節（排課板上會加虛線框）
+function draftCompare(){if(!hasDraft())return null;const A=toState(M,D),B=draftState(),movedL=[];
+  for(let l=0;l<M.L.length;l++)if(A.slot[l]!==B.slot[l])movedL.push(l);
+  return {main:schedStats(M,A.slot,A.rfix),draft:schedStats(M,B.slot,B.rfix),moved:schedDiff(A.slot,B.slot),movedL,total:M.L.length,label:D.sched.draft.label,at:D.sched.draft.at};}
+
+// mode：'try' 試排（有草稿時從草稿出發）、'again' 重排（換亂數，固定的不動）、'all' 全部重排（連固定的也重排）
+function trySolve(mode){
+  if(isRO()){toast('你是檢視權限，不能排課');return;}
+  if(!M.L.length){toast('還沒有要排的組，請先到「老師開課」建立');return;}
+  const part=view.slice(0,2)==='g:',gv=part?+view.slice(2):0,only=part?shownL:null,base=hasDraft()?draftState():toState(M,D);
+  if(mode==='all'&&base.pin.some((x,l)=>x&&(!part||shownL(l)))&&!confirm('全部重排會連已經固定的也一起重排，確定嗎？\n排出來一樣先放在草稿，正式課表不會變。'))return;
+  pushUndo();$('busy').style.display='flex';
+  setTimeout(()=>{try{
+    if(mode==='all')base.pin.forEach((x,l)=>{if(!part||shownL(l))base.pin[l]=0;});
+    D.settings.seed=(D.settings.seed||1)+1;const seed=D.settings.seed;
+    const run=S=>{M.lroom=S.rfix;const R=solve(M,S,{seed,only});return {slot:R.slot,pin:S.pin,rfix:S.rfix};};
+    let S=run(base),pl=null;
+    // 「待安排」的學生照樣編進課裡（這是名冊資料，放棄草稿也會留著；要退回可以按復原）。編的時候看的是草稿的時段
+    if(needList(D).length){const a=fromState(M,S);pl=placeStudents(Object.assign({},D,{assign:a}),gv?{filter:s=>gradeOfCls(s.cls)===gv}:null);
+      if(pl.placed){M=compile(D);S=toState(M,Object.assign({},D,{assign:a}));M.lroom=S.rfix;evaluate(M,S.slot);if(M.viol)S=run(S);}}
+    if(M.flex){M.lroom=S.rfix;const R2=refineLocks(M,S,{only});S={slot:R2.slot,pin:S.pin,rfix:S.rfix};}
+    writeDraft(fromState(M,S),(mode==='again'?'重排':mode==='all'?'全部重排':'試排')+(part?'（'+GRADE[gv]+'）':'')+' '+fmtTime(Date.now()),seed);
+    rebuild();selL=-1;save();render();
+    const c=draftCompare(),pm=pl&&pl.placed?'；把 '+pl.placed+' 人次的學生編進課裡':'';
+    toast('草稿排好了：'+(c.draft.probs?'還有 '+c.draft.probs+' 個衝突':'沒有衝突')+'，和正式課表比換了 '+c.moved+' 節'+pm+'。滿意了按「確定採用」');}
+  finally{$('busy').style.display='none';}},40);}
+function solveBtns(gv,gname){const d=hasDraft();
+  return `<button class="b pri big" onclick="trySolve('${d?'again':'try'}')" title="${d?'用新的亂數重排草稿，固定的不動':'排出一份草稿，不會動到正式課表'}">${d?(gv?gname+'重排':'重排'):(gv?'試排'+gname:'一鍵試排')}</button>`+
+    `<button class="b" onclick="trySolve('all')" title="連固定的也一起重排，結果一樣先放在草稿">${gv?gname+'全部重排':'全部重排'}</button>`+(d?`<button class="b pri" onclick="confirmDraft()">確定採用</button>`:'');}
+
+function confirmDraft(){if(!hasDraft()||isRO())return;const d=D.sched.draft,c=draftCompare();
+  openDlg(`<h3>確定採用這份草稿</h3><p class="note">確定之後，總覽、課表輸出、點名都會改用這份課表。現在的正式課表會留在「已確定的版本」裡，之後可以拿回來。</p>
+    ${c.draft.probs>c.main.probs?`<p class="note warn">注意：這份草稿的衝突（${c.draft.probs} 個）比正式課表（${c.main.probs} 個）多。</p>`:''}
+    <div class="bar"><label class="note" style="margin:0">這一版的名稱 <input type="text" id="verName" class="w12" value="${esc(d.label)}"></label></div>
+    <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="confirmDraftOk()">確定採用</button><button class="b" onclick="closeDlg()">再想想</button></div>`);}
+function confirmDraftOk(){if(!hasDraft())return;const box=schedBox(),d=box.draft,name=($('verName')&&$('verName').value.trim())||d.label;
+  pushUndo();
+  // 現在的正式課表如果不在版本清單裡（例如功能上線前排的、或之後手動改過），先留一份，確定之後還拿得回來
+  const cur=packAssign(D.assign),last=box.vers[box.vers.length-1];
+  if(placedOf(cur)&&(!last||JSON.stringify(last.a)!==JSON.stringify(cur)))box.vers.push({a:cur,label:'確定前的課表',at:Date.now()});
+  D.assign=unpackAssign(d.a);box.vers.push({a:d.a,label:name,at:Date.now()});box.vers=box.vers.slice(-VERMAX);delete box.draft;draftST=null;
+  closeDlg();rebuild();save();render();toast('已確定採用「'+name+'」，各頁的課表都換成這一份了');}
+function discardDraft(){if(!hasDraft())return;if(!confirm('放棄這份草稿？正式課表不會變。（可以按「復原」救回來）'))return;
+  pushUndo();delete D.sched.draft;draftST=null;rebuild();save();render();toast('已放棄草稿，回到正式課表');}
+function restoreVer(i){const v=schedBox().vers[i];if(!v||isRO())return;if(hasDraft()&&!confirm('現在的草稿會被換掉，確定嗎？'))return;
+  pushUndo();writeDraft(unpackAssign(v.a),'拿回：'+v.label);save();go('sched','board');toast('已把「'+v.label+'」放進草稿，比較過後按「確定採用」');}
+
+// 草稿提示：排課頁顯示比較與按鈕；其他頁只提醒一行，說明這一頁還是正式課表
+function draftBanner(){const P=$('page');if(!P||page==='exam')return;const board=page==='sched'&&sub==='board';
+  if(board)verList(P);
+  if(!hasDraft())return;const d=D.sched.draft,ro=isRO();
+  if(!board){P.insertAdjacentHTML('afterbegin',`<div class="draftline"><b>有一份試排草稿還沒確定</b><span>（${esc(d.label)}）這一頁顯示的仍是正式課表。</span><button class="b sm" onclick="go('sched','board')">去看草稿</button></div>`);return;}
+  const c=draftCompare(),noMain=!c.main.placed;
+  const row=(n,f,low,fmt)=>{const a=f(c.main),b=f(c.draft),cls=noMain||a===b?'':(low?b<a:b>a)?'ok':'warn';return `<tr><td>${n}</td><td>${noMain?'<span class="dim">－</span>':fmt(a,c.main)}</td><td class="${cls}">${fmt(b,c.draft)}</td></tr>`;};
+  const rows=[row('已排節數',x=>x.placed,false,v=>v+' / '+c.total),row('衝突',x=>x.probs,true,v=>v+' 個')];
+  if(c.draft.locks)rows.push(row('原班鎖得到課',x=>x.locks?x.locks.pulled-x.locks.open:0,false,(v,x)=>x.locks?v+' / '+x.locks.pulled:'－'));
+  rows.push(row('不理想程度<small>（越低越好）</small>',x=>x.soft,true,v=>String(v)));
+  P.insertAdjacentHTML('afterbegin',`<div class="draft"><h4>試排草稿：${esc(d.label)}</h4>
+    <p class="note">還沒確定。總覽、課表輸出和點名仍然用正式課表；在下面拖曳、固定的都是這份草稿。${noMain?'目前還沒有正式課表。':`和正式課表比，<b>${c.moved}</b> 節換了時段（板上虛線框的）。`}</p>
+    <table class="ed cmp"><tr><th></th><th>正式課表</th><th>這份草稿</th></tr>${rows.join('')}</table>
+    ${ro?'':`<div class="bar" style="margin:10px 0 0"><button class="b pri" onclick="confirmDraft()">確定採用</button><button class="b" onclick="trySolve('again')">重排（固定的不動）</button><button class="b" onclick="discardDraft()">放棄草稿</button></div>`}</div>`);
+  c.movedL.forEach(l=>{const el=P.querySelector('.chip[data-l="'+l+'"]');if(el)el.classList.add('moved');});}
+function verList(P){const v=(D.sched&&D.sched.vers)||[];if(!v.length)return;const cur=JSON.stringify(packAssign(D.assign)),ro=isRO();
+  P.insertAdjacentHTML('beforeend',`<h3>已確定的版本</h3><p class="note">每次按「確定採用」都會留一份（最多 ${VERMAX} 份，舊的自動刪掉）。拿回來會先放進草稿，比較過再確定。</p>
+    <div class="scroll"><table class="ed"><tr><th>確定的時間</th><th>名稱</th><th>已排</th><th></th></tr>${v.map((x,i)=>({x,i})).reverse().map(({x,i})=>`<tr><td>${fmtTime(x.at)}</td><td>${esc(x.label)}</td><td class="dim">${placedOf(x.a)} 節</td><td>${JSON.stringify(x.a)===cur?'<span class="note">目前的正式課表</span>':ro?'':`<button class="b sm" onclick="restoreVer(${i})">拿回來當草稿</button>`}</td></tr>`).join('')}</table></div>`);}
+
+/* ───── 老師偏好的教室 ─────
+   存在老師身上：t.prefRooms=[教室id,…]，依志願序。沒設定的老師不存這個欄位。分教室的順序見 core 的 assignRooms */
+function prefList(t){const a=(Array.isArray(t.prefRooms)?t.prefRooms:[]).filter(id=>D.rooms.some(r=>r.id===id));if(a.length)t.prefRooms=a;else delete t.prefRooms;return a;}
+function prefCell(ti){const t=D.teachers[ti];if(!t)return '';if(!D.rooms.length)return '<span class="note">先新增教室</span>';
+  const a=(Array.isArray(t.prefRooms)?t.prefRooms:[]).filter(id=>D.rooms.some(r=>r.id===id)),rn=id=>D.rooms.find(r=>r.id===id).name,rest=D.rooms.filter(r=>!a.includes(r.id));
+  return `<span class="prefs">${a.map((id,k)=>`<span class="stu" title="第 ${k+1} 志願">${k+1}. ${esc(rn(id))}${k?`<button class="x" title="往前移" onclick="movePref(${ti},${k})">↑</button>`:''}<button class="x" title="拿掉" onclick="delPref(${ti},${k})">✕</button></span>`).join('')}`+
+    (rest.length?`<select onchange="addPref(${ti},this.value)"><option value="">${a.length?'再加一間…':'不限'}</option>${rest.map(r=>`<option value="${esc(r.id)}">${esc(r.name)}${r.spare?'（備用）':''}</option>`).join('')}</select>`:'')+'</span>';}
+function addPref(ti,id){const t=D.teachers[ti];if(!t||!id)return;t.prefRooms=prefList(t).filter(x=>x!==id).concat([id]);changed();render();}
+function delPref(ti,k){const t=D.teachers[ti];if(!t)return;const a=prefList(t);a.splice(k,1);t.prefRooms=a;prefList(t);changed();render();}
+function movePref(ti,k){const t=D.teachers[ti];if(!t)return;const a=prefList(t);if(k<1||k>=a.length)return;[a[k-1],a[k]]=[a[k],a[k-1]];t.prefRooms=a;changed();render();}
+function prefBox(){const res=D.teachers.map((t,i)=>({t,i})).filter(o=>o.t.role==='資源班');if(!res.length||!D.rooms.length)return '';
+  return `<h3>老師偏好的教室</h3><p class="note">例如王老師習慣在資源教室二上課，就替她選資源教室二；可以選好幾間，照順序當第一、第二志願。分教室時先照課程指定的教室，再照老師的偏好，接著是平常用的教室，備用教室最後。兩位老師想要同一間時，排課會盡量把他們排在不同節。</p>
+  <div class="scroll"><table class="ed"><tr><th>老師</th><th>偏好的教室（依順序）</th></tr>${res.map(o=>`<tr><td>${esc(o.t.name)}</td><td>${prefCell(o.i)}</td></tr>`).join('')}</table></div>`;}
+// 排課板上滑鼠停在組別上：說明這一節在哪間教室、為什麼不是老師偏好的那間
+function roomNote(l){if(!ROOM||ST.slot[l]<0)return '';const r=ROOM[l];if(r==null)return '';if(r<0)return '\n教室：這一節沒有空的教室';
+  const g=M.G[M.L[l].g],p=g.t>=0&&M.pref?M.pref[g.t]:[];let t='\n教室：'+D.rooms[r].name;
+  if(ST.rfix[l]===r||g.room===r)t+='（指定）';else if(p.length&&p[0]!==r)t+='（偏好的'+D.rooms[p[0]].name+'這一節已經有人用）';else if(p.length)t+='（老師偏好）';
+  return t;}
+
+/* ───── 排課｜拖曳調整 ─────
+   原本用 HTML5 拖放，平板上拖不動；改成自己追蹤 pointer 事件，滑鼠、觸控筆、手指都可以。
+   按下後移動超過 6px 才算拖曳，沒移動就還是原本的「點一下選取、再點格子」。放下就移過去並固定（moveLesson，可以復原）。 */
+// 放到 s 會怎樣：ok 和 canPlace 同一個判斷（不會多出衝突），t 是格子上顯示的原因
+function probSet(){const o=[];evaluate(M,ST.slot,o);return new Set(o.map(x=>x.m));}
+function cellInfo(l,s,before){const ok=canPlace(M,ST.slot,l,s),o=ST.slot[l];
+  if(!ok){const r=why(M,M.L[l].g,s);if(r.length)return {ok,t:'不能排：'+r.join('、')};
+    ST.slot[l]=s;const out=[];evaluate(M,ST.slot,out);ST.slot[l]=o;
+    const nw=[...new Set(out.filter(x=>x.k!=='un'&&!before.has(x.m)).map(x=>x.m.replace(/^[^：]*：/,'')))];
+    return {ok,t:'會衝突：'+(nw.length?nw.slice(0,3).join('；'):'和別組撞在一起')};}
+  ST.slot[l]=s;const rm=assignRooms(M,ST.slot)[l];ST.slot[l]=o;
+  return {ok,t:'可以放，不會衝堂'+(rm>=0?'（'+D.rooms[rm].name+'）':'')};}
+(function(){let d=null,justAt=0;
+  const onBoard=()=>page==='sched'&&sub==='board'&&!isRO();
+  const tipEl=()=>$('dragTip')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'dragTip'}));
+  function begin(){d.on=true;const g=d.el.cloneNode(true);g.classList.add('ghost');g.classList.remove('sel','moved');g.removeAttribute('title');document.body.appendChild(g);d.ghost=g;
+    d.el.classList.add('lift');document.body.classList.add('dragging');clearMarks();markCells(d.l);}
+  function end(){const x=d;d=null;if(!x)return null;if(x.ghost)x.ghost.remove();const t=$('dragTip');if(t)t.remove();
+    document.body.classList.remove('dragging');if(x.el)x.el.classList.remove('lift');if(x.over)x.over.classList.remove('over');return x;}
+  $('page').addEventListener('pointerdown',e=>{if(!onBoard()||e.button>0||!e.isPrimary)return;const c=e.target.closest('.chip[data-l]');if(!c)return;
+    d={l:+c.dataset.l,x:e.clientX,y:e.clientY,el:c,id:e.pointerId,on:false,over:null};});
+  window.addEventListener('pointermove',e=>{if(!d||e.pointerId!==d.id)return;
+    if(!d.on){if(Math.abs(e.clientX-d.x)+Math.abs(e.clientY-d.y)<6)return;begin();}
+    e.preventDefault();d.ghost.style.left=e.clientX+'px';d.ghost.style.top=e.clientY+'px';
+    const el=document.elementFromPoint(e.clientX,e.clientY),td=el&&el.closest?el.closest('#page [data-s]'):null;
+    if(td!==d.over){if(d.over)d.over.classList.remove('over');d.over=td;if(td)td.classList.add('over');}
+    const T=tipEl();if(!td){T.style.display='none';return;}
+    const s=+td.dataset.s,here=s===ST.slot[d.l];
+    T.className=s<0||here?'':td.classList.contains('ok')?'ok':'no';T.textContent=s<0?'放回「還沒排」，拿下來':here?'原來的位置':(td.title||'');
+    T.style.display=T.textContent?'block':'none';T.style.left=Math.max(8,Math.min(innerWidth-300,e.clientX+16))+'px';T.style.top=Math.min(innerHeight-60,e.clientY+20)+'px';},{passive:false});
+  window.addEventListener('pointerup',e=>{if(!d||e.pointerId!==d.id)return;const x=end();if(!x.on)return;justAt=Date.now();
+    const s=x.over?+x.over.dataset.s:null;if(s!=null&&s!==ST.slot[x.l])moveLesson(x.l,s);else render();});
+  window.addEventListener('pointercancel',e=>{if(d&&e.pointerId===d.id){const x=end();if(x&&x.on)render();}});
+  window.addEventListener('keydown',e=>{if(e.key==='Escape'&&d){const x=end();if(x&&x.on)render();}});
+  // 拖完放開時瀏覽器還會送一個 click，不擋的話會被當成「點格子移動」或「選取」
+  window.addEventListener('click',e=>{if(Date.now()-justAt<400){e.stopImmediatePropagation();e.preventDefault();}},true);
+})();
+/* ═════ 排課引擎的畫面到這裡 ═════ */
 
 /* ───── 啟動 ───── */
 D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();

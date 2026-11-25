@@ -263,5 +263,53 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(M.mainR===1&&M.roomOrder[0]===0,'勾備用的教室排在最後，平常只算沒勾的');
 }
 
+// 16. 老師偏好教室：指定教室最優先，再來是偏好，最後才是備用教室；兩位老師搶同一間時 evaluate 會扣分
+{
+  console.log('\n16. 老師偏好教室');
+  const D=C.defaultData(),r2=D.teachers.find(t=>t.id==='r2');r2.prefRooms=['B'];
+  let M=C.compile(D);ok(M.pref[M.tIdx.r2].join()==='1'&&!M.prefOn,'只有一位老師偏好時不需要在 evaluate 多算');
+  const R=C.solve(M,C.toState(M,D),{seed:1}),room=C.assignRooms(M,R.slot);
+  const mine=M.L.map((x,l)=>l).filter(l=>M.G[M.L[l].g].t===M.tIdx.r2);
+  ok(mine.every(l=>room[l]===1),'王老師偏好資源教室二，她的課都排在那間');
+  ok(M.L.every((x,l)=>M.G[x.g].t===M.tIdx.r2||room[l]!==1),'其他老師的常用教室會避開別人的第一志願');
+  // 某一組指定了教室：指定的比偏好優先
+  D.groups.find(g=>g.id==='g1').room='C';M=C.compile(D);const rm2=C.assignRooms(M,R.slot);
+  ok(M.L.every((x,l)=>M.G[x.g].ref.id!=='g1'||rm2[l]===2)&&mine.filter(l=>M.G[M.L[l].g].ref.id!=='g1').every(l=>rm2[l]===1),'指定教室的那一組在指定教室，其他照偏好');
+  D.groups.find(g=>g.id==='g1').room='';
+  // 兩位老師都要 B：同一節都有課的格數 × 1.5 就是多出來的分數；分教室時一人拿 B、另一人拿別間
+  D.teachers.find(t=>t.id==='r1').prefRooms=['B','C'];const M2=C.compile(D),M0=C.compile(C.defaultData());
+  ok(M2.prefOn,'兩位老師第一志願相同時才開始計分');
+  const has=(t,sl,s)=>M2.L.some((x,l)=>sl[l]===s&&M2.G[x.g].t===M2.tIdx[t]);
+  const share=sl=>{let n=0;for(let s=0;s<M2.NS;s++)if(has('r1',sl,s)&&has('r2',sl,s))n++;return n;};
+  const both=share(R.slot),d=C.evaluate(M2,R.slot)-C.evaluate(M0,R.slot);
+  ok(Math.abs(d-both*1.5)<1e-6,'搶同一間的節數 '+both+'，分數多 '+d);
+  const rm3=C.assignRooms(M2,R.slot);let dup=0;const seen={};rm3.forEach((r,l)=>{const k=R.slot[l]+'|'+r;if(r<0||seen[k])dup++;seen[k]=1;});
+  ok(dup===0,'兩人搶同一間的那幾節也都分到教室、不重複');
+  ok(M2.L.every((x,l)=>M2.G[x.g].t!==M2.tIdx.r1||!has('r2',R.slot,R.slot[l])||rm3[l]===2),'第一志願被拿走時，林組長拿到第二志願');
+  const R2=C.solve(M2,C.toState(M2,D),{seed:1});
+  ok(R2.viol===0&&share(R2.slot)<=both,'加上偏好以後一樣沒有違規，兩人同一節從 '+both+' 格變成 '+share(R2.slot)+' 格');
+  // 備用教室：偏好之外，平常的教室用完才用備用
+  const E=C.defaultData();E.rooms=[{id:'A',name:'一',spare:true},{id:'B',name:'二'},{id:'C',name:'三'}];
+  const ME=C.compile(E),RE=C.solve(ME,C.toState(ME,E),{seed:2}),rE=C.assignRooms(ME,RE.slot),cnt={};RE.slot.forEach(s=>{cnt[s]=(cnt[s]||0)+1;});
+  ok(RE.slot.every((s,l)=>rE[l]!==0||cnt[s]>2),'只有同一節超過兩組時才用到備用教室');
+}
+
+// 17. 試排草稿：排法壓縮存放、比較兩份排法
+{
+  console.log('\n17. 試排草稿與版本');
+  const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M,D),{seed:3});
+  const S={slot:Int16Array.from(R.slot),pin:new Uint8Array(M.L.length),rfix:new Int16Array(M.L.length).fill(-1)};S.pin[0]=1;S.rfix[1]=2;S.slot[2]=-1;
+  const a=C.fromState(M,S),p=C.packAssign(a),b=C.unpackAssign(JSON.parse(JSON.stringify(p)));
+  const S2=C.toState(M,Object.assign({},D,{assign:b}));
+  ok([...S2.slot].join()===[...S.slot].join()&&[...S2.pin].join()===[...S.pin].join()&&[...S2.rfix].join()===[...S.rfix].join(),'壓縮再還原，時段、固定、指定教室都一樣');
+  ok(JSON.stringify(p).length*2<JSON.stringify(a).length,'壓縮後不到原本的一半（'+JSON.stringify(p).length+' / '+JSON.stringify(a).length+' 字）');
+  const st=C.schedStats(M,S.slot,S.rfix);ok(st.placed===M.L.length-1&&st.un===1&&st.probs===0,'摘要：少排一節、沒有衝突');
+  const T=Int16Array.from(S.slot),j=M.L.findIndex((x,l)=>l>3&&M.G[x.g].t===M.G[M.L[3].g].t);T[3]=T[j];
+  ok(C.schedDiff(S.slot,T)===1&&C.schedStats(M,T,null).probs>0,'把一節放到同一位老師的另一節：換了一節、算出衝突');
+  const F=C.defaultData();F.settings.lockMode='flex';const MF=C.compile(F),sf=C.schedStats(MF,C.solve(MF,C.toState(MF,F),{seed:1}).slot);
+  ok(sf.locks&&sf.locks.pulled>0&&sf.locks.open>=0,'彈性鎖課時摘要包含鎖課（'+(sf.locks&&sf.locks.pulled-sf.locks.open)+'／'+(sf.locks&&sf.locks.pulled)+'）');
+  const N=C.normalize({teachers:[{id:'t',name:'x',prefRooms:'B'}],sched:[1]});ok(!('prefRooms' in N.teachers[0])&&!('sched' in N),'壞掉的偏好與草稿欄位會被清掉');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);
