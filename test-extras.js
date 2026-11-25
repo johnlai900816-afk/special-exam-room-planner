@@ -135,6 +135,103 @@ function run(ok){
     D.contacts.s1.push({id:'c6',date:'2025-12-31',how:'電話',who:'',note:''});ok(C.contactDigest(D,'s1').text.includes('2025-12-31'),'跨年就寫完整日期');
     ok(C.contactDigest(D,'s2').n===0&&C.contactDigest({students:[]},'zz').n===0,'沒有紀錄、找不到學生都不會出錯');
   }
+  // 46. 超鐘點：資料、開課摘要、建議分配
+  {
+    console.log('\n46. 超鐘點 otSummary／suggestOvertime');
+    const fresh=mut=>{const D=C.defaultData();if(mut)mut(D);return C.normalize(D);};
+    let D=fresh(D=>{const t=D.teachers[0];t.reduce='2';t.reduceNote=' 組長 ';t.otMax='';t.prefSubj='國文、數學';t.avoidSubj=[];
+      D.settings.otCap='3';D.settings.noClass=['2026-10-10','115.12.25','2027/1/2 ~ 2026-12-31','壞的','2026-02-30','2026-10-10'];D.settings.otCountExtra=0;
+      D.claims=[{gid:'g1',tid:'r1',at:1,status:'pending'},{gid:'g1',tid:'r1',status:'怪'},null,{gid:'<x>',tid:'r1',status:'pending'}];});
+    const t0=D.teachers[0];
+    ok(t0.reduce===2&&t0.reduceNote==='組長'&&!('otMax' in t0)&&t0.prefSubj.join()==='國文,數學'&&!('avoidSubj' in t0),'老師的減授、意願欄位整理好；空的拿掉');
+    ok(D.settings.otCap===3&&!('otCountExtra' in D.settings),'全校上限是數字；外加課預設不算');
+    ok(D.settings.noClass.join('|')==='2026-10-10|2026-12-25|2026-12-31~2027-01-02','放假日：民國年、斜線、一段日期（前後顛倒也行）；寫錯和重複的拿掉');
+    ok(D.claims.length===1&&D.claims[0].gid==='g1','壞掉的認領拿掉');
+    ok(JSON.stringify(C.normalize(JSON.parse(JSON.stringify(D))))===JSON.stringify(D),'再整理一次不會變');
+    ok(C.otDue({hours:12,reduce:2})===10&&C.otDue({hours:2,reduce:4})===0&&C.otDue({})===0,'應授＝基本－減授，不會小於 0');
+    D=fresh();let S=C.otSummary(D);
+    ok(S.need===37&&S.needReg===36&&S.due===38&&S.short===0&&S.open.length===0,'範例：要 37 節（一般 36），應授 38，足夠');
+    const r1=S.rows.find(r=>r.id==='r1');ok(r1.reg===11&&r1.extra===1&&r1.ot===0&&r1.short===1,'林組長：一般 11、外加 1，還差 1 節');
+    D=fresh(D=>{D.teachers[0].reduce=4;D.teachers[2].otMax=2;D.settings.otCap=1;});S=C.otSummary(D);
+    ok(S.due===34&&S.short===2,'減授 4 節後應授 34，缺 2 節');
+    const r3=S.rows.find(r=>r.id==='r3');ok(r3.ot===0&&r3.limit===1,'上限取願意的和全校上限比較小的');
+    D=fresh(D=>{D.teachers[2].hours=12;D.teachers[2].otMax=2;});
+    ok(C.otSummary(D).rows.find(r=>r.id==='r3').ot===1&&!C.otSummary(D).rows.find(r=>r.id==='r3').over,'超 1 節，沒超過意願');
+    D.teachers[2].otMax=0;ok(C.otSummary(D).rows.find(r=>r.id==='r3').over,'不願意卻超鐘點：標紅');
+    D.settings.otCountExtra=true;D.teachers[0].hours=11;ok(C.otSummary(D).rows.find(r=>r.id==='r1').ot===1,'外加課算進超鐘點時，外加的節數也算');
+
+    // 建議分配
+    const sg=(mut,o)=>{const D=fresh(mut);return {D,R:C.suggestOvertime(D,o)};};
+    let {R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';});
+    ok(R.list.length===1&&R.list[0].to==='r1'&&R.list[0].otAdd===0&&R.list[0].why.some(w=>/應授內/.test(w)),'沒有老師的課先給還沒滿應授的老師（不用超鐘點）');
+    ({R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';D.teachers[0].hours=6;D.teachers[1].otMax=0;D.teachers[2].otMax=3;}));
+    ok(R.list.length===0&&R.left.length===1&&R.left[0].why.some(w=>/王老師：不願意/.test(w))&&R.left[0].why.some(w=>/李老師：超鐘點會超過上限/.test(w)),'超過願意的節數就不給；分不出去的列出原因');
+    ({R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';D.teachers[0].hours=6;D.teachers[2].otMax=6;D.settings.otCap=3;}));
+    ok(R.list.length===0,'全校上限也要遵守');
+    ({R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';D.teachers[0].hours=6;D.teachers[2].otMax=6;}));
+    ok(R.list.length===1&&R.list[0].to==='r3'&&R.list[0].otAdd===4&&R.rows.find(r=>r.id==='r3').ot===4,'有意願的老師接，超鐘點 +4');
+    ({R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';D.teachers[0].hours=6;D.teachers[2].otMax=6;D.teachers[2].avoidSubj=['國文'];}));
+    ok(R.list.length===0&&R.left[0].why.some(w=>/不想教國文/.test(w)),'不想教的科目不給');
+    ({R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';D.teachers[0].hours=6;D.teachers[1].hours=17;D.teachers[2].hours=18;D.teachers[1].prefSubj=['國文'];D.teachers[1].prefGrade=['9'];}));
+    ok(R.list[0].to==='r2'&&R.list[0].why.includes('想教國文')&&R.list[0].why.includes('想教九年級'),'想教的科目、年級優先');
+    ({R}=sg(D=>{D.teachers[1].hours=15;D.teachers[2].hours=16;const g9=D.groups.find(g=>g.id==='g9');D.groups.push({id:'gx',name:'九英補救',subject:'英文',teacher:'',per:2,students:g9.students.slice(0,3),mode:'抽離',on:true,grade:''});}));
+    ok(R.list[0].to==='r2'&&R.list[0].why.some(w=>/已經教 3 位/.test(w)),'同一位學生的課給同一位老師');
+    ({R}=sg(D=>{D.teachers[1].otMax=10;D.teachers[2].hours=13;D.teachers[2].otMax=10;D.teachers[0].otMax=0;D.teachers[0].hours=11;
+      D.groups.push({id:'ga',name:'甲',subject:'自然',teacher:'',per:3,students:[],mode:'抽離',on:true,grade:''},{id:'gb',name:'乙',subject:'自然',teacher:'',per:3,students:[],mode:'抽離',on:true,grade:''});}));
+    ok(R.list.length===2&&R.list[0].to!==R.list[1].to,'超鐘點平均分給兩位老師');
+    ({R}=sg(D=>{D.groups.find(g=>g.id==='g7').teacher='';D.teachers[0].hours=6;D.teachers[2].otMax=6;
+      const keep=['0-1','0-2'];D.teachers[2].off=[];for(let d=0;d<5;d++)D.periods.forEach(p=>{const k=d+'-'+p.id;if(!keep.includes(k))D.teachers[2].off.push(k);});}));
+    ok(R.list.length===0&&R.left[0].why.some(w=>/李老師：不排課時段太多/.test(w)),'不排課時段太多、排不下這門課的老師跳過');
+    ({R}=sg(D=>{D.teachers[2].hours=8;D.teachers[2].otMax=0;D.teachers[0].otMax=5;},{overflow:true}));
+    ok(R.list.length===1&&R.list[0].from==='r3'&&R.list[0].to==='r1'&&R.list[0].per===5,'超過上限的老師多出來的課，可以建議改給別人');
+    D=fresh();ok(C.suggestOvertime(D).list.length===0&&C.suggestOvertime(D).left.length===0,'都有老師：沒有建議');
+  }
+  // 47. 認領
+  {
+    console.log('\n47. 認領 claimAdd／claimDecide');
+    const D=C.normalize(C.defaultData()),g=D.groups.find(x=>x.id==='g7');g.teacher='';
+    ok(C.openCourses(D).map(x=>x.id).join()==='g7','沒有老師的課是「待認領」');
+    ok(C.claimAdd(D,'g7','r2',1).ok&&!C.claimAdd(D,'g7','r2',2).ok,'同一位老師不能重複認領');
+    ok(C.claimAdd(D,'g7','r3',3).ok&&C.claimsPending(D).length===2,'兩位老師認領同一門課：都在等管理者');
+    ok(!C.claimAdd(D,'g1','r3').ok,'已經有老師的課不能認領');
+    D.teachers[0].avoidSubj=['國文'];ok(!C.claimAdd(D,'g7','r1').ok,'設定不教的科目不能認領');
+    ok(C.claimDecide(D,'g7','r3',true,9).ok&&g.teacher==='r3','核准：課給這位老師');
+    ok(D.claims.find(c=>c.tid==='r3').status==='ok'&&D.claims.find(c=>c.tid==='r2').status==='no'&&C.claimsPending(D).length===0,'同一門課的其他認領自動沒選上');
+    ok(!C.claimDecide(D,'g7','r2',true).ok,'決定過的不能再核准');
+    g.teacher='';D.teachers[0].avoidSubj=[];ok(C.claimAdd(D,'g7','r1').ok,'課又沒有老師時可以再認領');
+    ok(C.claimDecide(D,'g7','r1',false,10).ok&&g.teacher===''&&C.claimsPending(D).length===0&&D.claims.filter(c=>c.tid==='r1').pop().status==='no','不核准：課還是沒有老師');
+    C.claimAdd(D,'g7','r2',11);ok(C.claimCancel(D,'g7','r2')&&C.claimsPending(D).length===0,'老師可以收回自己的認領');
+    C.claimAdd(D,'g7','r2',12);g.teacher='r1';ok(C.claimsPending(D).length===0,'課已經有老師了：不算待確認');
+    const E=C.defaultData();E.groups[6].id='g 7';E.claims=[{gid:'g 7',tid:'r2',at:1,status:'pending'}];C.normalize(E);
+    ok(E.claims[0].gid===E.groups[6].id&&C.ID_RE.test(E.claims[0].gid),'不合格的課程 id 換掉時，認領也跟著換');
+  }
+  // 48. 每月超鐘點
+  {
+    console.log('\n48. 每月超鐘點 overtimeMonth');
+    const {D,M}=solved(d=>{d.teachers[1].hours=10;}),S=C.toState(M,D);
+    const by=(R,id)=>R.rows.find(r=>r.id===id);
+    const perDay=id=>{const a=[0,0,0,0,0];M.L.forEach((x,l)=>{const s=S.slot[l],g=M.G[x.g];if(s>=0&&g.pull&&g.t>=0&&M.T[g.t].id===id)a[Math.floor(s/M.NP)]++;});return a;};
+    const P2=perDay('r2');let R=C.overtimeMonth(D,M,S.slot,'2026-12');
+    ok(R.days.length===23&&R.weeks.length===5,'2026 年 12 月有 23 個上課日、5 週');
+    ok(by(R,'r2').weekly===12&&by(R,'r2').weekOT===2&&by(R,'r2').due===10,'每週 12 節、應授 10：每週超 2 節');
+    const w1=by(R,'r2').weeks[0],t1=P2[1]+P2[2]+P2[3]+P2[4];
+    ok(w1.n===4&&w1.taught===t1&&w1.ot===Math.max(0,Math.round((t1-8)*10)/10),'月初不滿一週：只算這個月的上課日，應授照比例 10×4÷5');
+    ok(by(R,'r2').weeks[1].ot===2&&by(R,'r2').weeks[1].n===5,'整週：就是每週超鐘點');
+    D.settings.noClass=['2026-12-25'];R=C.overtimeMonth(D,M,S.slot,'2026-12');
+    const w4=by(R,'r2').weeks[3];ok(R.days.length===22&&R.off.some(o=>o.date==='2026-12-25'&&o.why==='放假'),'放假日不算上課日');
+    ok(w4.n===4&&w4.taught===12-P2[4]&&w4.ot===Math.max(0,Math.round((12-P2[4]-8)*10)/10),'放假那天的課不算，應授也少一天');
+    D.settings.noClass=['2026-12-24~2026-12-31'];R=C.overtimeMonth(D,M,S.slot,'2026-12');ok(R.days.length===17,'一段放假日');
+    D.settings.noClass=[];D.settings.dates='115.09.01-115.12.18';R=C.overtimeMonth(D,M,S.slot,'2026-12');
+    ok(R.days.length===14&&R.days[R.days.length-1].date==='2026-12-18'&&R.off.some(o=>o.why==='學期外'),'學期結束之後不算（實施日期用民國年也讀得懂）');
+    ok(by(R,'r2').month===Math.round(by(R,'r2').weeks.reduce((n,w)=>n+w.ot,0)*10)/10,'本月＝各週相加');
+    D.settings.dates='';const r1=by(C.overtimeMonth(D,M,S.slot,'2026-12'),'r1');
+    ok(r1.extraMonth>0&&/外加 \d+ 節另計/.test(r1.note),'外加課另外列，不算進超鐘點');
+    D.settings.otCountExtra=true;ok(by(C.overtimeMonth(D,M,S.slot,'2026-12'),'r1').weekly===r1.weekly+1,'打開「外加課算進超鐘點」就算進去');
+    D.teachers[2].hours=0;const r3=by(C.overtimeMonth(D,M,S.slot,'2026-12'),'r3');ok(r3.month===0&&/沒填基本鐘點/.test(r3.note),'沒填基本鐘點：不算超鐘點');
+    ok(C.overtimeMonth(D,M,S.slot,'2026-13x')===null,'月份寫錯回傳 null');
+    const L=C.teacherLoad(D,M,S.slot,null).find(x=>x.id==='r1');ok(L.ot&&L.ot.extra===1&&L.ot.reg===L.per-1,'老師工作量也有應授、超鐘點、外加課');
+    ok(C.termRange('2026/9/1～2027/1/20').to==='2027-01-20'&&C.termRange('')===null,'學期起訖');
+  }
 }
 module.exports={run};
 if(require.main===module){let fail=0;run((c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;});console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');process.exit(fail?1:0);}
