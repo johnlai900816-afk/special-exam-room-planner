@@ -152,9 +152,9 @@ function weekBusy(D,ctx){if(ctx._wb)return ctx._wb;const C=core(),{M,slot,room}=
   const TG=D.tgrid||{};
   M.T.forEach((t,ti)=>{for(let s=0;s<NS;s++)if(M.off[ti][s])put(tb,ti*NS+s,'已登記不排課'+(t.note?'（'+t.note+'）':''));
     (TG[t.id]||TG[t.name]||[]).forEach(k=>{const s=M.key2s(k);if(s>=0)put(tb,ti*NS+s,'原班上課');});});
-  // 全校課表的格子（D.tt[班級].grid）：原班任課老師在哪幾節上課
-  const reg=D.periods.map((p,i)=>i).filter(i=>!D.periods[i].extra);
-  Object.keys(D.tt||{}).forEach(cls=>{const g=D.tt[cls]&&D.tt[cls].grid;if(!Array.isArray(g))return;g.slice(0,5).forEach((row,w)=>{if(!Array.isArray(row))return;row.forEach((x,i)=>{if(!x||!x.t||reg[i]==null)return;const t=teacherOf(D,x.t),ti=t?M.tIdx[t.id]:null;if(ti==null)return;put(tb,ti*NS+w*M.NP+reg[i],'原班上課（'+cls+(x.s||'')+'）');});});});
+  // 原班任課老師在哪幾節上課：core.js 的 ttTeacherBusy（讀全校課表的格子）；還沒有這個函式時不標
+  try{const tbz=typeof C.ttTeacherBusy==='function'?C.ttTeacherBusy(D):null;if(tbz)Object.keys(tbz).forEach(name=>{const t=teacherOf(D,name),ti=t?M.tIdx[t.id]:null;if(ti==null)return;
+    tbz[name].forEach(k=>{const s=M.key2s(k);if(s>=0)put(tb,ti*NS+s,'原班上課');});});}catch(e){}
   return ctx._wb={tb,rb,M};}
 /* 每個人每個候選時段已知的忙碌原因 → {pk:{時段:原因}}，教室 → {教室名稱:{時段:原因}} */
 function busyOf(D,R,ctx){ctx=ctx||ctxOf(D);const {tb,rb,M}=weekBusy(D,ctx),NS=M.NS,NP=M.NP,keys=keysOf(R),inf=keys.map(k=>slotInfo(D,k));
@@ -185,10 +185,8 @@ const subjNorm=s=>{s=String(s==null?'':s).trim();return SUBJ_ALIAS[s]||s;};
 function hintLists(D){const S=(D&&D.settings)||{},L=v=>Array.isArray(v)&&v.length?v.map(subjNorm).filter(Boolean):null;return {avoid:L(S.iepAvoidSubj)||AVOID_DEF.slice(),prefer:L(S.iepPreferSubj)||PREFER_DEF.slice()};}
 function subjHint(sj,lists){const s=subjNorm(sj);if(!s)return '';lists=lists||hintLists(null);
   if(lists.avoid.some(x=>s===x||s.includes(x)))return 'avoid';if(lists.prefer.some(x=>s.includes(x)))return 'prefer';return '';}
-// 原班課表的格子：D.tt[班級].grid[星期 0～4][一般節次（不含外加）的順序]＝{s:科目,t:老師}；沒有資料回傳 null
-function regIdx(D){const a={};D.periods.filter(p=>!p.extra).forEach((p,i)=>{a[p.id]=i;});return a;}
-function ttCell(D,cls,w,pid,ri){const c=D.tt&&D.tt[String(cls)],g=c&&Array.isArray(c.grid)?c.grid:null;if(!g||!(w>=0&&w<=4))return null;
-  const i=(ri||regIdx(D))[pid];if(i==null)return null;const row=g[w],x=Array.isArray(row)?row[i]:null;return x&&typeof x==='object'&&x.s?x:null;}
+// 原班課表的一格（星期 w、節次 pid）：用 core.js 的 ttCellAt（處理課表讀進來時的節次對應）；沒有這個函式或沒有資料回傳 null
+function ttCell(D,cls,w,pid){const C=core();if(typeof C.ttCellAt!=='function'||!(w>=0&&w<=4))return null;try{const x=C.ttCellAt(D,String(cls),w+'-'+pid);return x&&x.s?x:null;}catch(e){return null;}}
 // 候選時段的底：日期區間的星期一到五，扣掉放假日（D.settings.noClass）× 勾的節次（照作息順序）
 function baseKeys(D,d1,d2,ps){const C=core(),hol=C.noClassSet?C.noClassSet((D.settings||{}).noClass,d1,d2):new Set(),pids=D.periods.filter(p=>(ps||[]).includes(p.id)).map(p=>p.id);
   return dateRange(d1,d2,[1,2,3,4,5]).filter(d=>!hol.has(d)).flatMap(d=>pids.map(p=>key(d,p)));}
@@ -203,12 +201,12 @@ function tBusy(D,tid,keys,ctx,except){const t=D.teachers.find(x=>x.id===tid),out
     inf.forEach(f=>{if(!out[f.k]&&overlap(f,f2))out[f.k]='已排 IEP（'+stuLabel(stuOf(D,m.s))+'）';});});});
   return out;}
 // 承辦挑時段的格子：每一格是這些學生原班在上什麼（多位學生取最多的）、承辦忙不忙、主科（avoid）或適合開會（prefer）
-function pickGrid(D,o){const keys=o.keys||[],busy=o.busy||{},pick=new Set(o.pick||[]),L=hintLists(D),ri=regIdx(D),S=(o.sids||[]).map(id=>stuOf(D,id)).filter(Boolean);
+function pickGrid(D,o){const keys=o.keys||[],busy=o.busy||{},pick=new Set(o.pick||[]),L=hintLists(D),S=(o.sids||[]).map(id=>stuOf(D,id)).filter(Boolean);
   const inf=keys.map(k=>slotInfo(D,k)),dates=[...new Set(inf.map(f=>f.date))].sort(),cols=[];
   inf.forEach(f=>{if(!cols.some(c=>c.p===f.p))cols.push({p:f.p,name:f.name,time:f.time,st:f.st});});cols.sort((a,b)=>a.st.localeCompare(b.st));
   const by=new Map(inf.map(f=>[f.k,f]));let hasTT=false;
   const rows=dates.map(d=>({date:d,label:fmtDate(d),cells:cols.map(c=>{const k=key(d,c.p),f=by.get(k);if(!f)return null;
-    const subs=S.map(s=>ttCell(D,s.cls,f.w,c.p,ri)).filter(Boolean).map(x=>subjNorm(x.s));if(subs.length)hasTT=true;
+    const subs=S.map(s=>ttCell(D,s.cls,f.w,c.p)).filter(Boolean).map(x=>subjNorm(x.s));if(subs.length)hasTT=true;
     const cnt={};subs.forEach(x=>{cnt[x]=(cnt[x]||0)+1;});const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0]||'';
     const hs=subs.map(x=>subjHint(x,L)),tint=hs.includes('avoid')?'avoid':subs.length&&hs.every(x=>x==='prefer')?'prefer':'';
     return {k,busy:!!busy[k],why:busy[k]||'',subj:S.length===1||subs.length?top:'',tint,on:pick.has(k)};})}));
@@ -721,8 +719,9 @@ function PE(R,m){const all=IEP.subjOptions(D,m.s),opts=all.filter(o=>!m.p.some(x
     '<button class="b sm"'+A('prederive',{m:mid})+'>照名冊重新帶入</button></div>'+
     (opts.length?'<div class="iepchips">'+opts.map(o=>'<button class="b sm"'+A('paddK',{m:mid,j:all.indexOf(o)})+'>＋'+E(o.sj+' '+o.name)+'</button>').join('')+'</div>':'');}
 // 發布：每位出席者一份 iepTok/{鑰匙的雜湊}；老師自己開的調查，承辦顯示老師姓名（公開頁不出現老師 id）
+// busy 留在欄位清單裡只為了刪掉：舊版發布的文件有「有課」原因，重新發布（更新線上內容）時一起清掉
 const PUB_FIELDS=['v','who','once','name','title','round','kind','d1','d2','due','host','keys','ps','busy','stu','keep','exp','r','pk','by','pubAt'];
-function pubDoc(R,o,busy){const F=firebase.firestore,d=IEP.publicDoc(D,R,o,busy);d.exp=F.Timestamp.fromMillis(d.expMs);delete d.expMs;d.r=R.id;d.pk=o.k;d.by=CLOUD.user.email;d.pubAt=F.FieldValue.serverTimestamp();return d;}
+function pubDoc(R,o){const F=firebase.firestore,d=IEP.publicDoc(D,R,o);d.busy=F.FieldValue.delete();d.exp=F.Timestamp.fromMillis(d.expMs);delete d.expMs;d.r=R.id;d.pk=o.k;d.by=CLOUD.user.email;d.pubAt=F.FieldValue.serverTimestamp();return d;}
 // 發布：先檢查安全規則的上限；寫到一半失敗時，已經寫上去的記進 R.pub（「結束調查」才刪得到）
 async function publish(){const R=curR();if(!R||!cloudOK()||!canR(R))return;
   if(IEP.expMs(R)<Date.now()){toast('回覆期限已過，請先改期限');return;}

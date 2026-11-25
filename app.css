@@ -590,7 +590,7 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
 /* ===== 窄螢幕（手機、平板直放） ===== */
 @media (max-width:1080px){.cgrid{grid-template-columns:minmax(0,1fr)}.cols{grid-template-columns:minmax(0,1fr)}}
 .cgrid>.card{min-width:0;overflow-x:auto}.cgrid .form label,.cgrid select,.cgrid input{max-width:100%}
-@media (max-width:860px){
+@media (max-width:980px){
   body{display:block}
   .side{height:auto;position:sticky;top:0;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;padding:10px 14px 0;gap:6px 10px;border-right:0;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px)}
   .brand{padding:0;flex:1;min-width:0}
@@ -635,6 +635,28 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
   .form{grid-template-columns:1fr;gap:4px}
   .form>label{margin-top:8px}
   .bar.bulk{border-radius:16px}
+}
+
+/* ===== 放大（字放大、瀏覽器 125～200%）與窄螢幕：只改畫面，不影響列印 ===== */
+@media screen{
+  input,select,textarea{max-width:100%}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))}
+  .gc,.card,.tsec,.colr,.cols>*,.stats>*,.cgrid>*,.iepcard,.xx-card{min-width:0}
+  .thd>b{min-width:0;overflow-wrap:anywhere}
+  /* 排課表：在卡片裡左右捲，節次那一欄固定在左邊 */
+  table.board{min-width:47.5rem}
+  table.board th.ph2{position:sticky;left:0;z-index:2;background:var(--bg)}
+  /* 對話框比畫面高時：內容捲動，按鈕列留在下面看得到 */
+  dialog{max-height:92vh;max-height:92dvh;max-width:calc(100vw - 16px);box-sizing:border-box;overscroll-behavior:contain}
+  dialog .bar.end{position:sticky;bottom:-26px;z-index:2;background:var(--card);margin:14px 0 0;padding:12px 0 6px;box-shadow:0 -1px 0 var(--line)}
+  .menubox{max-width:calc(100vw - 32px)}
+  /* 課表輸出：寬的表在預覽框裡左右捲，第一欄（節次）固定 */
+  #outArea table.mt tr>th:first-child,#outArea table.pt tr>th:first-child{position:sticky;left:0;z-index:1}
+}
+@media screen and (max-width:980px){
+  dialog .bar.end{bottom:-20px}
+  .menubox{left:auto;right:0}
+  .ph .phrow{flex-wrap:wrap;gap:6px 12px}
 }
 
 /* ===== 列印 ===== */

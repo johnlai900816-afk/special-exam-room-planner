@@ -334,6 +334,10 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   const D=sample(),reg=D.periods.filter(p=>!p.extra);D.teachers.push({id:'z9',name:'周老師',role:'普通班',off:[]});
   const row=sj=>reg.map((p,i)=>i===0?{s:sj,t:'張老師（國）'}:i===1?{s:'綜合活動',t:'周老師'}:null);
   D.tt={'701':{subj:{},grid:[row('國語文'),row('數學'),row('彈性'),row('英語文'),row('社團')]},'702':{subj:{},grid:[row('自然'),row('數學'),row('彈性'),row('英語文'),row('社團')]}};
+  // 全校課表的讀取在另一個分支（core.js 的 ttCellAt、ttTeacherBusy）；這裡用照它的介面寫的替身測，測完拿掉
+  const had=[C.ttCellAt,C.ttTeacherBusy];
+  C.ttCellAt=(D,cls,k)=>{const c=D.tt&&D.tt[cls],m=String(k).match(/^([0-4])-(.+)$/);if(!c||!c.grid||!m)return null;const i=reg.findIndex(p=>p.id===m[2]);const row=c.grid[+m[1]];return row&&i>=0?row[i]||null:null;};
+  C.ttTeacherBusy=D=>{const o={};Object.keys(D.tt||{}).forEach(cls=>(D.tt[cls].grid||[]).forEach((row,w)=>(row||[]).forEach((x,i)=>{if(x&&x.t)(o[x.t]=o[x.t]||new Set()).add(w+'-'+reg[i].id);})));return o;};
   const keys=I.baseKeys(D,'2026-12-07','2026-12-11',reg.map(p=>p.id));
   ok(keys.length===35&&!keys.some(k=>k.includes('|m')),'候選：週一到五 × 一般節次');
   const s701=D.students.find(s=>s.cls==='701'),s702=D.students.find(s=>s.cls==='702');
@@ -347,8 +351,11 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   ok(cell(G,'2026-12-07','1').tint==='avoid','兩位學生：有一位在上主科就標避開');
   ok(cell(G,'2026-12-09','1').tint==='prefer'&&cell(G,'2026-12-09','1').subj==='彈性','兩位都在上彈性：建議，顯示最多的科目');
   const B=I.weekBusy(D,I.ctxOf(D)),ti=B.M.tIdx.z9;
-  ok(/原班上課（701綜合活動）/.test(B.tb.get(ti*B.M.NS+0*B.M.NP+D.periods.findIndex(p=>p.id===reg[1].id))||''),'有原班課表時，任課老師在哪幾節上課也算進忙碌（只在內部）');
-  delete D.tt;G=I.pickGrid(D,{keys,sids:[s701.id]});
+  ok(/^原班上課$/.test(B.tb.get(ti*B.M.NS+0*B.M.NP+D.periods.findIndex(p=>p.id===reg[1].id))||''),'有原班課表時，任課老師在哪幾節上課也算進忙碌（只在內部，用 ttTeacherBusy）');
+  C.ttCellAt=had[0];C.ttTeacherBusy=had[1];
+  G=I.pickGrid(D,{keys,sids:[s701.id]});ok(!G.hasTT&&I.suggestPick(G).length===0,'core.js 還沒有讀課表的函式時：格子都是中性');
+  C.ttCellAt=(D,cls,k)=>null;  delete D.tt;G=I.pickGrid(D,{keys,sids:[s701.id]});
+  delete C.ttCellAt;if(had[0])C.ttCellAt=had[0];
   ok(!G.hasTT&&G.rows.every(r=>r.cells.every(c=>c&&c.subj===''&&c.tint===''))&&I.suggestPick(G).length===0,'沒有原班課表：格子都是中性，不標科目');
 }
 

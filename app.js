@@ -76,6 +76,9 @@ const ICON={
 const ico=(k,c)=>`<svg class="ic${c?' '+c:''}" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]||''}</svg>`;
 // 「？」小按鈕：點開才看到說明
 const tip=t=>`<details class="tip"><summary aria-label="說明">${ico('help')}</summary><div class="tipbox">${t}</div></details>`;
+// 「？」打開時太靠右（放大或窄視窗）：往左移到畫面裡
+document.addEventListener('toggle',e=>{const d=e.target;if(!d||!d.classList||!d.classList.contains('tip')||!d.open)return;const b=d.querySelector('.tipbox');if(!b||getComputedStyle(b).position==='fixed')return;
+  b.style.left='';const r=b.getBoundingClientRect(),over=r.right-(document.documentElement.clientWidth-8);if(over>0)b.style.left=Math.max(-r.left+8,-over)+'px';},true);
 // 區段標題：前面小小的紅色編號（01、02…）
 const secH=(n,t,x)=>`<h3 class="sh"><span class="no">${String(n).padStart(2,'0')}</span>${t}${x||''}</h3>`;
 // 空白狀態：一行字＋一個按鈕
