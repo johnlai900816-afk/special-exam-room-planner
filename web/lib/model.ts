@@ -102,6 +102,18 @@ export interface TeacherDoc {
   note?: string;
   hours?: number;
   prefRooms?: string[];
+  /** 減授節數與原因（例：組長）；應授＝hours − reduce */
+  reduce?: number;
+  reduceNote?: string;
+  /** 每週最多願意超幾節（0＝不願意，沒有＝還沒問） */
+  otMax?: number;
+  /** 想教／不想教的科目、想教的年級（超鐘點分配參考） */
+  prefSubj?: string[];
+  prefGrade?: string[];
+  avoidSubj?: string[];
+  /** 個管分配：最多帶幾位、不當個管 */
+  cmCap?: number;
+  noCM?: boolean;
   /** 其他欄位（JSON） */
   x?: string;
 }

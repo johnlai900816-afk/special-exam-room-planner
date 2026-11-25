@@ -31,6 +31,8 @@ import {
   RepoDeniedError,
   RevConflictError,
   revKey,
+  type BatchOp,
+  type BatchResult,
   type DocOf,
   type Loaded,
   type Repo,
@@ -215,6 +217,78 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
     });
   }
 
+  /** 一批寫入：同一位學生的學生文件與 private 放同一個交易（規則的 getAfter 要看得到同一批的學生文件） */
+  async function batch(ops: BatchOp[], opt: { chunk?: number; onProgress?: (done: number, total: number) => void } = {}): Promise<BatchResult> {
+    if (readOnly) throw new RepoDeniedError("過渡期資料由舊版同步，這裡不能修改");
+    if (staff && !cache.records.term) await load();
+    const all: BatchOp[] = ops.map((o) => ({ ...o }));
+    // 刪學生時連 private 一起刪
+    all.filter((o) => o.col === "students" && !o.data).forEach((o) => {
+      if (!all.some((x) => x.col === "privates" && x.id === o.id)) all.push({ col: "privates", id: o.id, data: null, expectRev: null });
+    });
+    let after = cache.records;
+    all.forEach((o) => (after = applyWrite(after, o.col, o.id, o.data)));
+    let linked = 0;
+    if (staff)
+      linkPatches(after).forEach((p) => {
+        const w = all.find((x) => x.col === p.col && x.id === p.id);
+        if (w) {
+          if (w.data) w.data = p.data as unknown as Record<string, unknown>;
+        } else {
+          all.push({ col: p.col, id: p.id, data: p.data as unknown as Record<string, unknown>, expectRev: null });
+          linked++;
+        }
+      });
+    // 分組：學生＋private 一組，其他一份一組；再裝進一個個交易
+    const groups = new Map<string, BatchOp[]>();
+    all.forEach((o) => {
+      const k = o.col === "students" || o.col === "privates" ? "s:" + o.id : o.col + "/" + o.id;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(o);
+    });
+    const size = Math.max(2, Math.min(opt.chunk || 300, 450));
+    const chunks: BatchOp[][] = [];
+    let cur: BatchOp[] = [];
+    groups.forEach((g) => {
+      if (cur.length + g.length > size) {
+        chunks.push(cur);
+        cur = [];
+      }
+      cur.push(...g);
+    });
+    if (cur.length) chunks.push(cur);
+    let done = 0;
+    const stamp = (rev: number) => ({ rev, updatedBy: scope.uid, updatedAt: serverTimestamp() });
+    for (const ch of chunks) {
+      try {
+        await runTransaction(db, async (tx) => {
+          const snaps = await Promise.all(ch.map((o) => tx.get(ref(o.col, o.id))));
+          ch.forEach((o, i) => {
+            const s = snaps[i];
+            const r = s.exists() ? +s.data().rev || 0 : 0;
+            if (o.expectRev != null && r !== o.expectRev)
+              throw new RevConflictError(o.col, o.id, o.expectRev, s.exists() ? { rev: r, updatedBy: String(s.data().updatedBy || "") } : null);
+          });
+          ch.forEach((o, i) => {
+            const s = snaps[i];
+            if (!o.data) {
+              if (s.exists()) tx.delete(ref(o.col, o.id));
+              return;
+            }
+            const r = s.exists() ? +s.data().rev || 0 : 0;
+            tx.set(ref(o.col, o.id), { ...o.data, ...stamp(r + 1) });
+          });
+        });
+      } catch (e) {
+        if (done && e instanceof Error) e.message += `（前面 ${done} 份已寫入）`;
+        throw e;
+      }
+      done += ch.length;
+      opt.onProgress?.(done, all.length);
+    }
+    return { written: ops.filter((o) => o.data).length, deleted: ops.filter((o) => !o.data).length, linked };
+  }
+
   const repo: Repo = {
     kind: "firestore",
     scope,
@@ -226,6 +300,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
     async remove(col, id) {
       await write(col, id, null, null);
     },
+    batch,
     async saveMyOff(off, expectRev) {
       if (!scope.tid) throw new RepoDeniedError("帳號沒有綁定名冊上的老師");
       return write("teachers", scope.tid, null, expectRev, { off });

@@ -208,6 +208,7 @@ service cloud.firestore {
     function optStr(k, n) { return !(k in incoming()) || str(incoming()[k], n); }
     function optList(k, n) { return !(k in incoming()) || (incoming()[k] is list && incoming()[k].size() <= n); }
     function optMap(k, n) { return !(k in incoming()) || (incoming()[k] is map && incoming()[k].size() <= n); }
+    function optNum(k, n) { return !(k in incoming()) || (incoming()[k] is number && incoming()[k] >= 0 && incoming()[k] <= n); }
     function ordOk() { return incoming().ord is int && incoming().ord >= 0 && incoming().ord < 5000; }
 
     function termShape() {
@@ -219,11 +220,14 @@ service cloud.firestore {
     }
     function teacherShape() {
       return incoming().keys().hasAll(['ord', 'name', 'role', 'off'])
-        && incoming().keys().hasOnly(['ord', 'name', 'role', 'off', 'note', 'hours', 'prefRooms', 'x'].concat(META()))
+        && incoming().keys().hasOnly(['ord', 'name', 'role', 'off', 'note', 'hours', 'prefRooms',
+               'reduce', 'reduceNote', 'otMax', 'prefSubj', 'prefGrade', 'avoidSubj', 'cmCap', 'noCM', 'x'].concat(META()))
         && ordOk() && str(incoming().name, 60) && str(incoming().role, 20)
         && incoming().off is list && incoming().off.size() <= 100
         && optStr('note', 500) && optList('prefRooms', 30) && optStr('x', 20000)
-        && (!('hours' in incoming()) || (incoming().hours is number && incoming().hours >= 0 && incoming().hours <= 60));
+        && optNum('hours', 60) && optNum('reduce', 60) && optNum('otMax', 60) && optNum('cmCap', 200)
+        && optStr('reduceNote', 100) && optList('prefSubj', 30) && optList('prefGrade', 12) && optList('avoidSubj', 30)
+        && (!('noCM' in incoming()) || incoming().noCM is bool);
     }
     function classShape() {
       return incoming().keys().hasAll(['cls', 'subj'])

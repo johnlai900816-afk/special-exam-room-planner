@@ -8,6 +8,7 @@ import {
   RepoDeniedError,
   RevConflictError,
   revKey,
+  type BatchResult,
   type DocOf,
   type Loaded,
   type Repo,
@@ -124,6 +125,35 @@ export function createMemoryRepo(scope: RepoScope, init?: TermRecords | MemorySt
     },
     async remove(col, id) {
       await write(col, id, null, null);
+    },
+    async batch(ops, opt): Promise<BatchResult> {
+      if (readOnly) throw new RepoDeniedError("過渡期資料由舊版同步，這裡不能修改");
+      // 先全部檢查（rev、權限），一份不對就整批不寫
+      for (const o of ops) {
+        const cur = store.revs[revKey(o.col, o.id)];
+        if (o.expectRev != null && (cur?.rev || 0) !== o.expectRev)
+          throw new RevConflictError(o.col, o.id, o.expectRev, cur ? { rev: cur.rev, updatedBy: cur.updatedBy } : null);
+        const before = current(o.col, o.id);
+        if (before && !canSee(o.col, o.id)) throw new RepoDeniedError("沒有權限");
+        const why = writeDenied(scope, store.records, o.col, o.id, before, o.data);
+        if (why) throw new RepoDeniedError(why);
+      }
+      let after = store.records;
+      ops.forEach((o) => (after = applyWrite(after, o.col, o.id, o.data == null ? null : clone(o.data))));
+      const writes: { col: WritableCol; id: string; data: unknown | null }[] = ops.map((o) => ({ col: o.col, id: o.id, data: o.data }));
+      let linked = 0;
+      linkPatches(after).forEach((p) => {
+        const w = writes.find((x) => x.col === p.col && x.id === p.id);
+        if (w) {
+          if (w.data) w.data = p.data;
+        } else {
+          writes.push({ col: p.col, id: p.id, data: p.data });
+          linked++;
+        }
+      });
+      commit(writes);
+      opt?.onProgress?.(writes.length, writes.length);
+      return { written: ops.filter((o) => o.data).length, deleted: ops.filter((o) => !o.data).length, linked };
     },
     async saveMyOff(off, expectRev) {
       if (!scope.tid) throw new RepoDeniedError("帳號沒有綁定名冊上的老師");

@@ -3,6 +3,7 @@
 import type {
   AttendanceDoc,
   ClassDoc,
+  ExamDoc,
   Collection,
   GroupDoc,
   IepInviteDoc,
@@ -28,8 +29,22 @@ export interface RepoScope {
   tid?: string;
 }
 
-/** 可以寫的集合（'term'＝學期文件本身） */
-export type WritableCol = "term" | "teachers" | "classes" | "groups" | "students" | "privates" | "attendance" | "iep" | "iepInvite";
+/** 可以寫的集合（'term'＝學期文件本身）。exam、examPrivate、versions、lockLog、staff 只有管理者／編輯能寫（還原、新學期、匯入用） */
+export type WritableCol =
+  | "term"
+  | "teachers"
+  | "classes"
+  | "groups"
+  | "students"
+  | "privates"
+  | "attendance"
+  | "iep"
+  | "iepInvite"
+  | "exam"
+  | "examPrivate"
+  | "versions"
+  | "lockLog"
+  | "staff";
 
 export interface DocTypes {
   term: TermDoc;
@@ -41,6 +56,11 @@ export interface DocTypes {
   attendance: AttendanceDoc;
   iep: IepRoundDoc;
   iepInvite: IepInviteDoc;
+  exam: ExamDoc;
+  examPrivate: JsonBlobDoc;
+  versions: JsonBlobDoc;
+  lockLog: JsonBlobDoc;
+  staff: JsonBlobDoc;
 }
 export type DocOf<C extends WritableCol> = DocTypes[C];
 
@@ -79,6 +99,25 @@ export class RepoDeniedError extends Error {
 
 export type Unsubscribe = () => void;
 
+/** 一批寫入的一項：data＝null 是刪除；expectRev＝畫面讀到的 rev（新增 0；null＝不檢查） */
+export interface BatchOp {
+  col: WritableCol;
+  id: string;
+  data: Record<string, unknown> | null;
+  expectRev: number | null;
+}
+export interface BatchResult {
+  written: number;
+  deleted: number;
+  /** 衍生欄位（學生的 groupIds、teacherIds、private.caseMgrId）另外補寫的份數 */
+  linked: number;
+}
+export interface BatchOptions {
+  /** 一個交易最多幾份文件（Firestore 上限 500；預設 300）。同一位學生的學生文件與 private 一定在同一個交易 */
+  chunk?: number;
+  onProgress?: (done: number, total: number) => void;
+}
+
 export interface Repo {
   readonly kind: "firestore" | "memory";
   readonly scope: RepoScope;
@@ -99,6 +138,12 @@ export interface Repo {
   patch<C extends WritableCol>(col: C, id: string, partial: Partial<DocOf<C>>, expectRev: number): Promise<number>;
   /** 刪除（只有管理者／編輯；學生會連 private 一起刪） */
   remove(col: WritableCol, id: string): Promise<void>;
+
+  /**
+   * 一次寫很多份（匯入、個管分配、還原、新學期）。每一份都檢查 rev；衍生欄位照最後的結果一起補。
+   * Firestore 分成幾個交易（chunk）；某一個交易失敗時，前面已經寫進去的不會退回（錯誤訊息會說寫到哪裡）。
+   */
+  batch(ops: BatchOp[], opt?: BatchOptions): Promise<BatchResult>;
 
   /** 老師改自己的不排課時段（teachers/{tid}.off） */
   saveMyOff(off: SlotKey[], expectRev: number): Promise<number>;

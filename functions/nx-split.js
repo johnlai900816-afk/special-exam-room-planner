@@ -26,7 +26,8 @@
 
 const STU_PUB = ['cls', 'seat', 'name', 'note', 'needs'];
 const STU_PRIV = ['privNote', 'iepDate', 'reviewDate', 'certExp', 'examSvc'];
-const TEA_KEYS = ['name', 'role', 'off', 'note', 'hours', 'prefRooms'];
+// 減授、超鐘點（舊版 overtime）、個管分配的上限：都是一般欄位，不敏感
+const TEA_KEYS = ['name', 'role', 'off', 'note', 'hours', 'prefRooms', 'reduce', 'reduceNote', 'otMax', 'prefSubj', 'prefGrade', 'avoidSubj', 'cmCap', 'noCM'];
 const GRP_KEYS = ['name', 'subject', 'per', 'mode', 'room', 'on', 'grade', 'fixed'];
 const TERM_KEYS = ['v', 'title', 'periods', 'rooms', 'settings', 'blocked', 'offBy', 'sets', 'lockFix', 'offPool', 'lockLast'];
 const EXAM_PUB = ['title', 'sessions', 'rooms', 'proctors', 'proctorOf', 'supportOf'];
