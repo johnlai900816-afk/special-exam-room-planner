@@ -127,12 +127,13 @@ schools/{sid}/terms/{tid}               {title, periods, rooms, settings, blocke
   attendance/{date}_{gid}@{pid}         {date, key, gid, pid, teacherId, marks:{學生id: 紀錄}, roster, info}
   iep/{roundId}                         {ord, name, due, stuIds, readers, json}   (+ responses/{h}，只有 Function 寫)
   exam/{eid}                            {title, sessions, rooms, proctors, proctorOf, supportOf}
-  exam/{eid}/private/{data|notice}      {json}：學生名單與調整、通知單（只有管理者／編輯）
-  exam/{eid}/placements/{pid}           {proctorIds, …}：之後段考頁產生，監考老師讀自己的
+  exam/{eid}/private/{data|notice|view} {json}：學生名單與調整、通知單、查考場連結的鑰匙（只有管理者／編輯）
+  exam/{eid}/placements/{ses|room}      {proctorIds, stu, wait, …}：一節一間試場（交卷名單），監考與支援老師讀自己的（§9d）
+  exam/{eid}/seats/{studentId}          {teacherIds, rows}：一位學生的考場，讀得到這位學生的老師讀得到（§9d）
   versions/{draft|vNNNN}                試排草稿與確定的版本（舊 sched）
   lockLog/{LNNNN}                       鎖課紀錄（舊 lockLog）
   staff/{legacy|iep|sched|sync}         其他只給管理者的：交接基準、weekly、gone、未知欄位、IEP 設定、同步狀態
-publicViews/{token}                     {sid, cls, rows（遮罩過）, exp}    只有後端寫
+publicViews/{token}                     {sid, termId, eid, title, cls|all, rows, exp}：查考場連結（§9d）；管理者／編輯寫，鑰匙登記在 private/view
 auditLogs/{id}                          {sid, by, action, target, detail, at}   只有後端寫
 nxLink/main                             {sid, termId, mode}：舊位置要同步到哪裡（只有 Function 讀寫）
 ```
@@ -241,7 +242,7 @@ npm test              # 單元測試：轉換、toCoreD 來回、Repo 權限、�
 npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-rc 專案，不碰正式資料）跑完自動關
 ```
 
-`test:rules` 跑三份：`rules.test.ts`（新位置 25 項）、`rules-live.test.ts`（正式 `firestore.rules` 與 `.next` 的 A 段各 19 項）、`rules-repo.test.ts`（Firestore 版 Repo 的查詢與交易都過得了規則）。
+`test:rules` 跑四份：`rules.test.ts`（新位置）、`rules-live.test.ts`（正式 `firestore.rules` 與 `.next` 的 A 段各 19 項）、`rules-repo.test.ts`（Firestore 版 Repo 的查詢與交易都過得了規則）、`rules-exam.test.ts`（段考與查考場連結，§9d）。
 
 ---
 
@@ -348,15 +349,15 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 課表輸出（排課 › 課表輸出） | `/admin/sched/?step=out` | 完成（和舊版逐字相同） | 老師課表、鎖課表（`lockTable`）、班級抽離表、學生個人課表、總課表（板橋格式）、列印 CSS（標楷體） |
 | 我的課表（新功能） | `/me` | 完成 | 資源班老師看自己的課，普通班老師看被鎖在原班的節次 |
 | 我的學生（新功能） | `/me/students` | 完成 | 個管、在我課裡、原班該科任課；敏感欄位只給個管看 |
-| 段考考場（`exam.html`） | `/exam` | 骨架 | 照 exam.html 的步驟拆：考程、學生與調整、試場、排試場與監考、輸出。它的排列邏輯建議先抽成 `exam-core.js`（比照 core.js 共用）再搬 |
-| 我的監考（新功能） | `/me/exam` | 完成 | 讀 `exams/main` 的 `proctorOf`／`supportOf`，用姓名對名冊 |
-| 段考交卷名單（exam.html） | `/me/exam` | 骨架 | 我監考的試場學生與調整 |
+| 段考考場（`exam.html`） | `/admin/exam/` | 完成（§9d，輸出和舊版逐字相同） | ① 名單與服務 ② 考程與教室 ③ 排考場 ④ 輸出＋查考場；舊網址 `/exam` 轉過來 |
+| 我的監考（新功能） | `/me/settings/`、`/me/exam/` | 完成 | 監考對照（exam/main）；試場與交卷名單（placements） |
+| 段考交卷名單（exam.html） | `/admin/exam/?step=out&o=hand`、老師 `/me/exam/` | 完成 | 紙本和舊版預設逐字相同；老師看自己監考的試場名單 |
 | 簽到退（`checkin.js`） | `/checkin` | 骨架 | 點名、掃碼、出缺席紀錄、學生卡；過渡期讀寫 `rc/att-日期`，目標 `attendance/{date}` |
-| 通知單（`notice.html`） | 段考 ⑤ | 未開始 | 版面改用新 token；列印用標楷體；`exams/notice` |
+| 通知單（`notice.html`） | `/admin/exam/?step=out&o=notice` | 完成（公版，和舊版逐字相同） | `exam/main/private/notice` |
 | 雲端共用（`cloud.js` 共用對話框） | `/accounts`、`/login` | 部分 | 成員、角色、綁定老師、加入申請、老師送出的不排課時段已做；在線上的人（presence）未做；最終改由 Function 管理 |
 | 學校自己的雲端（`school.js`） | `lib/firebase-config.ts` | 部分 | 新版讀同一個 localStorage `rc-school-cloud`；設定畫面未做。改成 App Hosting 後，每校一個專案或一個專案多校（`schools/{sid}`）要先決定 |
 | 備份與還原（共用 › 備份與還原） | `/accounts`、右上角資料來源 | 部分 | 下載備份檔（同格式）、讀取備份檔（只在記憶體）已做；還原寫回雲端、版本未做 |
-| 免登入檢視連結（`view/{鑰匙}`） | `publicViews/{token}` | 未開始 | 改由後端產生遮罩過的資料、帶到期日 |
+| 免登入檢視連結（`view/{鑰匙}`） | `/view/?v=鑰匙`（`publicViews/{鑰匙}`） | 完成（查考場） | 管理者／編輯寫、規則檢查鑰匙登記與到期（§9d） |
 | IEP 會議（`iep.js`，另一位開發者） | `/me` 卡片、`lib/iep.ts` | 佔位 | 接上 `iep.js` 後顯示要出席的會議與回覆（`iep/{mid}/responses/{uid}`） |
 
 ---
@@ -439,7 +440,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 設定 › 學校資料 | `/admin/settings/school/?step=` | ① 匯入 Excel（SheetJS CDN、認工作表、試跑看差異、一批寫入）② 全校課表（唯讀，`classes.ttJson`）③ 老師與任課（含減授、超鐘點上限、`classes.subj`）④ 不排課時段（全校、年級、群組、班級、不能鎖課、學生、老師）⑤ 教室與作息 ⑥ 排課規則 ⑦ 學年交接 |
 | 設定 › 帳號與共用 | `/admin/settings/accounts/` | 成員（角色、綁定老師、停用）、邀請、舊名單轉邀請（先看清單）、搬移狀態與 `nxMigrateLegacy`（先試算） |
 | 設定 › 資料與備份 | `/admin/settings/data/` | 下載備份（讀得到的全部 records）、加密備份（和舊版同一個 AES-GCM 格式）、從備份還原（新版或舊版備份；先檢查、看差異）、版本、開始新學期 |
-| 段考 | `/admin/exam/` | 「這一頁請先用舊版」＋舊版對應的 hash（點名、統計、IEP 會議在 phase 3c 搬過來，見 §9c） |
+| 段考 | `/admin/exam/` | 見 §9d（phase 3d） |
 
 - **寫入**：一律 `lib/nx/apply.ts`：在 `toCoreD(records)` 的副本上跑舊的純函式 → `splitD` 前後比對 → `Repo.batch` 寫有變的文件（每份帶 rev）。私密欄位直接 `patch("privates")`。
 - **以老師身分看**：側欄底部（手機在「更多」）。登入時是唯讀預覽：用管理者讀到的資料做一份記憶體版 Repo，權限照規則過濾（`access.visible`），老師頁原封不動；範例資料時直接切到那位老師。
@@ -458,7 +459,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 
 **測試**：`npm test`（`apply.test.ts` 比對與一批寫入、`import.test.ts` 匯入、`admin.test.ts` 待辦／篩選／個管／新學期／備份、`nx-admin.test.ts`）、`npm run test:rules`、`npm run test:e2e`（`e2e-admin.test.ts`：管理者登入、匯入範例表、分配個管，兩位老師登入只讀得到自己的學生；檔案改成一個一個跑）。
 
-**還沒做**：段考；全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。（IEP 會議、點名、統計在 phase 3c，見 §9c）
+**還沒做**：全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。（IEP 會議、點名、統計在 phase 3c，見 §9c）
 
 ---
 
@@ -510,3 +511,47 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 - **規則**：不用改。管理者／編輯原本就能寫 attendance、iep、iepInvite、staff、lockLog；老師只能讀寫 `teacherId` 是自己的點名。`test/rules.test.ts`「點名、統計、IEP 會議（phase 3c）」加了這些情況的測試（管理者點任何一門課、那門課的老師接著改、別的老師讀寫不到、id 與 info 形狀、週報已發送、鎖課標記、會議設定、管理者開調查與填空堂）。
 - **測試**：`test/checkin.test.ts`（舊版 checkin.js 原文放沙盒：attStats 在 4 個期間 × 5 個組別逐項相同、logSpan、學生卡逐字相同；導師週報＝core.weeklySummary、AI 去識別化；今天的待辦；Repo.mark 的 roster／info 與老師可見範圍）、`test/stats.test.ts`（舊版 extras.js loadPage 放沙盒：每月超鐘點的紙在 4 種情況逐字相同、工作量的數字、教室、鎖課紀錄、otm.css／cards.css 每一行都從舊版複製）、`test/iep-admin.test.ts`（管理者範圍、管理者開的調查老師收得到、會議設定寫到哪裡）、`test/e2e-checkin.test.ts`（模擬器：管理者點名 → 那門課的老師看到、接著改 → 別的老師讀不到、寫不進去）。
 
+---
+
+## 9d. Phase 3d：段考（`/admin/exam/?step=stu|set|board|out|find`）
+
+| 步驟 | 做什麼（對照舊版 exam.html） |
+|---|---|
+| ① 名單與服務 | renderStu：學生來自名冊（rosterPull，學生 id 和名冊一樣），服務從個案頁的 IEP（`private.examSvc`）帶入；改服務範圍（無／全科／指定科目）、備註、排入；名冊的學生只能「這次不排」；名冊以外的學生可以貼上、新增、匯入考評服務名單（PDF／Word，pdf.js 4.10.38＋SRI，和舊版同一組；檔案只在瀏覽器裡讀） |
+| ② 考程與教室 | renderSet：01 考試日期（改一天，節次、星期、不排時段都跟著換）02 監考老師（貼上老師表、臨時支援：限定節次、只支援口頭；不排時段；指定節數）03 考試節次（延長、更多：口頭上限、口頭獨立、分年級、不計誦讀、補考節、**自習教室開放考試**；全部開／全部關）04 教室（一般、電腦、備用、自習等候；獨立考場上限） |
+| ③ 排考場 | renderBoard：自動排列、補排未排入、換一組、復原（40 步）；拖曳學生換教室（拖過的固定）、點一下固定、滑到學生上標出他每一節；每一格選主監考、支援、備註（手動選的記在 procMan／supMan，自動排列不換）；違規與提醒；監考統計（應監考、已排、場次、衝突、每位老師的場次） |
+| ④ 輸出 | 服務表、動線、監考、交卷名單（加註節次與試場、加簽名欄、印出已勾選是選項；預設＝學校的紙本）、補考名單（建立補考考程）、通知單（公版）；印出、複製、Word |
+| 查考場 | 依學生／依試場、篩選、複製（LINE）、印出；查考場連結（全校、每一班） |
+| 老師 | `/me/exam/`：我監考的試場與交卷名單、我的學生在哪裡考（`/me/settings/` 的「我的監考」連過去） |
+| 公開 | `/view/?v=鑰匙`：查考場連結，不用登入 |
+
+- **純邏輯**（逐行照搬，舊版沒有拆成獨立檔，所以是複製；改的時候兩邊一起改）：`lib/nx/examCore.ts`（exam.html 的 CORE 段：compile／evaluate／solve／toState／fromState、svcFromRoster、startNewExam、makeupList、addMakeupSessions）、`lib/nx/examOut.ts`（監考分配 autoProctor／procQuota、服務表 svcHtml、動線 itinHtml、監考表 procMatrix、交卷名單 handPapers、補考名單 mkPapers、查考場 findRowsAll／findHtml／findCopyText、檢視連結的內容 viewDocs、fitPrint、normalize、pasteProc／pasteStu）、`lib/nx/examImport.ts`（rowsToStudents、parseSvc、docx／pdf 讀檔）、`lib/nx/notice.ts`（notice.html 的 noticeHtml、syncPlanner→syncNotice、NOTICE_CSS）。
+- **紙張**：HTML 和舊版逐字相同；畫面上的說明、按鈕（舊版 `.noprint` 那一段）由 React 畫。紙放在 iframe 裡（`components/exam/Paper.tsx`），文件裡只有從 exam.html 逐行複製的樣式（`lib/nx/examPaperCss.ts`），所以畫面與列印都和舊版一樣、不受新版頁面樣式影響；列印前照舊版 fitPrint 縮放。交卷名單和舊版一樣在頁面加 `<style>@page{size:A4 portrait;margin:10mm}</style>`。
+- **通知單（學校公版，一個字都不能變）**：`noticeHtml` 和 notice.html 逐字相同；預覽與列印也在 iframe 裡，文件結構和舊版一樣（`#app #pv`＋`#print`），樣式 `NOTICE_CSS` 是 notice.html 的 `<style>` 逐行複製（紙張 `.page` 的全部規則、`@page{size:A4;margin:0}`、`@media print` 整段）。頁高 296.8mm、左上角方框 top 5.7mm、「請找學習中心導師：…」、沒有家長回條。印章圖照舊是相對路徑 `stamp.png`（`web/public/stamp.png`，從 repo 根目錄複製；iframe 用 `<base>` 指到網站根目錄）。
+- **資料**（只有一份段考 `exam/main`，和舊版 `exams/main` 一樣；「開始新段考」照舊清掉排法、監考分配、交卷勾選）：
+  - `exam/main`（考程、試場、監考對照，大家讀）＋`private/data`（其餘全部，只有管理者／編輯）＋`private/notice`：照 `functions/nx-split.js` 的 splitExam，過渡期的 nxSyncExamFromLegacy 也是寫這三份。
+  - `exam/main/placements/{ses|room}`（`ExamPlaceDoc`）：一節一間試場，`proctorIds`＝主監考與支援老師（監考名單是姓名，用 `lib/exam.ts sameTeacher` 對名冊）；內容只有那一間的學生（班級座號、姓名、服務簡稱、延長時間）與自習等候的學生。
+  - `exam/main/seats/{studentId}`（`ExamSeatDoc`）：一位學生每一科在哪裡考；`teacherIds`＝學生文件的 teacherIds（＋個管）；欄位和舊版班級查考場連結一樣少，沒有服務內容與備註。
+  - 這兩種是新版才有的（`toCoreD.ts` NATIVE_ONLY；`nx-split.pathOf` 認得 `examPlace`、`examSeat`），存段考時一起算（`lib/nx/examData.ts examOps`：考程、名單、通知單、試場、學生考場一起比對，內容一樣的不寫；private 的 JSON 只差 key 順序也不寫）。Repo：管理者讀整個子集合；老師 `where('proctorIds'|'teacherIds','array-contains',tid)`；檢視讀不到。
+- **寫入**：`components/exam/useExam.tsx`：在 E 的副本上跑舊的函式 → 畫面立刻更新 → 0.8 秒後一批寫回（`applyOps`，每份帶 rev）。第一次打開（沒存過）和舊版一樣先自動排列再存；名冊有變（rosterPull）一打開就存。自動排列和舊版一樣在主執行緒跑（「排列中…」），範例資料不到 1 秒、35 位學生約 2 秒（測試機）。
+- **查考場連結**（不用 Cloud Function）：鑰匙＝32 碼亂數（班級＝鑰匙＋`_班級`），登記在 `exam/main/private/view`（`{json:{link,vcls}, keys:[全部鑰匙]}`）。管理者／編輯把登記和 `publicViews/{鑰匙}` 同一批寫（`lib/nx/examView.ts pushViews`）；存段考後內容有變就更新（`refreshViews`，和舊版 linkPush 一樣只寫有變的）。規則：讀＝沒過期**而且鑰匙還登記著**（換新、關閉後舊連結馬上失效，就算舊文件沒刪掉），不能列出；寫＝自己學校的管理者／編輯、形狀（不收 svc、memo 等欄位）、到期 400 天內、同一批登記了鑰匙（getAfter）。內容和舊版 linkPush 逐字相同：全校（全名、沒有服務與備註）、班級（姓名遮一字、欄位最少）；到期＝最後一天考試後 7 天。
+- **規則**（`firestore.rules.next`）：`placements` 加形狀檢查（`placeShape`）；新增 `seats`（`seatShape`；讀＝管理者／編輯或 `tid in teacherIds`）；`publicViews` 改成上面的規則（原本是「只有後端寫」）。考程與監考對照（`exam/main`，只有老師姓名、沒有學生）照 §4.1 大家讀；學生名單、服務只在 `private`（管理者／編輯）。
+- **今天的待辦**：「段考還有 n 科次沒排考場」（舊 app.js examInfo）→ `/admin/exam/?step=board`。
+- **過渡期**：`AdminSide.canWrite('exam')`（native 有 `'exam'`）；不能寫時只能看（頂端提示＋到舊版的連結）。過渡期舊版存 `exams/main` 會同步 `exam/main` 與 private，但**不會**產生 placements／seats（同步函式不知道名冊的老師 id 與 teacherIds），所以老師的 `/me/exam/` 交卷名單要等段考交給新版（native 加 `'exam'`、`'examPrivate'`）後，管理者在新版存一次才有；「我的監考」（監考對照）過渡期就有。
+
+**和舊版不同的地方**
+- 名冊的學生：班級、座號、姓名只在「學生」頁改（段考頁不寫回名冊，舊版 rosterPush 沒有搬）；名冊以外新增、貼上、匯入的學生只在段考裡，不會加進名冊。所以「名冊裡找不到這位學生」的提醒拿掉了「會加回名冊」。
+- 老師不再讀得到整份段考資料（舊版成員都讀得到 exams/main）：只讀得到自己監考的試場（交卷名單）和自己的學生的考場。
+- 查考場連結：新網址 `/view/?v=鑰匙`（舊版 `exam.html?v=鑰匙` 在舊系統繼續有效，到切換為止）；文件裡不記開連結的人的信箱（舊版 `by`）。
+- 雲端共用：舊版的「共用」對話框（成員、在線上的人、同時修改時選保留哪一份）改由新版帳號與 Repo 的 rev 處理（被搶先時提示並改用資料庫的內容）；段考頁自己的「備份與還原」（下載 JSON、從備份檔還原、清空）改到「設定 › 資料與備份」（備份已含 exam、examPrivate）。
+- 通知單只有嵌在段考頁裡的功能（自動帶入、清掉手動修改、全部重來）；單獨打開 notice.html 才有的「用排列機設定檔」「匯出／匯入通知單設定檔」「清空學生」「還原成範例」沒有搬。
+- 第一次打開（沒存過）的資料先補齊欄位（`settings.pv` 3、`procMan`／`supMan` 空物件），舊版第一次存的是沒補齊的；排法、輸出不受影響。
+- 交卷名單點方框：整張紙重畫（在 iframe 裡）；勾選、印出已勾選和舊版一樣。
+
+**測試**：`test/exam.test.ts`（exam.html 原文放沙盒：4 種資料〔範例、自習教室開放考試一半／全部、35 位學生三天〕自動排列、換一組、補排、手動指定監考、評分訊息完全一樣；服務表、動線、監考表、交卷名單〔預設＋8 種選項組合＋課表副本〕、補考名單與建立補考考程、查考場 8 種篩選與複製文字、檢視連結全校＋每一班逐字相同；貼上老師表）、`test/notice.test.ts`（notice.html 原文：4 種資料〔範例、從段考帶入、換印章／沒有方框／下午合併／注意事項標記、不顯示印章／上午 3 節／要跳脫的字〕每一位學生的 HTML 逐字相同；連動兩次後整份資料一樣；NOTICE_CSS 每一行都是原文、紙張與列印的規則一行不少；頁高、方框、標楷體、固定文字、沒有回條）、`test/exam-css.test.ts`（紙張樣式逐行）、`test/exam-data.test.ts`（rosterPull 和舊版一樣〔含名冊刪除〕、匯入考評服務名單和舊版一樣、存段考的文件與再存 0 份、記憶體版 Repo 老師與檢視看得到什麼）、`test/rules-exam.test.ts`（模擬器：考程大家讀、private 只有管理者、老師只讀自己的試場與學生考場、查詢要帶條件、形狀、查考場連結的登記／到期／作廢／別校／沒登入）、`test/e2e-exam.test.ts`（模擬器：管理者排段考存檔 → 監考老師只看到自己的試場、讀不到名單、改不了段考 → 沒監考的老師看不到 → 查考場連結開與關）。
+
+**部署與切換要做的事**（都還沒做）
+1. 規則：`web/firestore.rules.next`（placements 形狀、seats、publicViews）照 §7.3 第 1 步部署；不用新的索引（array-contains 單一欄位自動有）；不用新的 Functions。
+2. 靜態檔：`web/public/stamp.png` 會在建置時放到網站根目錄（通知單的印章）。
+3. 交給新版：`nxLink/main.native` 加 `'exam'`、`'examPrivate'`（同步從此跳過段考）；請特教組之後只在新版改段考，並在新版打開段考頁存一次（產生老師端的試場與學生考場）。
+4. 查考場連結：在新版重新「開啟查考場連結」並把新連結給導師；舊版 `view/*` 文件在 §3.3 第 6 步退休時一起刪。

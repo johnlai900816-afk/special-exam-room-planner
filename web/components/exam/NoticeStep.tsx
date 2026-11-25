@@ -31,7 +31,7 @@ export function NoticeStep() {
   const c = Math.max(0, Math.min(cur, N.students.length - 1));
   const s = N.students[c];
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(340px,440px)_1fr]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(340px,440px)_1fr]">
       <div className="no-print rounded-2xl border border-line bg-card p-4">
         <div role="tablist" className="mb-3 inline-flex gap-0.5 rounded-full bg-sunk p-1">
           {(
