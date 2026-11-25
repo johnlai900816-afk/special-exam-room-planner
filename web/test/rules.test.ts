@@ -416,3 +416,57 @@ describe("排課（phase 3b）：草稿、確定（課程 slots＋版本＋鎖�
     await assertFails(updateDoc(doc(db, T + "/versions/draft"), { label: "x", ...st("uAdmin", 1) }));
   });
 });
+
+describe("點名、統計、IEP 會議（phase 3c）：管理者端的寫入", () => {
+  const st = (uid: string, rev: number) => ({ rev, updatedBy: uid, updatedAt: serverTimestamp() });
+  const att = (uid: string, rev: number, marks: Record<string, unknown>) => ({
+    date: "2026-11-27", key: "g2@1", gid: "g2", pid: "1", teacherId: "r2", marks, roster: ["s2"], info: { g: "八國", p: "第一節" }, ...st(uid, rev),
+  });
+  for (const [who, d, uid] of [
+    ["管理者", admin, "uAdmin"],
+    ["編輯", editor, "uEditor"],
+  ] as const)
+    it(who + "：點任何一門課（含名單與組名）；那門課的老師接著改得到；別的老師讀不到、改不到", async () => {
+      await assertSucceeds(setDoc(doc(d(), T + "/attendance/2026-11-27_g2@1"), att(uid, 1, { s2: { st: "in", tin: "08:00", tout: "", note: "" } })));
+      await assertSucceeds(getDoc(doc(r2(), T + "/attendance/2026-11-27_g2@1")));
+      await assertSucceeds(updateDoc(doc(r2(), T + "/attendance/2026-11-27_g2@1"), { marks: { s2: { st: "late" } }, ...st("uR2", 2) }));
+      await assertFails(getDoc(doc(r1(), T + "/attendance/2026-11-27_g2@1")));
+      await assertFails(updateDoc(doc(r1(), T + "/attendance/2026-11-27_g2@1"), { marks: {}, ...st("uR1", 3) }));
+      // 老師不能把別人的課改成自己的
+      await assertFails(updateDoc(doc(r2(), T + "/attendance/2026-11-27_g2@1"), { teacherId: "r1", ...st("uR2", 3) }));
+      // 管理者也可以清掉一整節
+      await assertSucceeds(deleteDoc(doc(d(), T + "/attendance/2026-11-27_g2@1")));
+    });
+  it("點名文件的 id 要等於 日期_課程@節次；info 太多欄位被拒", async () => {
+    await assertFails(setDoc(doc(admin(), T + "/attendance/2026-11-28_g2@1"), att("uAdmin", 1, {})));
+    const big = Object.fromEntries([...Array(11)].map((_, i) => ["k" + i, i]));
+    await assertFails(setDoc(doc(admin(), T + "/attendance/2026-11-27_g2@1"), { ...att("uAdmin", 1, {}), info: big }));
+  });
+  it("導師週報的已發送（staff/legacy）、鎖課紀錄標記已交教務處（lockLog 更新）、會議設定（staff/iep）", async () => {
+    const db = admin();
+    await assertSucceeds(updateDoc(doc(db, T + "/staff/legacy"), { json: JSON.stringify({ weekly: { "2026-11-16": true } }), keys: ["weekly"], ...st("uAdmin", 2) }));
+    await assertSucceeds(setDoc(doc(db, T + "/lockLog/L000"), { ord: 0, at: 1, json: JSON.stringify({ label: "期初", added: [], removed: [] }), ...st("uAdmin", 1) }));
+    await assertSucceeds(updateDoc(doc(db, T + "/lockLog/L000"), { json: JSON.stringify({ label: "期初", added: [], removed: [], sentAt: 5 }), ...st("uAdmin", 2) }));
+    await assertSucceeds(setDoc(doc(db, T + "/staff/iep"), { json: JSON.stringify({ cfg: { req: { 行政: 1 }, admin: [["t:r1", "輔導主任", 1]], subj: 1 } }), ...st("uAdmin", 1) }));
+    // 老師都不行
+    await assertFails(updateDoc(doc(r1(), T + "/staff/legacy"), { json: "{}", ...st("uR1", 3) }));
+    await assertFails(updateDoc(doc(r1(), T + "/lockLog/L000"), { json: "{}", ...st("uR1", 3) }));
+    await assertFails(getDoc(doc(r1(), T + "/staff/iep")));
+  });
+  it("管理者開調查（readers 是學生的個管、不含自己）、改老師開的、發填空堂、刪除；讀得到全部的回覆", async () => {
+    const db = admin();
+    const round = { ord: 1, name: "期末", due: "2026-12-01", stuIds: ["s1", "s2"], readers: ["r1", "r2"], json: "{}", ...st("uAdmin", 1) };
+    await assertSucceeds(setDoc(doc(db, T + "/iep/a1"), round));
+    await assertSucceeds(getDoc(doc(r1(), T + "/iep/a1")));
+    await assertSucceeds(updateDoc(doc(db, T + "/iep/r1"), { name: "期初（改）", ...st("uAdmin", 2) }));
+    await assertSucceeds(
+      setDoc(doc(db, T + "/iepInvite/a1_k1"), { roundId: "a1", teacherId: "k1", readers: ["r1", "r2"], keys: ["2026-12-07|5"], ...st("uAdmin", 1) }),
+    );
+    await assertSucceeds(getDoc(doc(k1(), T + "/iepInvite/a1_k1")));
+    await assertSucceeds(getDocs(collection(db, T + "/iep/a1/responses")));
+    await assertSucceeds(deleteDoc(doc(db, T + "/iepInvite/a1_k1")));
+    await assertSucceeds(deleteDoc(doc(db, T + "/iep/a1")));
+    // 檢視不行
+    await assertFails(setDoc(doc(viewer(), T + "/iep/a2"), { ...round, ...st("uView", 1) }));
+  });
+});
