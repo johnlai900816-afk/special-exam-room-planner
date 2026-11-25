@@ -370,14 +370,15 @@ function aiApply(D,text){
    每一組各自的節數照表上的來；學生名單可以是遮名的（704林○哲），用班級＋姓＋名字最後的字對回名冊。
    同一列右邊如果有「教師…總節數」的鐘點表，也一起讀成老師的基本鐘點。 */
 function importCourseTable(D,text){
-  const R={added:0,updated:0,members:0,miss:[],teachers:0,hours:0},MK=/[○〇ＯO＊*]/;
-  const tOf=name=>{let t=D.teachers.find(x=>x.name===name);if(!t){t=newTeacher(D,name,'資源班');R.teachers++;}return t;};
+  const R={added:0,updated:0,members:0,miss:[],teachers:0,hours:0,kept:[],coT:[]},MK=/[○〇ＯO＊*]/;
+  // 名字用 normName 比對：匯入學生名單時已經自動建好的個管老師（王）和表上的「王老師」是同一位，不會重複新增
+  const tOf=name=>{let t=teaByName(D,name);if(!t){t=newTeacher(D,name,'資源班');R.teachers++;}return t;};
   let ti=-1,hi=-1;
   String(text).split(/\r?\n/).forEach(line=>{const c=line.split('\t').map(x=>x.trim());
     const a=c.indexOf('教師'),b=c.indexOf('總節數');
     if(a>=0&&b>a){ti=a;hi=b;}else if(ti>=0&&c[ti]&&+c[hi]>0&&!/節數|合計/.test(c[ti])){tOf(c[ti]).hours=+c[hi];R.hours++;}
     const per=+c[5];if(!c[0]||!c[2]||!(per>0)||/領域|名稱/.test(c[0]))return;
-    const subject=canonSubj(D,c[0]),grade=/^[1-9]$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[];
+    const subject=canonSubj(D,c[0]),grade=/^[1-9]$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[],miss0=R.miss.length;
     (c[4]||'').split(/[、,，;；\/\s]+/).filter(Boolean).forEach(m=>{const mm=m.match(/^(\d{3,4})[-－]?\d{0,2}(\D.*)$/);if(!mm){R.miss.push(m);return;}
       const nm=mm[2],k=nm.search(MK),f=k<0?nm:nm.slice(0,k),l=k<0?'':nm.replace(/^.*[○〇ＯO＊*]/,'');
       const hit=D.students.filter(s=>String(s.cls)===mm[1]&&(k<0?s.name===nm:s.name.length>=f.length+l.length&&s.name.startsWith(f)&&s.name.endsWith(l)));
@@ -389,8 +390,13 @@ function importCourseTable(D,text){
     // 表上只分抽離、外加；已經設成「不鎖課」的保留。彈性鎖課時，不在鎖課科目裡的新課（例：社會技巧）預設不鎖課
     const caps=Object.keys((D.settings||{}).lockCap||{});
     if(/外加/.test(c[3]||''))g.mode='外加';else if(g.mode!=='不鎖課')g.mode=(isNew&&D.settings.lockMode==='flex'&&caps.length&&!caps.includes(subject))?'不鎖課':'抽離';
-    if(c[8])g.teacher=tOf(c[8]).id;
-    g.students=ids;R.members+=ids.length;
+    // 兩位老師（王老師、李老師／王/李）：第一位當授課老師，其他的列出來讓人決定
+    if(c[8]){const ts=c[8].split(/[、,，\/／;；&＆+＋]+|\s{2,}/).map(x=>x.trim()).filter(Boolean);
+      if(ts.length){g.teacher=tOf(ts[0]).id;if(ts.length>1)R.coT.push(name+'：'+ts[0]+' 當授課老師，另外還有 '+ts.slice(1).join('、'));}}
+    R.members+=ids.length;
+    // 表上有名字對不到名冊時，原本在課裡、這次沒對到的學生先留著（可能就是對不到的那幾位），列出來讓人確認
+    if(!isNew&&R.miss.length>miss0)g.students.filter(id=>!ids.includes(id)).forEach(id=>{const s=D.students.find(x=>x.id===id);if(!s)return;ids.push(id);R.kept.push(name+'：'+s.cls+' '+s.name+'（表上沒找到）');});
+    g.students=ids;
     ids.forEach(id=>{const s=D.students.find(x=>x.id===id);if(!Array.isArray(s.needs))s.needs=[];if(!s.needs.includes(subject))s.needs.push(subject);});});
   return R;
 }
@@ -464,11 +470,11 @@ function importLocks(D,text){
     if(!tn||/^[#\-－0]/.test(tn)||/^\d+$/.test(tn)||isSubj(tn))return;
     if(!per||!(d>=1&&d<=5)){R.bad++;return;}
     const k=(d-1)+'-'+per.id,key=cls+'|'+k;if(seen.has(key))return;seen.add(key);
-    let t=D.teachers.find(x=>x.name===tn);if(!t){t=newTeacher(D,tn,'普通班');R.newT.push(tn);}
+    let t=teaByName(D,tn);if(!t){t=newTeacher(D,tn,'普通班');R.newT.push(tn);}
     sj=sj?canonSubj(D,sj):'';
     if(!sj){const e=Object.keys(D.classSubj).find(q=>q.startsWith(cls+'|')&&D.classSubj[q]===t.id);sj=e?e.slice(e.indexOf('|')+1):'';}
     if(sj&&!D.classSubj[cls+'|'+sj])D.classSubj[cls+'|'+sj]=t.id;
-    out.push({cls,k,t:tn,sj});R.n++;cs.add(cls);};
+    out.push({cls,k,t:t.name,sj});R.n++;cs.add(cls);};   // t 存名冊裡的寫法，排課時才對得回這位老師
   const hi=rows.findIndex(r=>r.includes('班級名稱')&&r.includes('教師姓名')&&r.includes('首節'));
   if(hi>=0){const h=rows[hi],ci=n=>h.indexOf(n);
     rows.slice(hi+1).forEach(r=>{const c=r[ci('班級名稱')];if(!/^\d{3,4}$/.test(c||''))return;const d=+r[ci('星期')],p1=+r[ci('首節')],p2=+r[ci('末節')]||p1;
@@ -483,32 +489,50 @@ function importLocks(D,text){
 /* ───── 全校課表：每班一頁的課程表，底下有「科目 老師 節數」的統計，從這裡讀出各班各科老師 ───── */
 const TT_SUBJ=['國語文','英語文','數學','生物','理化','地球科學','地科','歷史','地理','公民與社會','健康教育','體育','音樂','視覺藝術','表演藝術','家政','童軍','輔導','生活科技','資訊科技','本土語文','課業指導'];
 const cjk=s=>String(s||'').replace(/[^一-鿿]/g,'');
-// 科目：OCR 常錯一個字。找同長度、只差一個字的科目；兩個科目一樣像（例：類語文＝國語文或英語文）就全部回傳，交給老師名字決定
-function ttSubjCand(s){s=String(s||'').trim();if(TT_SUBJ.includes(s))return [s];const c=cjk(s);if(TT_SUBJ.includes(c))return [c];
-  let bs=0,best=[];TT_SUBJ.forEach(v=>{if(v.length!==c.length||c.length<2)return;let m=0;for(let i=0;i<c.length;i++)if(c[i]===v[i])m++;if(m>bs){bs=m;best=[v];}else if(m===bs&&m)best.push(v);});
-  return bs>=c.length-1&&bs>=1?best:[s];}
+/* OCR 常見的形近字：同一組裡互換只算小錯。只放辨識容易混淆的字，不放「玲／伶」這種本來就是不同名字的字 */
+const TT_LIKE=['已己巳','未末','珊姍','于於','婷停','髓體','依侑','士土','日曰','戊戌戍','汩汨','崇祟','析折','人入','刀力','夭天','壬王'];
+const ttLike=(a,b)=>TT_LIKE.some(g=>g.includes(a)&&g.includes(b));
+// 編輯距離：少一個字、多一個字算 0.6，形近字 0.4，其他換字 1。漏字（蔡珊）、多字都對得回去
+function ttDist(a,b){a=String(a);b=String(b);let p=Array.from({length:b.length+1},(x,j)=>j*0.6);
+  for(let i=1;i<=a.length;i++){const c=[i*0.6];for(let j=1;j<=b.length;j++){const x=a[i-1],y=b[j-1];c[j]=Math.min(p[j]+0.6,c[j-1]+0.6,p[j-1]+(x===y?0:ttLike(x,y)?0.4:1));}p=c;}
+  return Math.round(p[b.length]*10)/10;}
+// 科目：完全相同或只差形近字才直接認；差一個普通的字只當候選（兩個字的科目一律待確認，例：家長≠家政、生活≠生物）。
+// 兩個科目一樣像（例：類語文＝國語文或英語文）就全部回傳，交給老師名字決定。回傳陣列，ok＝不用再確認
+function ttSubjCand(s){s=String(s||'').trim();const R=a=>{a.ok=true;return a;};if(TT_SUBJ.includes(s))return R([s]);const c=cjk(s);if(TT_SUBJ.includes(c))return R([c]);
+  if(c.length<2)return [s];
+  let bd=9,best=[];TT_SUBJ.forEach(v=>{if(v.length!==c.length)return;const d=ttDist(c,v);if(d<bd){bd=d;best=[v];}else if(d===bd)best.push(v);});
+  if(bd<=0.4*Math.max(1,c.length-1)&&best.length===1)return R(best);   // 只錯形近字（髓育→體育）
+  if(bd<=1){best.loose=true;return best;}                              // 錯一個普通的字：候選，要看老師名字或人工確認
+  return [s];}
 function ttSubjFix(s){return ttSubjCand(s)[0];}
-// 名字：先找完全相同、或多讀了雜字但裡面含有已知名字的；再找同位置對上兩個字的；平手就不猜
+// 舊的「同位置對上幾個字」，猜班級時還在用
 const ttScore=(s,k)=>{let sc=0;for(let off=0;off<=Math.max(0,s.length-k.length);off++){let m=0;for(let i=0;i<k.length;i++)if(s[i+off]===k[i])m++;sc=Math.max(sc,m);}return sc;};
+// 名字：完全相同、或多讀了雜字但裡面含有已知名字的，直接認；
+// 編輯距離很小（只錯形近字、少一個字）而且明顯比第二像的近，才自動改；只差一個普通的字算「推測」；只對上一個字的不猜
 function ttNameFix(raw,known,pool,exp){const s=cjk(raw);if(!s)return {t:String(raw||'').trim(),unk:true};
   if(known.has(s))return {t:s};
   for(let i=0;i+3<=s.length;i++){const x=s.slice(i,i+3);if(known.has(x))return {t:x};}
-  const pick=(set,min)=>{let best=null,bs=0,tie=false;set.forEach(k=>{const sc=ttScore(s,k);if(sc>bs){bs=sc;best=k;tie=false;}else if(sc===bs)tie=true;});return best&&!tie&&bs>=min?best:null;};
-  let b=pick(known,2);if(b)return {t:b,fix:true};
-  // 這一科在別班、或這一班任課老師名單上的老師裡，只有一位對得上一個字：當成推測，標示讓人確認
-  if(exp&&ttScore(s,exp)>=1)return {t:exp,guess:true};   // 這一班任課老師名單上的那位優先
-  if(pool&&pool.size){b=pick(pool,1);if(b)return {t:b,guess:true};}
+  const rank=set=>{const a=[];(set||[]).forEach(k=>{const kk=cjk(k);if(kk)a.push({k,d:ttDist(s,kk),n:kk.length});});a.sort((x,y)=>x.d-y.d);return a;};
+  const close=o=>o&&Math.min(s.length,o.n)>=2&&o.d<=1&&o.d<Math.max(s.length,o.n)-1;   // 至少對上兩個字
+  const K=rank(known),b1=K[0],gap=K.length>1?K[1].d-b1.d:9;
+  if(b1&&b1.d<=0.6&&gap>=0.4&&Math.min(s.length,b1.n)>=2)return {t:b1.k,fix:true};
+  if(exp){const e=rank([exp])[0];if(close(e))return {t:exp,guess:true};}   // 這一班任課老師名單上的那位優先
+  if(pool&&pool.size){const P=rank(pool);if(close(P[0])&&(P.length<2||P[1].d-P[0].d>=0.4))return {t:P[0].k,guess:true};}
+  if(close(b1)&&gap>=0.4)return {t:b1.k,guess:true};
   return {t:s,unk:true};}
 // 一頁的統計文字 → [{sj,t,n,unk,guess}]。ctx.pool(科目)＝這一科可能的老師
 function ttParse(text,known,ctx){ctx=ctx||{};const poolOf=s=>ctx.pool?ctx.pool(s):null,expOf=s=>ctx.exp?ctx.exp(s):null;
   const toks=String(text).replace(/[”“"'’‘。，,、:：|\[\]【】_~．·()（）;；]/g,' ').split(/\s+/).flatMap(t=>t.split(/(\d+)/)).map(t=>t.trim()).filter(Boolean);
   const out=[];let sj=null,nm=null;
-  const push=n=>{const C=ttSubjCand(sj);let S=C[0],N=null;
-    if(C.length>1){for(const c of C){const x=ttNameFix(nm,known,poolOf(c),expOf(c));const p=poolOf(c);if(!x.unk&&p&&p.has(x.t)){S=c;N=x;break;}}}
+  const push=n=>{const C=ttSubjCand(sj);let S=C[0],N=null,byCtx=false;
+    if(C.length>1||C.loose){for(const c of C){const x=ttNameFix(nm,known,poolOf(c),expOf(c));const p=poolOf(c);if(!x.unk&&!x.guess&&p&&p.has(x.t)){S=c;N=x;byCtx=true;break;}}}
     if(!N)N=ttNameFix(nm,known,poolOf(S),expOf(S));
     if(cjk(N.t).length<2||!/[一-鿿]{2}/.test(S))return;
-    out.push({sj:S,t:N.t,n,unk:!!N.unk||C.length>1&&!N.guess&&!(poolOf(S)||new Set()).has(N.t)||!TT_SUBJ.includes(S)&&!/colorful|心|家|範/.test(S),guess:!!N.guess});};
-  toks.forEach(t=>{if(/^\d+$/.test(t)){if(sj&&nm)push(+t>9?+String(t).slice(-1):+t);sj=nm=null;return;}
+    // 科目只是「差一個字」的候選：三個字以上、而且老師確定教這一科才算數；兩個字的科目一律待確認
+    const subjBad=C.loose&&!(byCtx&&cjk(S).length>=3);
+    out.push({sj:S,t:N.t,n,unk:!!N.unk||subjBad||n>9||C.length>1&&!byCtx&&!N.guess||!TT_SUBJ.includes(S)&&!/colorful|心|家|範/.test(S),guess:!!N.guess});};
+  // 節數超過 9 不截斷（12 不會變成 2），標成待確認
+  toks.forEach(t=>{if(/^\d+$/.test(t)){if(sj&&nm)push(+t);sj=nm=null;return;}
     if(!sj||!/[一-鿿]{2}|colorful/i.test(sj))sj=t;else if(!nm)nm=t;else{push(1);sj=t;nm=null;}});   // 前面是雜字就丟掉
   return out;}
 // 整份檔案一起讀：先讀一遍收集各科確定的老師，再用「同一科的老師」和「這一班的任課老師」補認不出來的名字
@@ -516,13 +540,13 @@ function ttParseAll(D,pages,known){
   const CS={'國語文':'國文','英語文':'英文','數學':'數學','理化':'理化'},tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
   const exp=(cls,s)=>{if(!cls||!CS[s])return null;const id=D.classSubj[cls+'|'+canonSubj(D,CS[s])];return id?tn(id):null;};
   const first=pages.map(p=>({p,list:ttParse(p.text,known)}));
-  const by={};first.forEach(o=>o.list.forEach(x=>{if(!x.unk)(by[x.sj]=by[x.sj]||new Set()).add(x.t);}));
+  const by={};first.forEach(o=>o.list.forEach(x=>{if(!x.unk&&!x.guess)(by[x.sj]=by[x.sj]||new Set()).add(x.t);}));
   return first.map(o=>{let cls=o.p.cls||ttGuessClass(D,o.list)||'';
     const list=ttParse(o.p.text,known,{exp:s=>exp(cls,s),pool:s=>{const a=new Set(by[s]||[]),e=exp(cls,s);if(e)a.add(e);return a;}});
     const c2=cls||ttGuessClass(D,list);   // 第一遍猜不出來，用補認過的名字再猜一次
     return {cls:c2,guessCls:!o.p.cls&&!!c2,list,page:o.p.page,src:o.p.src};});}
-// 班級編號：OCR 數字常多讀一個雜字，取最後三碼
-function ttClassNo(s){const m=String(s||'').replace(/\D/g,'').match(/([5-9]\d{2})$/);return m?m[1]:'';}
+// 班級編號：三碼（年級是第一碼）或四碼（年級是前兩碼，10～12 年級）。OCR 數字常多讀一個雜字，對不上四碼就取最後三碼
+function ttClassNo(s){const d=String(s||'').replace(/\D/g,''),m=d.match(/(1[0-2]\d{2})$/)||d.match(/([1-9]\d{2})$/);return m?m[1]:'';}
 // 沒讀到編號時，用國英數老師對照「任課老師」猜是哪一班
 function ttGuessClass(D,list){let best='',bs=0,tie=false;const cls=[...new Set(Object.keys(D.classSubj).map(k=>k.split('|')[0]))];
   const tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
@@ -532,8 +556,8 @@ function ttGuessClass(D,list){let best='',bs=0,tie=false;const cls=[...new Set(O
   return bs>=2&&!tie?best:'';}
 function ttKnown(D){const k=new Set(D.teachers.map(t=>t.name).concat(Object.keys(D.offPool||{})));Object.values(D.tt||{}).forEach(c=>Object.values(c.subj||{}).forEach(a=>a.forEach(x=>{if(!x[2])k.add(x[0]);})));
   return new Set([...k].filter(n=>cjk(n).length>=2&&cjk(n)===n));}
-// 存進 D.tt[班級]={subj:{科目:[[老師,節數,待確認]]},src}
-function ttStore(D,cls,list,src){const subj={};list.forEach(x=>{const a=subj[x.sj]=subj[x.sj]||[];const o=a.find(y=>y[0]===x.t);if(o)o[1]+=x.n;else a.push([x.t,x.n,x.unk?1:0]);});
+// 存進 D.tt[班級]={subj:{科目:[[老師,節數,待確認]]},src}。待確認：0 確定、1 認不出、2 推測（都要人核對）
+function ttStore(D,cls,list,src){const subj={};list.forEach(x=>{const a=subj[x.sj]=subj[x.sj]||[];const o=a.find(y=>y[0]===x.t);if(o)o[1]+=x.n;else a.push([x.t,x.n,x.unk?1:x.guess?2:0]);});
   Object.values(subj).forEach(a=>a.sort((p,q)=>q[1]-p[1]));D.tt=D.tt||{};D.tt[cls]={subj,src:src||''};}
 // 一班某一科的老師（節數最多的；社會、自然這類一次對好幾科）
 const EXAM_TT={'國文':['國語文'],'作文':['國語文'],'國語文':['國語文'],'英文':['英語文'],'英聽':['英語文'],'英語文':['英語文'],'數學':['數學'],
@@ -542,7 +566,7 @@ const EXAM_TT={'國文':['國語文'],'作文':['國語文'],'國語文':['國�
 function ttTeachers(tt,cls,subject){const c=tt&&tt[String(cls)];if(!c)return [];const want=EXAM_TT[subject]||[subject];
   return [...new Set(want.flatMap(s=>(c.subj[s]||[]).slice(0,1).map(x=>x[0])))];}
 /* 新增老師：先前匯入過、但當時不在名冊裡的老師不排課時段（offPool）會自動帶上 */
-function newTeacher(D,name,role){const P=D.offPool||{},t={id:uid('t'),name,role,off:(P[name]||[]).slice(),note:'',hours:0};D.teachers.push(t);return t;}
+function newTeacher(D,name,role){const P=D.offPool||{},pk=P[name]?name:Object.keys(P).find(k=>normName(k)===normName(name)),t={id:uid('t'),name,role,off:(P[pk]||[]).slice(),note:'',hours:0};D.teachers.push(t);return t;}
 function importOff(D,text,opt){
   opt=opt||{};const R={cls:0,tea:0,cells:0,skipT:[],newT:0,bad:0};
   const kw=Array.isArray(opt.hard)?opt.hard.filter(Boolean):String(opt.hard||'').split(/[,，、\s]+/).filter(Boolean),reg=D.periods.filter(p=>!p.extra);
@@ -556,7 +580,7 @@ function importOff(D,text,opt){
     const keys=[];for(let dd=d1;dd<=Math.min(d2,5);dd++)for(let p=p1;p<=p2;p++){const per=pOf(p);if(per)keys.push((dd-1)+'-'+per.id);}
     let arr;
     if(/^\d{3,4}$/.test(name)){const k=(kw.includes('*')||kw.some(w=>why.includes(w))?'c:':'k:')+name;arr=D.offBy[k]=D.offBy[k]||[];R.cls++;}
-    else{let t=D.teachers.find(x=>x.name===name);
+    else{let t=teaByName(D,name);
       if(!t){if(!opt.addTeachers){R.skipT.push(name);const P=D.offPool=D.offPool||{},a=P[name]=P[name]||[];keys.forEach(k=>{if(!a.includes(k))a.push(k);});return;}t=newTeacher(D,name,'普通班');R.newT++;}
       arr=t.off;R.tea++;}
     keys.forEach(k=>{if(!arr.includes(k)){arr.push(k);R.cells++;}});});
@@ -573,7 +597,7 @@ function canonSubj(D,name){
 }
 function findTeacher(D,name,role){
   name=String(name||'').trim();if(!name)return null;
-  let t=D.teachers.find(x=>x.name===name);if(!t&&role){t=newTeacher(D,name,role);t._new=1;}
+  let t=teaByName(D,name);if(!t&&role){t=newTeacher(D,name,role);t._new=1;}
   return t;
 }
 /* 任課老師名單。兩種格式都可以：
@@ -623,7 +647,9 @@ function importStudents(D,text){
   R.noCM=[...new Set(R.noCM)];R.newCM=[...new Set(R.newCM)];return R;
 }
 // 姓名比對用：去掉空白和稱謂（老師、主任、組長…）
-function normName(s){return String(s||'').replace(/\s+/g,'').replace(/(老師|教師|主任|組長|導師|校長)$/,'');}
+function normName(s){const a=String(s||'').replace(/\s+/g,''),b=a.replace(/(老師|教師|主任|組長|導師|校長)$/,'');return b||a;}
+// 用名字找老師：先找完全一樣的（王老師、王主任同時在名冊時不會認錯），再用 normName 比對
+function teaByName(D,name){const n=String(name||'').trim();if(!n)return null;const k=normName(n);return D.teachers.find(x=>x.name===n)||D.teachers.find(x=>normName(x.name)===k)||null;}
 /* 開始新學期。opt：clearAssign 清空排課結果、clearGroups 清空課程、clearCS 清空任課老師、clearClassOff 清空班級不排課、
    clearTeaOff 清空所有老師的不排課、promote 升年級（七→八、八→九，九年級畢業移出名冊；國小一到六年級同理）。
    升年級時班級號碼會變，所以課程、任課老師、班級不排課一定一起清空 */
@@ -633,7 +659,9 @@ function newTerm(D,opt){
     const gone=[];D.students=D.students.filter(s=>{const g=gradeOfCls(s.cls);if(g===9||g===6){gone.push(s.id);R.grad++;return false;}
       if(g>=1&&g<=8&&/^\d{3,4}$/.test(String(s.cls))){s.cls=String(g+1)+String(s.cls).slice(1);R.up++;}return true;});
     D.gone=(D.gone||[]).concat(gone).slice(-500);
-    gone.forEach(id=>{delete D.offBy['s:'+id];});D.sets.forEach(x=>{x.students=x.students.filter(id=>!gone.includes(id));});}
+    gone.forEach(id=>{delete D.offBy['s:'+id];});D.sets.forEach(x=>{x.students=x.students.filter(id=>!gone.includes(id));});
+    // 班級號碼變了，舊的全校課表和導師會對到錯的班（批閱教師、任課老師都會錯），一起清掉
+    D.tt={};D.classHead={};R.ttCleared=true;}
   if(opt.clearAssign){D.assign={};D.lockFix=[];}
   if(opt.clearGroups){D.groups=[];D.assign={};}
   if(opt.clearCS)D.classSubj={};
@@ -643,5 +671,5 @@ function newTerm(D,opt){
   return R;
 }
 
-const CORE={normName,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+const CORE={normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;

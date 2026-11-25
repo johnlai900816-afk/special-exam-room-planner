@@ -265,5 +265,40 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(M.mainR===1&&M.roomOrder[0]===0,'勾備用的教室排在最後，平常只算沒勾的');
 }
 
+// 16. 全校課表 OCR 的反例：不能亂認；漏字、形近字要認得；節數 ≥10 不截斷；四碼班級
+{
+  console.log('\n16. 全校課表 OCR 反例');
+  const K=new Set(['陳美玲','蔡依珊','王大明']);
+  const a=C.ttNameFix('陳美華',K);ok(a.t!=='陳美玲'||a.guess,'陳美華 不會被自動改成 陳美玲（最多只是推測，要人確認）');
+  const b=C.ttNameFix('黃美珠',K,null,'陳美玲');ok(b.t!=='陳美玲'&&b.unk,'黃美珠 只和預期的 陳美玲 同一個字，不猜');
+  const c=C.ttNameFix('蔡珊',K);ok(c.t==='蔡依珊'&&!c.unk&&!c.guess,'漏一個字（蔡珊）對得回 蔡依珊');
+  const d=C.ttNameFix('王大朋',new Set(['王大明','王大同']));ok(d.unk||d.guess,'兩位一樣像時不自動選');
+  const P=s=>C.ttParse(s+' 王大明 2',K)[0];
+  ok(['家長','生活','理由','體重'].every(s=>{const x=P(s);return !x||x.unk;}),'兩個字的科目差一個字（家長、生活、理由、體重）都標成待確認');
+  ok(P('家政')&&!P('家政').unk&&P('髓育')&&P('髓育').sj==='體育'&&!P('髓育').unk,'完全相同、或只差形近字（髓育）的科目照常認');
+  const n12=C.ttParse('體育 王大明 12',K)[0];ok(n12&&n12.n===12&&n12.unk,'節數 12 不會被截成 2，標成待確認');
+  ok(C.ttClassNo('1201')==='1201'&&C.ttClassNo('2708')==='708'&&C.ttClassNo('x705')==='705','四碼班級（1201）照收，多讀的雜字仍去掉');
+  const E=C.defaultData();C.ttStore(E,'701',[{sj:'數學',t:'陳美玲',n:4,guess:true}],'');ok(E.tt['701'].subj['數學'][0][2]===2,'推測的名字存成「推測」，不當成確定的');
+}
+
+// 17. 匯入的名字比對、課程一覽表重貼、兩位老師、新學年
+{
+  console.log('\n17. 匯入的名字比對與新學年');
+  const D=C.defaultData();
+  ok(C.normName(' 王 老師')==='王'&&C.teaByName(D,'王')===D.teachers.find(t=>t.id==='r2')&&C.teaByName(D,'林組長').id==='r1','normName 去掉空白和稱謂，老師用名字對得回來');
+  // 學生名單先自動建了個管老師「周」，課程一覽表寫「周老師」：不會多一位
+  C.importStudents(D,'701\t03\t王小明\t周老師');const n0=D.teachers.length;
+  const t=['領域名稱\t年級\t組別\t抽離或外加\t學生名單\t節數\t人數\t人次\t授課教師','數學\t7\tA\t抽離\t701王○明、701陳○華\t3\t2\t6\t周老師、李老師'].join('\n');
+  const r=C.importCourseTable(D,t),g=D.groups.find(x=>x.name==='7A數學');
+  ok(D.teachers.length===n0&&D.teachers.find(x=>x.id===g.teacher).name==='周'&&r.coT.length===1&&/李老師/.test(r.coT[0]),'個管老師不重複建立；兩位老師時第一位當授課老師，另一位列出來');
+  const r2=C.importCourseTable(D,t.replace('701陳○華','701不○在'));
+  ok(g.students.length===2&&r2.kept.length===1&&/表上沒找到/.test(r2.kept[0]),'重貼時有名字對不到，原本的學生留著並標「表上沒找到」');
+  const r3=C.importCourseTable(D,t.replace('、701陳○華',''));ok(g.students.length===1&&!r3.kept.length,'全部都對得到時，照表更新名單');
+  C.importOff(D,'周老師\t1\t1\t1\t1',{});ok(D.teachers.find(x=>x.name==='周').off.length===1,'不排課表的「周老師」對得回名冊的「周」');
+  C.importLocks(D,'班級名稱\t科目名稱\t星期\t首節\t末節\t教師姓名\n701\t數學\t1\t2\t2\t陳老師（數）\n');ok(D.lockFix[0].t==='陳老師（數）','手排鎖課存名冊裡的寫法');
+  const D2=C.defaultData();D2.tt={'701':{subj:{},src:''}};D2.classHead={'701':'蕭'};const r4=C.newTerm(D2,{promote:true});
+  ok(!Object.keys(D2.tt).length&&!Object.keys(D2.classHead).length&&r4.ttCleared,'升年級時清掉全校課表和導師');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);
