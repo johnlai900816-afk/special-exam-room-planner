@@ -3,7 +3,7 @@
   "private": true,
   "description": "資源班管理系統的 Cloud Functions（AI 代理等）",
   "main": "index.js",
-  "engines": { "node": "20" },
+  "engines": { "node": "22" },
   "scripts": {
     "test": "node test-ai.js",
     "deploy": "firebase deploy --only functions"
