@@ -121,15 +121,15 @@ export function Contacts({ save, sid, name, cls, p, ro }: { save: PrivSave; sid:
         <p className="mb-3 text-sm text-mute">還沒有紀錄</p>
       )}
       {!ro && (
-        <div className="grid gap-2 sm:grid-cols-[auto_auto_1fr]">
+        <div className="grid gap-2 sm:grid-cols-[auto_auto_minmax(0,1fr)]">
           <Input type="date" aria-label="日期" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
           <Select aria-label="方式" value={f.how} onChange={(e) => setF({ ...f, how: e.target.value })}>
             {CONTACT_HOW.map((h) => (
               <option key={h}>{h}</option>
             ))}
           </Select>
-          <Input aria-label="對象" placeholder="對象（例：母親）" value={f.who} onChange={(e) => setF({ ...f, who: e.target.value })} />
-          <Input aria-label="內容" className="sm:col-span-3" placeholder="內容" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
+          <Input aria-label="對象" className="w-full min-w-0" placeholder="對象（例：母親）" value={f.who} onChange={(e) => setF({ ...f, who: e.target.value })} />
+          <Input aria-label="內容" className="w-full min-w-0 sm:col-span-3" placeholder="內容" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
           <div className="flex gap-2 sm:col-span-3">
             <Button size="sm" onClick={submit}>
               {edit ? "存檔" : "新增"}

@@ -51,7 +51,7 @@ export function EnvStep() {
           {rooms.map((r, i) => (
             <li key={r.id} className="flex items-center gap-1.5 rounded-full border border-line bg-sunk py-1 pr-1 pl-2">
               <Input
-                className="min-h-9 w-24 py-0"
+                className="min-h-9 w-32 py-0"
                 aria-label="教室名稱"
                 disabled={lock}
                 defaultValue={r.name}

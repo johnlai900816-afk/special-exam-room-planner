@@ -34,7 +34,7 @@ function School() {
     <div>
       <h1 className="mb-4 text-[1.75rem] font-bold tracking-[-0.02em]">設定</h1>
       <SettingsTabs />
-      <ol className="no-print mb-5 flex gap-1 overflow-x-auto pb-1" aria-label="學校資料的步驟">
+      <ol className="no-print mb-5 flex gap-1 overflow-x-auto pb-1 [scrollbar-width:none]" aria-label="學校資料的步驟">
         {STEPS.map(([k, n], j) => (
           <li key={k} className="shrink-0">
             <Link

@@ -10,7 +10,7 @@ import { Badge, Button, Card, Input, PageHeader, SectionTitle } from "@/componen
 import { planCMApply, suggestCM, type CmResult, type CmTeacherOpt } from "@/lib/nx/admin";
 
 const th = "px-2 py-2 text-left text-[13px] font-normal text-mute";
-const td = "border-t border-line px-2 py-1.5";
+const td = "border-t border-line px-2 py-1.5 whitespace-nowrap";
 
 function CaseMgr() {
   const { R, D, ro } = useAdmin();

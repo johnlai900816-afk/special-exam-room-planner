@@ -187,13 +187,13 @@ function Students() {
                       {r.s.seat ? "-" + String(r.s.seat).padStart(2, "0") : ""}
                     </td>
                     <td className="px-2 py-1.5">
-                      <Link href={"/admin/student/?id=" + encodeURIComponent(r.id)} className="inline-flex min-h-9 items-center gap-2 font-bold hover:text-blue">
+                      <Link href={"/admin/student/?id=" + encodeURIComponent(r.id)} className="inline-flex min-h-9 items-center gap-2 font-bold whitespace-nowrap hover:text-blue">
                         {r.s.name || "（未填姓名）"}
                         {r.due.length > 0 && <Badge tone="warn">到期</Badge>}
                       </Link>
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{r.cmName || <span className="text-mute">—</span>}</td>
-                    <td className="hidden px-2 py-1.5 text-sm text-ink2 sm:table-cell">{r.groups.join("、") || "—"}</td>
+                    <td className="hidden min-w-[8rem] px-2 py-1.5 text-sm text-ink2 sm:table-cell">{r.groups.join("、") || "—"}</td>
                     <td className="hidden px-2 py-1.5 md:table-cell">
                       <span className="flex flex-wrap gap-1">
                         {r.svc.map((x) => (

@@ -112,7 +112,7 @@ function Case() {
         <Badge tone={cm ? "acc" : "warn"}>{cm ? "個管 " + cm.name : "沒有個管"}</Badge>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>
           <SectionTitle no={1}>基本資料</SectionTitle>
           <div className="grid grid-cols-[5.5em_1fr] items-start gap-x-2.5 gap-y-2 text-[15px]">
