@@ -1,164 +1,134 @@
 "use client";
-import { Ban, CalendarDays, ClipboardCheck, ClipboardList, FileHeart, School, Users } from "lucide-react";
+/* 今天：我今天的課（現在這一節標出來）、待辦、要開的會。舊版 teacher.js rToday。 */
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
-import { AppShell } from "@/components/AppShell";
-import { LessonChip } from "@/components/LessonChip";
-import { TeacherGate, TeacherPicker } from "@/components/TeacherGate";
-import { Badge, Card, Note, PageHeader } from "@/components/ui";
-import { WeekGrid } from "@/components/WeekGrid";
-import { DAYS } from "@/lib/core";
-import { dutiesOf } from "@/lib/exam";
-import { IEP_READY, meetingsOf } from "@/lib/iep";
-import { myStudents, teacherWeek, type Board } from "@/lib/schedule";
-import { useSession } from "@/lib/session";
-import type { Teacher } from "@/lib/types";
+import { TeacherShell } from "@/components/TeacherShell";
+import { SectionTitle, cx } from "@/components/ui";
+import { useNow } from "@/lib/nx/hooks";
+import { useNx } from "@/lib/nx/session";
+import { addDays, countIn, hmOf, sessionsOn, todos, upcoming, ymd } from "@/lib/nx/today";
 
-const hm = (s: string) => {
-  const [h, m] = String(s || "0:0").split(":");
-  return +h * 60 + (+m || 0);
-};
-
-function Today({ me, board }: { me: Teacher; board: Board }) {
-  const s = useSession();
-  const D = board.M.D;
-  const week = useMemo(() => teacherWeek(board, me.id), [board, me.id]);
-  const students = useMemo(() => myStudents(D, me.id), [D, me.id]);
-  const duties = useMemo(() => dutiesOf(s.exam, me), [s.exam, me]);
-  const meetings = meetingsOf(D, me.id);
-  const NP = board.M.NP;
-
-  // 今天與現在這一節（週末顯示週一）
-  const now = new Date();
+function Today() {
+  const x = useNx();
+  const now = useNow();
+  const td = ymd(now);
+  const hm = hmOf(now);
   const wd = now.getDay();
-  const day = wd >= 1 && wd <= 5 ? wd - 1 : 0;
-  const mins = wd >= 1 && wd <= 5 ? now.getHours() * 60 + now.getMinutes() : -1;
-  const todays = board.M.P.map((p, pi) => ({ p, pi, list: week.get(day * NP + pi) || [] })).filter((x) => x.list.length);
-  const curPi = board.M.P.findIndex((p) => mins >= hm(p.start) - 10 && mins <= hm(p.end));
+  const school = wd >= 1 && wd <= 5;
+  const day = school ? td : addDays(td, wd === 6 ? 2 : 1);
+  const { D, board, data, tid, me } = x;
+  const ses = useMemo(() => (board ? sessionsOn(board, day, tid) : []), [board, day, tid]);
+  const pis = [...new Set(ses.map((s) => s.pi))];
+  const att = data!.records.attendance;
+  const inv = data!.records.iepInvite;
+  const list = useMemo(
+    () => (D && board ? todos({ D, board, tid, today: td, hm: school ? hm : "00:00", attendance: att, invites: inv }) : []),
+    [D, board, tid, td, hm, school, att, inv],
+  );
+  const up = useMemo(() => (D ? upcoming({ D, tid, today: td, invites: inv }) : []), [D, tid, td, inv]);
 
-  const off = me.off.length;
-  const todos: string[] = [];
-  if (s.cloud === "on" && !s.boundId && s.realRole !== "admin") todos.push("請組長把你的帳號綁到名冊");
-  if (!off) todos.push("確認自己的不排課時段");
-  if (IEP_READY && meetings.length) todos.push("回覆 IEP 會議出席");
-
+  if (!me) return <p className="py-10 text-mute">找不到綁定的老師</p>;
   return (
-    <>
-      <PageHeader
-        title={me.name + "・今天"}
-        lead={
-          <>
-            {me.role}
-            {me.hours ? "・應授 " + me.hours + " 節" : ""}・{D.title || "未命名學期"}
-          </>
-        }
-        actions={<TeacherPicker />}
-      />
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card title={"週" + DAYS[day] + "的課"} icon={<CalendarDays size={18} />} className="lg:col-span-2">
-          {todays.length ? (
-            <ul className="divide-y divide-line">
-              {todays.map((x) => (
-                <li key={x.p.id} className={"flex gap-3 py-2 " + (x.pi === curPi ? "rounded-lg bg-acc-l px-2" : "")}>
-                  <div className="w-20 shrink-0">
-                    <div className="font-medium">{x.p.name}</div>
-                    <div className="text-sm text-mute">
-                      {x.p.start}–{x.p.end}
-                    </div>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    {x.list.map((l) => (
-                      <LessonChip key={l.l + l.title} x={l} />
-                    ))}
-                  </div>
-                  {x.pi === curPi && x.list.some((l) => l.kind === "resource") && (
-                    <Link href="/checkin/" className="flex min-h-10 shrink-0 items-center gap-1 self-center rounded-lg bg-acc px-3 text-md text-white">
-                      <ClipboardCheck size={16} />
-                      點名
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-ink2">這一天沒有排課。</p>
-          )}
-        </Card>
-
-        <Card title="待辦" icon={<ClipboardList size={18} />}>
-          {todos.length ? (
-            <ul className="list-disc space-y-1 pl-5">
-              {todos.map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-ink2">目前沒有待辦。</p>
-          )}
-        </Card>
+    <div className="max-w-[760px]">
+      <div className="mb-2">
+        <span className="text-sm text-mute">
+          {now.getMonth() + 1} 月 {now.getDate()} 日　週{"日一二三四五六"[wd]}
+        </span>
+        <h1 className="mt-0.5 text-[1.75rem] leading-tight font-bold tracking-[-0.02em]">{me.name}</h1>
       </div>
 
-      <Card title="我的一週" icon={<CalendarDays size={18} />} className="mt-4">
-        <WeekGrid
-          periods={board.M.P}
-          hideExtra={(pi) => ![0, 1, 2, 3, 4].some((d) => week.has(d * NP + pi) || me.off.includes(d + "-" + board.M.P[pi].id))}
-          cellClass={(s2) => (me.off.includes(board.M.s2key(s2)) ? "bg-bad-l/60" : "")}
-          cell={(s2) => (week.get(s2) || []).map((x) => <LessonChip key={x.l + x.title} x={x} />)}
-        />
-        <p className="mt-2 text-sm text-mute">淡紅色格子是你的不排課時段。藍色是原班被鎖課的節次。</p>
-      </Card>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Link href="/me/students/" className="rounded-leaf border border-line bg-card p-4 hover:bg-hover">
-          <div className="flex items-center gap-2 font-serif text-lg font-semibold">
-            <Users size={18} className="text-acc" />
-            我的學生
-          </div>
-          <div className="mt-1 text-2xl font-semibold">{students.length}</div>
-          <div className="text-sm text-ink2">個管 {students.filter((x) => x.tags.includes("個管")).length} 位</div>
-        </Link>
-        <Link href="/me/off/" className="rounded-leaf border border-line bg-card p-4 hover:bg-hover">
-          <div className="flex items-center gap-2 font-serif text-lg font-semibold">
-            <Ban size={18} className="text-acc" />
-            不排課時段
-          </div>
-          <div className="mt-1 text-2xl font-semibold">{off}</div>
-          <div className="text-sm text-ink2">節，點進來修改</div>
-        </Link>
-        <Link href="/me/exam/" className="rounded-leaf border border-line bg-card p-4 hover:bg-hover">
-          <div className="flex items-center gap-2 font-serif text-lg font-semibold">
-            <School size={18} className="text-acc" />
-            段考監考
-          </div>
-          <div className="mt-1 text-2xl font-semibold">{s.exam ? duties.length : "—"}</div>
-          <div className="text-sm text-ink2">{s.exam ? "場" : "還沒有段考考場資料"}</div>
-        </Link>
-        <div className="rounded-xl border border-dashed border-line2 bg-card p-4">
-          <div className="flex items-center gap-2 font-serif text-lg font-semibold">
-            <FileHeart size={18} className="text-acc" />
-            IEP 會議
-            <Badge>即將推出</Badge>
-          </div>
-          <p className="mt-1 text-md text-ink2">之後會在這裡看到要出席的 IEP 會議並回覆出席。</p>
+      <SectionTitle no={1} className="mt-7">
+        {school ? "今天的課" : "週一的課"}
+      </SectionTitle>
+      {pis.length ? (
+        <div className="flex flex-col gap-2">
+          {pis.map((pi) => {
+            const xs = ses.filter((s) => s.pi === pi);
+            const p = xs[0].p;
+            const cur = school && hm >= p.start && hm < p.end;
+            return (
+              <div
+                key={pi}
+                className={cx("flex items-center gap-3 rounded-2xl border bg-card px-4 py-3", cur ? "border-blue shadow-[inset_0_0_0_2px_var(--blue)]" : "border-line")}
+                aria-current={cur ? "time" : undefined}
+              >
+                <div className="flex min-w-[4.2em] flex-col">
+                  <b>{p.name}</b>
+                  <small className="text-[13px] text-mute tabular-nums">{p.start}</small>
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  {xs.map((s) => (
+                    <span key={s.key} className="flex flex-wrap items-baseline gap-2">
+                      <b>{s.name}</b>
+                      <small className="text-sm text-mute">
+                        {[s.room, (school && (cur || hm >= p.end) ? "到 " + countIn(att, s) + "/" : "") + s.sids.length + " 人"].filter(Boolean).join("・")}
+                      </small>
+                    </span>
+                  ))}
+                </div>
+                {cur && (
+                  <Link href={"/me/check/?p=" + encodeURIComponent(p.id)} className="inline-flex min-h-9 items-center rounded-full bg-ink px-3.5 text-sm font-medium text-on-ink">
+                    點名
+                  </Link>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </div>
-
-      {s.source.kind !== "cloud" && (
-        <div className="mt-4">
-          <Note>
-            現在顯示的是「{s.source.label}」。登入學校的雲端後，每位老師會直接看到自己的頁面。
-          </Note>
-        </div>
+      ) : (
+        <p className="my-1 text-sm text-mute">沒有課</p>
       )}
-    </>
+
+      <SectionTitle no={2} className="mt-7">
+        待辦
+      </SectionTitle>
+      {list.length ? (
+        <ul className="flex flex-col gap-2">
+          {list.map((t, i) => (
+            <li key={i}>
+              <Link href={t.href} className="flex min-h-12 items-center gap-2.5 rounded-2xl border border-line bg-card px-4 py-2.5 hover:bg-hover">
+                <span className="min-w-0 flex-1">{t.text}</span>
+                <em className="flex items-center text-sm whitespace-nowrap text-blue not-italic">
+                  {t.act}
+                  <ChevronRight size={16} />
+                </em>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="my-1 text-sm text-mute">沒有待辦</p>
+      )}
+
+      {up.length > 0 && (
+        <>
+          <SectionTitle no={3} className="mt-7">
+            要開的會
+          </SectionTitle>
+          <ul className="flex flex-col gap-2">
+            {up.map((u) => (
+              <li key={u.key}>
+                <Link href="/me/iep/?tab=inv" className="flex min-h-12 items-center gap-2.5 rounded-2xl border border-line bg-card px-4 py-2.5 hover:bg-hover">
+                  <span className="min-w-0 flex-1">
+                    {u.label} {u.time}　{u.stu}
+                    {u.room ? "・" + u.room : ""}
+                  </span>
+                  <em className="text-sm whitespace-nowrap text-blue not-italic">{u.kind}</em>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
-export default function MePage() {
+export default function TodayPage() {
   return (
-    <AppShell allow={["teacher", "admin"]} title="今天">
-      <TeacherGate>{(me, board) => <Today me={me} board={board} />}</TeacherGate>
-    </AppShell>
+    <TeacherShell title="今天">
+      <Today />
+    </TeacherShell>
   );
 }

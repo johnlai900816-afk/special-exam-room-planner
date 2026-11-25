@@ -1,77 +1,88 @@
 "use client";
-import { Users } from "lucide-react";
-import { useMemo } from "react";
-import { AppShell } from "@/components/AppShell";
-import { TeacherGate, TeacherPicker } from "@/components/TeacherGate";
-import { Badge, Card, PageHeader } from "@/components/ui";
-import { myStudents } from "@/lib/schedule";
-import type { RcData, Teacher } from "@/lib/types";
+/* 我的學生：我個管的＋我教的（含原班任課），可以搜尋。點一位進個案頁。舊版 teacher.js rStu。 */
+import { ChevronRight, Search } from "lucide-react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { TeacherShell } from "@/components/TeacherShell";
+import { Badge, Input, SectionTitle } from "@/components/ui";
+import { NX } from "@/lib/legacy";
+import type { StudentDoc } from "@/lib/model";
+import { myStudentList } from "@/lib/nx/privacy";
+import { useNx } from "@/lib/nx/session";
+import { md, ymd } from "@/lib/nx/today";
+import { TEACH } from "@/lib/teach";
 
-function List({ me, D }: { me: Teacher; D: RcData }) {
-  const list = useMemo(() => myStudents(D, me.id), [D, me.id]);
-  const cm = (id: string) => D.teachers.find((t) => t.id === id)?.name || "";
+function Row({ id, s, due }: { id: string; s: StudentDoc; due?: { name: string; date: string } }) {
   return (
-    <>
-      <PageHeader title="我的學生" lead={me.name + "・共 " + list.length + " 位"} actions={<TeacherPicker />} />
-      {list.length ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map(({ s, tags }) => {
-            const mine = tags.includes("個管");
-            return (
-              <article key={s.id} className="rounded-leaf border border-line bg-card p-4">
-                <div className="flex items-baseline justify-between gap-2">
-                  <h2 className="text-lg">{s.name}</h2>
-                  <span className="text-md text-mute">
-                    {s.cls}
-                    {s.seat ? " 班 " + s.seat + " 號" : " 班"}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {tags.map((t) => (
-                    <Badge key={t} tone={t === "個管" ? "acc" : "default"}>
-                      {t}
-                    </Badge>
-                  ))}
-                </div>
-                {/* 需求與備註屬於學生的敏感資料：只給個管老師看（目標模型放在 students/{id}/private） */}
-                {mine ? (
-                  <dl className="mt-3 space-y-1 text-md">
-                    {s.needs.length > 0 && (
-                      <div>
-                        <dt className="inline text-mute">需要的科目：</dt>
-                        <dd className="inline">{s.needs.join("、")}</dd>
-                      </div>
-                    )}
-                    {s.note && (
-                      <div>
-                        <dt className="inline text-mute">備註：</dt>
-                        <dd className="inline">{s.note}</dd>
-                      </div>
-                    )}
-                  </dl>
-                ) : (
-                  <p className="mt-3 text-sm text-mute">個管：{cm(s.caseMgr) || "未指定"}</p>
-                )}
-              </article>
-            );
-          })}
+    <Link href={"/me/student/?id=" + encodeURIComponent(id)} className="flex min-h-12 items-center gap-2.5 rounded-2xl border border-line bg-card px-4 py-2.5 hover:bg-hover">
+      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2.5">
+        <b className="text-[17px]">{s.name}</b>
+        <span className="text-sm text-mute">
+          {s.cls}
+          {s.seat ? "-" + String(s.seat).padStart(2, "0") : ""}
+        </span>
+        {due && (
+          <Badge tone="warn">
+            {due.name} {md(due.date)}
+          </Badge>
+        )}
+      </span>
+      <ChevronRight size={18} className="text-mute" />
+    </Link>
+  );
+}
+
+function Students() {
+  const x = useNx();
+  const [q, setQ] = useState("");
+  const L = useMemo(() => myStudentList(x.data!.records, x.tid, q.trim()), [x.data, x.tid, q]);
+  const due = useMemo(() => {
+    const m = new Map<string, { name: string; date: string }>();
+    TEACH.dueSoon(x.D!, x.tid, ymd(new Date()), 30).forEach((d) => {
+      if (!m.has(d.s.id)) m.set(d.s.id, d);
+    });
+    return m;
+  }, [x.D, x.tid]);
+
+  return (
+    <div className="max-w-[760px]">
+      <h1 className="mb-4 text-[1.75rem] font-bold tracking-[-0.02em]">我的學生</h1>
+      <label className="relative mb-2 flex items-center">
+        <Search size={18} className="pointer-events-none absolute left-3 text-mute" />
+        <Input type="search" className="w-full pl-10" placeholder="找姓名或班級" value={q} onChange={(e) => setQ(e.target.value)} aria-label="找學生" />
+      </label>
+      <SectionTitle no={1} extra={L.nCm + " 人"} className="mt-6">
+        我個管的
+      </SectionTitle>
+      {L.cm.length ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {L.cm.map((r) => (
+            <Row key={r.id} id={r.id} s={r.s} due={due.get(NX.decId(r.id))} />
+          ))}
         </div>
       ) : (
-        <Card>
-          <p className="flex items-center gap-2 text-ink2">
-            <Users size={18} />
-            名冊上沒有你個管或任教的學生。
-          </p>
-        </Card>
+        <p className="text-sm text-mute">{L.nCm ? "沒有符合的" : "沒有個管的學生"}</p>
       )}
-    </>
+      <SectionTitle no={2} extra={L.nTaught + " 人"} className="mt-7">
+        我教的
+      </SectionTitle>
+      {L.taught.length ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {L.taught.map((r) => (
+            <Row key={r.id} id={r.id} s={r.s} />
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-mute">{L.nTaught ? "沒有符合的" : "沒有"}</p>
+      )}
+    </div>
   );
 }
 
 export default function StudentsPage() {
   return (
-    <AppShell allow={["teacher", "admin"]} title="我的學生">
-      <TeacherGate>{(me, board) => <List me={me} D={board.M.D} />}</TeacherGate>
-    </AppShell>
+    <TeacherShell title="我的學生">
+      <Students />
+    </TeacherShell>
   );
 }
