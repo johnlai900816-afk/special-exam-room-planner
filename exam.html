@@ -551,11 +551,12 @@ body.vw #tab-find{display:block!important}
 <input type="file" id="imp" accept=".json" style="display:none" onchange="importJson(this)">
 <div id="pop"></div><div id="toast"></div><div id="busy">排列中…</div>
 
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<!-- 完整性檢查碼（SRI）和 cloud.js 的 SRI 同一組；升級版本時一起重算 -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" integrity="sha384-ZaR6mWzmJtrRibZ1Vm7SoHFr8OXjyAuGAXalGDKqbxFT18oi/z+oZLIRFkpeNor1" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" integrity="sha384-I1LYojsZ5RM1cOda44Z2h42Qa6YfsQ1XkXxREnhp4ueYBR/4d1pG1K+NZM537Vsj" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js" integrity="sha384-Ke0FJhH7LyRqDxZ0wt+/OXV38yfQVu7g9VPEEGjYmB4RVOY/ta04uecRhsMwT7V3" crossorigin="anonymous"></script>
 <script src="firebase-config.js"></script>
-<script src="school.js?v=9"></script>
+<script src="school.js?v=20"></script>
 <script>
 /*CORE-START*/
 'use strict';
@@ -1268,14 +1269,22 @@ async function docxRows(buf){
   return rows;
 }
 // --- PDF：用 pdf.js 讀文字與表格線，把文字放回格子裡
-function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('PDF 讀取元件載入失敗，請確認網路連線後再試一次。'));document.head.appendChild(s);});}
+function loadScript(src,integrity){return new Promise((ok,no)=>{const s=document.createElement('script');if(integrity){s.integrity=integrity;s.crossOrigin='anonymous';}s.src=src;s.onload=ok;s.onerror=()=>no(new Error('PDF 讀取元件載入失敗，請確認網路連線後再試一次。'));document.head.appendChild(s);});}
 // pdf.js 3.11.174 有安全漏洞（CVE-2024-4367：惡意 PDF 可以執行程式），改用 4.10.38。
 // 4.x 只有 ES module 版本（.mjs，沒有全域 pdfjsLib），所以用 import() 載入；legacy 版給比較舊的瀏覽器也能用。
 const PDFJS='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/';
+// 先用 fetch 帶檢查碼（SRI）下載、核對無誤才載入，worker 也一樣（和 app.js 的 sriBlob 同一組檢查碼）
+const PDFJS_SRI={
+  'legacy/build/pdf.min.mjs':'sha384-z/XbAtvhBXJoK+yvYimnFuTCF6/2wTCDSIFD09/HtIfwFtvDKOMdAe5Z3wOChkmW',
+  'legacy/build/pdf.worker.min.mjs':'sha384-vbNBYP03jHFPlgtK4qSXtazEmGfmpTWlSsfq9OiU20MroW/Q9TbaEXiM7PpeWg+6'};
+async function sriBlob(f){const r=await fetch(PDFJS+f,{integrity:PDFJS_SRI[f],credentials:'omit'});if(!r.ok)throw new Error('pdf.js '+r.status);
+  return URL.createObjectURL(new Blob([await r.text()],{type:'text/javascript'}));}
 let pdfjsLib=null;
 async function pdfLib(){if(pdfjsLib)return pdfjsLib;
-  try{pdfjsLib=await import(PDFJS+'legacy/build/pdf.min.mjs');}catch(e){throw new Error('PDF 讀取元件載入失敗，請確認網路連線後再試一次。');}
-  pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'legacy/build/pdf.worker.min.mjs';return pdfjsLib;}
+  try{const [lib,wk]=await Promise.all([sriBlob('legacy/build/pdf.min.mjs'),sriBlob('legacy/build/pdf.worker.min.mjs')]);
+    const m=await import(lib);m.GlobalWorkerOptions.workerPort=new Worker(wk,{type:'module'});pdfjsLib=m;}
+  catch(e){throw new Error('PDF 讀取元件載入失敗，請確認網路連線後再試一次。');}
+  return pdfjsLib;}
 async function pdfRows(buf){
   const pdfjsLib=await pdfLib();
   // isEvalSupported:false：就算還有類似的漏洞，也不讓 PDF 裡的字型資料被當成程式執行
@@ -1725,7 +1734,7 @@ function downloadDoc(){
   const body=pgs.length?pgs.map((p,i)=>(i?'<br clear="all" style="page-break-before:always">':'')+'<div class="'+(p.classList.contains('hs')?'S2 pg hs':'S1')+'">'+p.innerHTML+'</div>').join(''):box.innerHTML;
   dl((D.title||'段考服務表')+(outMode==='itin'?'_學生動線':outMode==='proc'?'_監考分配':outMode==='hand'?'_交卷名單':outMode==='mk'?'_補考名單':'')+'.doc','﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+css+hsCss+'</style></head><body>'+body+'</body></html>','application/msword');
 }
-const NOTICE_V='19';   // 通知單頁的版本：改 notice.html 要加一
+const NOTICE_V='20';   // 通知單頁的版本：改 notice.html 要加一
 const NKEY='exam-notice-v1'; // 學生通知單（notice.html）自己補的資料：全名、注意事項、導師…
 function exportJson(){const o=Object.assign({},D);try{o._notice=JSON.parse(localStorage.getItem(NKEY));}catch(e){}
   const t=new Date();dl('特殊試場_設定檔備份_'+(D.title||'')+'_'+(t.getMonth()+1)+'-'+t.getDate()+'.json',JSON.stringify(o,null,1),'application/json');toast('已下載備份檔');}
@@ -1833,7 +1842,14 @@ $('share').addEventListener('change',e=>{const s=e.target.closest('[data-role]')
 function openShare(){renderShare();if(!$('share').open)$('share').showModal();
   const A=CLOUD&&CLOUD.access;if(A&&A.link&&CLOUD.user&&A.admin===CLOUD.user.email)ensureClsKeys().then(ch=>{if(ch&&$('share').open)renderShare();});}
 function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
-async function setMembers(emails,viewers,msg){viewers=viewers.filter(e=>emails.includes(e)&&e!==CLOUD.access.admin);try{await CLOUD.db.doc('config/access').update({emails,viewers});CLOUD.access.emails=emails;CLOUD.access.viewers=viewers;setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
+// 老師信箱：只允許一般信箱會用到的字元（和 cloud.js 的 EMAIL_RE 一樣）
+const EMAIL_RE=/^[a-z0-9._%+\-]{1,64}@[a-z0-9\-]{1,63}(\.[a-z0-9\-]{1,63})+$/;
+// 綁定老師（config/access.bind）只留在名單裡、不是主持人的信箱（和 teacher.js 的 cleanBind 一樣）
+function cleanBind(bind,emails,admin){const lc=e=>String(e||'').trim().toLowerCase(),out={},E=new Set((emails||[]).map(lc));
+  for(const k in bind||{}){const e=lc(k),v=String(bind[k]||'');if(v&&E.has(e)&&e!==lc(admin))out[e]=v.slice(0,60);}return out;}
+async function setMembers(emails,viewers,msg){viewers=viewers.filter(e=>emails.includes(e)&&e!==CLOUD.access.admin);const o={emails,viewers};
+  const B=CLOUD.access.bind;if(B&&typeof B==='object'){const nb=cleanBind(B,emails,CLOUD.access.admin);if(JSON.stringify(nb)!==JSON.stringify(B))o.bind=nb;}
+  try{await CLOUD.db.doc('config/access').update(o);Object.assign(CLOUD.access,o);setCloudUI('on');toast(msg);}catch(e){toast('更新失敗：'+(e.code||e.message));}}
 const lkBase=k=>location.href.split(/[?#]/)[0]+'?v='+k;
 // 班級連結：每一班有自己的亂數鑰匙（記在 config/access 的 vcls），拿到某班連結的人推不出全校或別班的鑰匙
 function lkUpd(){const c=$('lkCls').value,A=CLOUD.access||{},k=c?((A.vcls||{})[c]||''):(A.link||'');
@@ -1841,7 +1857,7 @@ function lkUpd(){const c=$('lkCls').value,A=CLOUD.access||{},k=c?((A.vcls||{})[c
   $('lkWarn').innerHTML=c?'':'<div class="card bad" style="margin:4px 0">'+ic('alert')+' 全校連結有全部學生的全名，只給特教組或行政，<b>不要傳給導師或貼到群組</b>。</div>';
   if($('lkQR').innerHTML)lkQR();}
 function lkQR(tog){const el=$('lkQR');if(tog&&el.innerHTML){el.innerHTML='';return;}
-  (window.QRCode?Promise.resolve():loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js')).then(()=>{el.innerHTML='';new QRCode(el,{text:$('lkUrl').value,width:180,height:180});
+  (window.QRCode?Promise.resolve():loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js','sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU')).then(()=>{el.innerHTML='';new QRCode(el,{text:$('lkUrl').value,width:180,height:180});
     const c=$('lkCls').value;el.insertAdjacentHTML('beforeend','<div class="sub">'+(c?esc(c)+' 班專用':'全校')+'・手機掃描就能查考場</div>');}).catch(()=>toast('QR Code 元件載入失敗，請確認網路連線'));}
 const rndKey=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
 const viewClasses=()=>[...new Set(D.students.filter(x=>x.on!==false&&x.cls).map(x=>String(x.cls)))].sort();
@@ -1860,12 +1876,16 @@ async function setLink(on){const acc=CLOUD.db.doc('config/access'),old=CLOUD.acc
   if(old&&!await askBox(on?'換新連結後，舊連結（全校和每一班的）馬上失效，已經拿到舊連結的人要重新給。確定嗎？':'關閉後，拿到連結的人就看不到了。確定嗎？',{ok:on?'換新連結':'關閉連結',danger:true}))return;
   try{
     // 先刪舊的副本（這時安全規則還認得舊鑰匙），再換鑰匙
-    if(old){const ids=[old,old+'_n'].concat(CLOUD.access.vk||[]);for(const id of ids)await CLOUD.db.doc('view/'+id).delete().catch(()=>{});}
+    // 刪不掉的重試兩次；還是不行就提醒（安全規則只讓目前的鑰匙讀得到，所以舊副本換鑰匙後就讀不到了，但資料還留在雲端）
+    let left=[];if(old){const ids=[old,old+'_n'].concat(CLOUD.access.vk||[]);for(const id of ids)if(!(await delRetry(CLOUD.db.doc('view/'+id))))left.push(id);}
     const k=on?rndKey():'';
     await acc.update({link:k,vcls:{},vk:[]});CLOUD.access.link=k;CLOUD.access.vcls={};CLOUD.access.vk=[];CLOUD.lastView={};
     if(k)await ensureClsKeys(true);
     setCloudUI('on');toast(k?'連結已開啟':'連結已關閉');
+    if(left.length)tellBox('有 '+left.length+' 份舊的查考場資料沒刪掉（網路或權限問題）。\n舊連結已經打不開了，但這些資料還留在雲端，到期（最後一天考試後 7 天）才失效。\n請稍後再按一次「換新連結」或「關閉連結」，或請管理者到 Firebase 主控台刪除 view 集合裡的舊文件。','舊連結的資料沒刪乾淨');
   }catch(e){toast('設定失敗：'+(e.code||e.message));}}
+// 刪一份文件：失敗就等一下再試，最多 3 次；回傳有沒有刪掉
+async function delRetry(ref){for(let i=0;i<3;i++){try{await ref.delete();return true;}catch(e){if(i<2)await new Promise(r=>setTimeout(r,800*(i+1)));}}return false;}
 // 姓名遮一個字：王小明→王○明、陳華→陳○、歐陽小明→歐○○明
 function maskName(n){n=String(n||'');if(n.length<2)return n;if(n.length===2)return n[0]+'○';return n[0]+'○'.repeat(n.length-2)+n[n.length-1];}
 // 檢視連結看的是另外一份副本：編輯的人一存檔就跟著更新
@@ -1889,20 +1909,38 @@ function viewConnect(){ // 用檢視連結打開：不用登入，只有「查�
     CLOUD.last={by:x.by,at:x.at};setCloudUI('view');show();},fail);}
 function setRole(e,r){const v=viewersOf().filter(x=>x!==e);if(r==='v')v.push(e);setMembers(CLOUD.access.emails||[],v,e+' 已改成「'+(r==='v'?'只能檢視':'可以編輯')+'」');}
 function addMember(){const el=$('memIn'),v=el.value.trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)){toast('請輸入完整的信箱，例如 teacher@gmail.com');el.focus();return;}
+  if(!EMAIL_RE.test(v)||v.length>120){toast('請輸入完整的信箱，例如 teacher@gmail.com（不能有空白、引號或括號）');el.focus();return;}
   const cur=CLOUD.access.emails||[];if(cur.includes(v)){toast('已經在名單裡');return;}
+  if(cur.length>=100){toast('共用名單最多 100 人');return;}
   const ro=$('memRole').value==='v';setMembers(cur.concat([v]),viewersOf().concat(ro?[v]:[]),'已加入 '+v);}
 async function removeMember(e){if(!await askBox('確定把 '+e+' 移出共用名單？對方之後就看不到這份考場了。',{ok:'移除',danger:true}))return;setMembers((CLOUD.access.emails||[]).filter(x=>x!==e),viewersOf(),'已移除 '+e);}
 function cloudLogin(){CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast('登入失敗：'+(e.code||e.message)));}
 function presBeat(gone){if(!CLOUD||!CLOUD.user||!CLOUD.access)return Promise.resolve();const u=CLOUD.user;
-  return CLOUD.db.doc('exams/presence').set({[u.uid]:gone?firebase.firestore.FieldValue.delete():{email:u.email,name:u.displayName||'',at:Date.now()}},{merge:true}).catch(()=>{});}
-function cloudLogout(){presBeat(true).then(()=>CLOUD.auth.signOut());}
+  return CLOUD.db.doc('exams/presence').set({[u.uid]:gone?firebase.firestore.FieldValue.delete():{email:u.email,name:String(u.displayName||'').slice(0,100),at:Date.now()}},{merge:true}).catch(()=>{});}
+// 登出：和主畫面（cloud.js）一樣，可以一起清除這台電腦上的資料；公用電腦模式預設清除
+const WIPE_KEYS=['resource-class-v1','resource-class-snap','resource-class-lastbackup','resource-class-att-v1','special-exam-room-v1','special-exam-room-v1-mine','exam-notice-v1','rc-cloud-sync','rc-me','rc-iep-tok'];
+function wipeHere(){WIPE_KEYS.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+  try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.indexOf('rc-gemini-')===0)localStorage.removeItem(k);}}catch(e){}
+  try{sessionStorage.clear();}catch(e){}try{if(window.indexedDB)indexedDB.deleteDatabase('rc-snap');}catch(e){}}
+async function cloudLogout(){
+  // 嵌在主畫面裡：交給主畫面的登出（會問要不要清除）
+  if(EMBED&&window.parent!==window&&typeof window.parent.cloudLogout==='function'){$('share').close();window.parent.cloudLogout();return;}
+  let pc=false;try{pc=localStorage.getItem('rc-pc-mode')==='1';}catch(e){}
+  const w=await askBox('登出後，這台電腦就不會再同步雲端上的資料。\n\n要不要同時清除這台電腦上的名冊、排課、點名、段考考場、通知單、IEP 連結和 AI 設定？學校的公用電腦建議清除；雲端上大家共用的那一份不受影響。',
+    {title:'登出',ok:'登出並清除',no:'只登出'+(pc?'（不建議）':''),danger:true});
+  if(w==null)return;
+  await presBeat(true);try{await CLOUD.auth.signOut();}catch(e){}
+  if(w){wipeHere();toast('已登出，並清除這台電腦上的資料');setTimeout(()=>location.reload(),600);}else toast('已登出');}
 function cloudStop(){['unsub','unsubN','unsubP','unsubA'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);clearTimeout(cloudTimer);cloudTimer=null;cloudDirty=false;cloudReady=false;lastPushed='';lastPushedN='';CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;CLOUD.lp=0;CLOUD.rev=0;CLOUD.remote=null;CLOUD.lastView={};}
-function cloudInit(){
+async function cloudInit(){
   if(typeof firebase==='undefined'||!window.FIREBASE_CONFIG){setCloudUI('local');return;}
   firebase.initializeApp(window.FIREBASE_CONFIG);
   CLOUD={auth:firebase.auth(),db:firebase.firestore(),user:null,unsub:null,unsubN:null,unsubP:null,access:null,presence:{},last:null};
   if(VIEWK){viewConnect();return;}
+  // 公用電腦模式（主畫面設定的 rc-pc-mode）：登入只存在這個分頁；單獨打開時，新分頁先登出（和 cloud.js 一樣）
+  let pc=false;try{pc=localStorage.getItem('rc-pc-mode')==='1';}catch(e){}
+  if(pc){if(!EMBED){let tab=null;try{tab=sessionStorage.getItem('rc-pc-tab');}catch(e){}if(!tab){try{await CLOUD.auth.signOut();}catch(e){}try{sessionStorage.setItem('rc-pc-tab','1');}catch(e){}}}
+    try{await CLOUD.auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);}catch(e){}}
   CLOUD.auth.onAuthStateChanged(u=>{cloudStop();CLOUD.user=u;
     if(!u){setCloudUI('out');return;}setCloudUI('wait');cloudConnect();});
   window.addEventListener('pagehide',()=>{presBeat(true);});

@@ -43,7 +43,7 @@ textarea{width:100%;min-height:70px;font:inherit;border:1px solid var(--line);bo
 <main id="app"><p class="sub">載入中…</p></main>
 <div class="bar" id="bar" hidden><div><span id="cnt"></span><button id="send" type="button">送出</button></div></div>
 <script src="firebase-config.js"></script>
-<script src="iep.js?v=17"></script>
+<script src="iep.js?v=20"></script>
 <script>
 'use strict';
 // 所有畫面文字都經過 esc；不用 inline onclick，事件一律用 addEventListener
@@ -52,14 +52,18 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const K=new URLSearchParams(location.search).get('k')||'';
 let DOC=null,FREE=new Set(),FN=null,dirty=false;
 function fail(m){$('app').innerHTML='<div class="msg bad">'+esc(m)+'</div>';$('bar').hidden=true;}
-function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error(src));document.head.appendChild(s);});}
+// 外部元件帶完整性檢查碼（SRI）：CDN 上的檔案被換掉時瀏覽器會拒絕執行；升級版本時一起重算
+const SRI={'app-compat.js':'sha384-ZaR6mWzmJtrRibZ1Vm7SoHFr8OXjyAuGAXalGDKqbxFT18oi/z+oZLIRFkpeNor1',
+  'functions-compat.js':'sha384-hB0JJ4rNFhrwFXdiM7+wikJ3oIxttbx7D6zdYANzqbCt8CL8nLpOgbABsh5Mp3WC',
+  'app-check-compat.js':'sha384-Tsd7RAB2e2isM7pHHNFd4hZbrHBtszy6x4HCQqkLDM7PTHvRAjrMZKBOP2ntQDqc'};
+function loadScript(src,integrity){return new Promise((ok,no)=>{const s=document.createElement('script');if(integrity){s.integrity=integrity;s.crossOrigin='anonymous';}s.src=src;s.onload=ok;s.onerror=()=>no(new Error(src));document.head.appendChild(s);});}
 async function start(){
   const cfg=window.FIREBASE_CONFIG;
   if(!IEP.TOKEN_RE.test(K)){fail('這個連結不完整。請重新掃描 QR Code，或請個管老師再傳一次連結。');return;}
   if(!cfg||!cfg.projectId){fail('這個網站目前沒有開啟線上調查。請直接回覆個管老師。');return;}
   // 只經過 Cloud Functions 讀寫，這一頁完全不直接碰資料庫
-  try{const B='https://www.gstatic.com/firebasejs/10.14.1/firebase-';await loadScript(B+'app-compat.js');await loadScript(B+'functions-compat.js');
-    if(window.FIREBASE_APPCHECK_KEY)await loadScript(B+'app-check-compat.js');}
+  try{const B='https://www.gstatic.com/firebasejs/10.14.1/firebase-';for(const f of ['app-compat.js','functions-compat.js'])await loadScript(B+f,SRI[f]);
+    if(window.FIREBASE_APPCHECK_KEY)await loadScript(B+'app-check-compat.js',SRI['app-check-compat.js']);}
   catch(e){fail('網路連不上，請稍後再試。');return;}
   firebase.initializeApp(cfg);
   // App Check（設了金鑰才啟用；Function 端設 IEP_APPCHECK=enforce 後就一定要有）
