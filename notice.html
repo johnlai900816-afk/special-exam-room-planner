@@ -13,15 +13,13 @@
 </script>
 <style>
 /* ---------- 通知單本體（尺寸照原 Word 檔：A4、邊界 1.27cm、標楷體） ---------- */
-/* 高度 296mm（比 A4 少一點），避免印表機把最後一點點擠到第二張 */
-.page{width:210mm;height:296mm;box-sizing:border-box;padding:12.7mm;position:relative;overflow:hidden;background:#fff;color:#000;
+.page{width:210mm;height:296.8mm;box-sizing:border-box;padding:12.7mm;position:relative;overflow:hidden;background:#fff;color:#000;
   font-family:"Times New Roman","標楷體","DFKai-SB","BiauKaiTC","BiauKai","Kaiti TC","AR PL UKai TW",serif;font-size:12pt;line-height:18pt;
   -webkit-print-color-adjust:exact;print-color-adjust:exact;font-kerning:none;text-autospace:normal}
 .page p{margin:0}
 .page .t1,.page .t2{text-align:center;font-weight:bold;font-size:18pt;line-height:36pt}
 .page .t1{margin-bottom:9pt}
-/* 左上角方框：原本離紙邊 5.7mm，多數印表機印不到（不可列印區約 5mm），往下移到 8mm */
-.page .label{position:absolute;left:15.9mm;top:8mm;width:43.2mm;height:16.7mm;box-sizing:border-box;border:.5pt solid #000;background:#fff;
+.page .label{position:absolute;left:15.9mm;top:5.7mm;width:43.2mm;height:16.7mm;box-sizing:border-box;border:.5pt solid #000;background:#fff;
   padding:1.27mm 2.54mm;font-family:"Times New Roman","新細明體","PMingLiU","Songti TC",serif;font-weight:bold;font-size:26pt;line-height:36pt;white-space:nowrap;overflow:hidden;text-align:left}
 .page .who{font-weight:bold;font-size:18pt;line-height:36pt}
 .page .who u{text-decoration-thickness:1pt;text-underline-offset:2pt}
@@ -45,10 +43,6 @@
 .page .notes p.n2{text-indent:15mm;margin-bottom:9pt}
 .page .notes u{text-underline-offset:2pt}
 .page .notes .bx{padding:1pt 0}
-/* 家長回條：虛線以下剪下交回 */
-.page .reply{margin-top:10pt;font-size:13pt;line-height:24pt}
-.page .reply .cut{border-top:1pt dashed #000;text-align:center;font-size:9pt;line-height:14pt;margin-bottom:4pt}
-.page .reply .ln{display:inline-block;width:32mm;border-bottom:.75pt solid #000}
 
 /* ---------- 操作介面（DESIGN.md 的代號與元件；通知單本體永遠白底黑字） ---------- */
 :root{--bg:#f7f5f1;--card:#ffffff;--sunk:#efece6;--line:#e7e3db;--line2:#d6d0c5;--ink:#1f2430;--ink2:#4a5060;--mute:#6b6f7a;--red:#b8423a;--blue:#2f5c8a;--blue-l:#e9eff6;
@@ -309,10 +303,8 @@ function noticeHtml(stu){
   if(H.label)h+='<div class="label"><span class="sh">'+esc(H.label)+'</span></div>';
   h+='<p class="t1">'+esc(H.line1)+'</p><p class="t2">'+esc(H.line2)+'</p>';
   h+='<p class="who"><u>'+id+'</u>：</p>';
-  // 有共用名冊時，寫這位學生自己的個管老師；沒有才用共同的「學習中心導師」
-  const cm=caseMgrOf(stu);
   h+='<p class="intro">'+(H.stampOn?'<img class="stamp" src="'+esc(stampSrc)+'" alt="">':'')+
-     '請詳細閱讀通知單下方的<span class="big">【注意】</span>事項，同時<span class="dbl">注意考試地點和時間</span>，不要遲到，如有疑問，請找'+(cm?'個管老師：'+esc(cm):'學習中心導師：'+esc(H.teachers))+'。</p>';
+     '請詳細閱讀通知單下方的<span class="big">【注意】</span>事項，同時<span class="dbl">注意考試地點和時間</span>，不要遲到，如有疑問，請找學習中心導師：'+esc(H.teachers)+'。</p>';
   h+='<div class="gap1"></div><div class="gap2"></div>';
   h+='<table class="nt"><colgroup><col style="width:9.84mm"><col style="width:9.93mm"><col style="width:19.86mm"><col style="width:20.28mm"><col style="width:39.93mm"><col style="width:10mm"><col style="width:19.79mm"><col style="width:20.28mm"><col style="width:38.93mm"></colgroup>';
   h+='<tr><td class="name" colspan="9">學生姓名：<u>'+id+'</u></td></tr>';
@@ -335,7 +327,6 @@ function noticeHtml(stu){
   h+='</table>';
   const notes=String(stu.notes!=null?stu.notes:D.notes).split('\n').map(x=>x.trim()).filter(x=>x);
   h+='<div class="notes">'+notes.map((t,i)=>i===0?'<p style="margin-left:.5mm">注意：1、'+mark(t)+'</p>':'<p class="n2">'+(i+1)+'、'+mark(t)+'</p>').join('')+'</div>';
-  if(H.reply)h+='<div class="reply"><div class="cut">請沿虛線剪下，家長簽名後交回</div><p><b>家長回條</b>　已收到 <u>'+id+'</u> 的特殊考場通知單，並了解考試地點與時間。</p><p>家長簽名：<span class="ln"></span>　日期：<span class="ln"></span></p></div>';
   return h+'</div>';
 }
 // 內容超出一張 A4（例如注意事項太長、加了回條）：列出來提醒老師，免得印出來被切掉
@@ -403,7 +394,6 @@ function edExam(){
   h+='<label class="f">標題第一行'+inp('head.line1',H.line1)+'</label><label class="f">標題第二行'+inp('head.line2',H.line2)+'</label>';
   h+='<div class="row"><label class="f">左上角方框（留白＝不顯示）'+inp('head.label',H.label)+'</label><label class="f">沒填地點時顯示'+inp('defLoc',D.defLoc)+'</label></div>';
   h+='<label class="f">學習中心導師'+inp('head.teachers',H.teachers,'王小明老師、陳小華老師')+'</label>';
-  h+='<label class="chk" style="margin-bottom:8px"><input type="checkbox" data-k="head.reply" data-keep="1"'+(H.reply?' checked':'')+'> 加家長回條</label>';
   h+='<h3>印章</h3><div class="row"><label class="chk"><input type="checkbox" data-k="head.stampOn" data-keep="1"'+(H.stampOn?' checked':'')+'> 顯示印章</label><button class="b" data-act="stamp">換印章</button>'+(H.stamp?'<button class="b" data-act="stampReset">改回原本的</button>':'')+'</div><input type="file" id="stampFile" accept="image/*" hidden>';
   h+='<h3>日期</h3>';
   D.days.forEach((dy,d)=>{h+='<div class="row"><label class="f">第 '+(d+1)+' 天日期'+inp('days.'+d+'.date',dy.date,'10月14日')+'</label><label class="f" style="flex:.5">星期'+inp('days.'+d+'.dow',dy.dow,'三')+'</label></div>'+
