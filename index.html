@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css?v=16">
+<link rel="stylesheet" href="app.css?v=17">
 </head>
 <body>
 <aside class="side">
@@ -20,6 +20,7 @@
     <button data-p="checkin"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>簽到退</button>
   </nav>
   <div class="grow"></div>
+  <button class="b aiset" onclick="gmSettings()" title="Gemini 金鑰與模型，只存在這個瀏覽器">AI 設定</button>
   <div id="cloud"></div>
 </aside>
 <main id="main">
@@ -36,10 +37,12 @@
 <div id="busy">排課中…</div>
 <div id="toast"></div>
 <script src="firebase-config.js"></script>
-<script src="school.js?v=16"></script>
-<script src="core.js?v=16"></script>
-<script src="cloud.js?v=16"></script>
-<script src="checkin.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="school.js?v=17"></script>
+<script src="core.js?v=17"></script>
+<script src="cloud.js?v=17"></script>
+<script src="checkin.js?v=17"></script>
+<script src="gemini.js?v=17"></script>
+<script src="ai.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

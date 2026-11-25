@@ -1,0 +1,16 @@
+{
+  "name": "resource-class-functions",
+  "private": true,
+  "description": "資源班管理系統的 Cloud Functions（AI 代理等）",
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "scripts": {
+    "test": "node test-ai.js",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  }
+}

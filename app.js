@@ -258,12 +258,13 @@ function aiOpen(){openDlg(`<h3>用 AI 排課</h3><p class="note">系統把目前
   <div class="bar"><button class="b pri" onclick="aiCopy()">1. 複製題目</button><span class="note" style="margin:0">貼到 Claude 等 AI 對話</span></div>
   <textarea id="aiBox" placeholder="2. 把 AI 回覆的 JSON 貼在這裡"></textarea>
   <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="aiOk()">3. 套用並檢查衝堂</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function aiCopy(){const t=aiPrompt(D),fb=()=>{const b=$('aiBox');b.value=t;b.select();toast('沒辦法自動複製，請手動複製下面的文字，貼給 AI 後再把這格換成它的回覆');};
+function aiCopy(){const t=aiPrompt(D);aiCopy.v=aiProblem(D).v;const fb=()=>{const b=$('aiBox');b.value=t;b.select();toast('沒辦法自動複製，請手動複製下面的文字，貼給 AI 後再把這格換成它的回覆');};
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>toast('題目已複製（'+t.length+' 字），人名都換成代號了'),fb);else fb();}
-function aiOk(){const txt=$('aiBox').value;if(!txt.trim()){toast('請先貼上 AI 的回覆');return;}pushUndo();let r;
-  try{r=aiApply(D,txt);}catch(e){undoStack.pop();toast('看不懂這段回覆，請確認貼的是 AI 回傳的 JSON');return;}
-  rebuild();closeDlg();commit();const o=[];evaluate(M,ST.slot,o);
-  toast('已套用 '+r.lessons+' 節'+(r.bad?'（略過 '+r.bad+' 項看不懂的）':'')+'；'+(o.length?'檢查出 '+o.length+' 個問題，可按一鍵排課修正':'沒有衝堂'));}
+// 貼回來的排法和 Gemini 的一樣只是候選：在複本上檢查，比現在好才給套用（gmOffer 在檔案後面的 Gemini 區塊）
+function aiOk(){const txt=$('aiBox').value;if(!txt.trim()){toast('請先貼上 AI 的回覆');return;}
+  const v=aiCopy.v,id=GEMINI.logAdd({kind:'paste',model:'外部 AI',mode:'paste',prompt:'（複製出去的題目，版本 '+(v||'不明')+'）',reply:txt});
+  openDlg('<h3>AI 的排法</h3><div id="gmRes"></div><div class="bar" style="margin:12px 0 0"><button class="b" onclick="closeDlg()">關閉</button></div>');
+  gmOffer(JSON.parse(JSON.stringify(D)),txt,v,true,id,$('gmRes'));}
 function delGroup(i){if(!confirm('確定刪除「'+D.groups[i].name+'」？'))return;D.groups.splice(i,1);changed();render();}
 function setCS(el){if(el.value)D.classSubj[el.dataset.k]=el.value;else delete D.classSubj[el.dataset.k];changed();render();}
 function togGS(i,id){const a=D.groups[i].students,k=a.indexOf(id);if(k>=0)a.splice(k,1);else a.push(id);changed();}
@@ -797,6 +798,229 @@ function ttApplyCS(){const tt=D.tt||{};let n=0;const list=[];
   snapshot('用課表更新任課老師之前');list.forEach(([c,b,name])=>{const t=findTeacher(D,name,'普通班'),k=c+'|'+canonSubj(D,b);if(D.classSubj[k]!==t.id){D.classSubj[k]=t.id;n++;}});
   D=normalize(D);changed();render();toast('更新了 '+n+' 格任課老師');}
 function ttClear(){if(!confirm('清除讀進來的全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
+
+/* ───── Gemini（AI 設定、AI 排課候選、用文字調整、說明問題、看圖核對全校課表）─────
+   連線在 gemini.js、題目與檢查在 ai.js，伺服器端代理在 functions/ai.js，這裡只有畫面。
+   原則：本機排課程式是裁判，AI 只提候選；送出前去識別化；第一次送出前給老師看內容；每次使用都記在這台瀏覽器。
+   AI 回來的文字一律用 textContent 放進畫面（gmEl），不放進 innerHTML、也不放進 onclick 字串。
+   為了不和別的分支改同一行，原本的 aiOpen、renderBoard、renderTT、ttEdit、ttEditOk 不直接改，在這裡包一層。 */
+let gmCtl=null,GMTT=null,gmTTCtl=null;const TTSUG={};
+GEMINI.config({   // 代理模式用 Firebase 登入：有沒有登入、ID token、目前的專案
+  signedIn:()=>typeof CLOUD!=='undefined'&&!!CLOUD&&!!CLOUD.user&&cloudState==='on',
+  idToken:()=>CLOUD&&CLOUD.user?CLOUD.user.getIdToken():'',
+  projectId:()=>(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.projectId)||''
+});
+// 安全地建立畫面元素：文字一律當文字，事件用 addEventListener
+function gmEl(tag,attrs,...kids){const e=document.createElement(tag);
+  for(const k in attrs||{}){const v=attrs[k];if(v==null||v===false)continue;
+    if(/^on/.test(k))e.addEventListener(k.slice(2),v);else if(k==='class')e.className=v;else if(['value','checked','disabled','hidden','type','src','href','htmlFor','title','placeholder'].includes(k))e[k]=v;else e.setAttribute(k,v===true?'':String(v));}
+  kids.flat(9).forEach(c=>{if(c==null||c===false)return;e.append(c instanceof Node?c:String(c));});return e;}
+const gmReady=()=>typeof GEMINI!=='undefined'&&GEMINI.ready();
+const gmMsg=e=>e&&e.name==='GeminiError'?e.message:'發生錯誤：'+((e&&e.message)||e);
+const gmLabel=id=>{const c=GEMINI.cached(),m=c&&c.list.find(x=>x.id===id);return m?m.label:id;};
+const gmModeText=()=>GEMINI.getMode()==='proxy'?'學校的 AI 服務':'你自己的金鑰';
+const GM_KIND={sched:'AI 排課',adj:'用文字調整',explain:'說明問題',tt:'看圖核對課表',paste:'複製貼上的 AI 排法'};
+function gmSetStatus(t,bad){const el=$('gmSt');if(el){el.textContent=t||'';el.className='gmst'+(bad?' bad':'');}}
+function gmStart(t){if(gmCtl)gmCtl.abort();gmCtl=new AbortController();gmSetStatus(t);const b=$('gmStop');if(b)b.hidden=false;document.querySelectorAll('.gmgo').forEach(x=>{x.disabled=true;});return gmCtl.signal;}
+function gmEnd(){gmCtl=null;const b=$('gmStop');if(b)b.hidden=true;document.querySelectorAll('.gmgo').forEach(x=>{x.disabled=false;});}
+$('dlg').addEventListener('close',()=>{if(gmCtl)gmCtl.abort();});   // 關掉對話框就不等了，免得回覆回來時改到別的畫面
+// 「狀態列＋取消」：每個 AI 對話框共用
+const gmBar=(label,go)=>gmEl('div',{class:'bar'},gmEl('button',{class:'b pri gmgo',onclick:go},label),gmEl('button',{class:'b',id:'gmStop',hidden:true,onclick:()=>{if(gmCtl)gmCtl.abort();}},'取消'),gmEl('span',{id:'gmSt',class:'gmst'}));
+// 每個 AI 功能底下的一行提醒：資料去哪裡、送了什麼
+function gmNotice(what){return gmEl('p',{class:'aisafe'},'資料會送到 Google 的 Gemini 處理（'+gmModeText()+'）。'+what+(GEMINI.getMode()==='browser'?'用自己的金鑰時，免費方案的內容可能被 Google 用來改進服務；正式的學生資料請用學校的 AI 服務或付費金鑰。':''));}
+function gmNoReady(what){return gmEl('p',{class:'aisafe'},'接上 Gemini 之後，'+what+'。',gmEl('button',{class:'b sm',onclick:gmSettings},'AI 設定'));}
+// 快照的時間：寫進使用紀錄，之後可以「回到這次之前」
+function gmSnap(label){snapshot(label);const a=snaps();return a.length?a[a.length-1].at:0;}
+
+/* 第一次送出某一種資料前，先給老師看會送出什麼；按「送出」才送，之後同一種就不再問（使用紀錄裡隨時可以再看） */
+function gmPreview(kind,req,host){
+  if(GEMINI.seen(kind))return Promise.resolve(true);
+  return new Promise(done=>{const box=gmEl('div',{class:'gmprev'},
+    gmEl('b',null,'第一次使用「'+GM_KIND[kind]+'」：下面是會送給 Gemini 的全部內容'),
+    gmEl('p',{class:'note'},'學生姓名一律換成代號'+(GEMINI.namesOk()?'；你已同意送出老師姓名':'，老師姓名也換成代號')+(req.scrubbed?'（這次換掉 '+req.scrubbed+' 處）':'')+'。確認沒有不該送的資料再按「送出」。'),
+    (req.images||[]).map(src=>gmEl('img',{src,class:'gmimg',alt:'要送出的圖片'})),
+    gmEl('pre',{class:'gmpre'},(req.system?'【系統說明】\n'+req.system+'\n\n':'')+req.prompt),
+    gmEl('div',{class:'bar'},gmEl('button',{class:'b pri',onclick:()=>{GEMINI.setSeen(kind);box.remove();done(true);}},'送出'),gmEl('button',{class:'b',onclick:()=>{box.remove();done(false);}},'不要送')));
+    host.replaceChildren(box);});
+}
+// 送出：預覽 → 呼叫 → 回傳結果（取消或失敗時回 null，狀態列會寫原因）
+async function gmAsk(kind,req,host,msg){
+  if(!(await gmPreview(kind,req,host))){gmSetStatus('沒有送出');return null;}
+  const signal=gmStart(msg||'Gemini 想想看…');
+  try{const r=await GEMINI.generate(Object.assign({},req,{kind,signal,names:kind==='tt'||GEMINI.namesOk(),onWait:e=>gmSetStatus(e.message+' 系統會自動再試一次…')}));gmEnd();gmSetStatus('');return r;}
+  catch(e){gmEnd();gmSetStatus(gmMsg(e),e.code!=='cancel');return null;}
+}
+
+/* ───── AI 設定：放在側邊欄，因為它是「這台瀏覽器」的設定，不屬於學校的名冊資料 ───── */
+function gmSettings(){openDlg('');const B=$('dlgBody'),c=GEMINI.cached(),mode=GEMINI.getMode(),signed=GEMINI.config&&typeof CLOUD!=='undefined'&&!!CLOUD&&!!CLOUD.user&&cloudState==='on';
+  const cur=GEMINI.getModel(),def=c?GEMINI.defaultModel(c.list):'',add=new Set((c&&c.added)||[]);
+  const radio=(v,label,sub)=>gmEl('label',{class:'gmmode'},gmEl('input',{type:'radio',name:'gmMode',value:v,checked:mode===v,onchange:()=>{GEMINI.setMode(v);gmSettings();}}),gmEl('b',null,label),gmEl('small',null,sub));
+  const keyIn=gmEl('input',{type:'password',id:'gmKey',class:'gmkey',value:GEMINI.getKey(),placeholder:'貼上 Gemini API 金鑰',autocomplete:'off',spellcheck:'false'});
+  const sel=gmEl('select',{id:'gmModel',disabled:!(c&&c.list.length),onchange:e=>{GEMINI.setModel(e.target.value);toast('改用 '+gmLabel(e.target.value));}},
+    c&&c.list.length?c.list.map(m=>gmEl('option',{value:m.id,selected:m.id===cur},m.label+(m.id===def?'（建議）':'')+(m.preview?'（預覽版）':'')+(add.has(m.id)?'（新）':''))):gmEl('option',null,'先按「測試連線」，系統會查出可以用的模型'));
+  B.append(gmEl('h3',null,'AI 設定（Google Gemini）'),
+    gmEl('p',{class:'note'},'接上 Gemini 之後：排課頁可以請 AI 提一份候選排法（系統檢查過比現在好才給你選）、用文字加限制或調整、請 AI 用白話說明排不開的原因；全校課表頁可以請 AI 看圖核對認不出的老師。不接也沒關係，原本的功能都照常。'),
+    gmEl('h4',null,'1. 連線方式'),
+    radio('proxy','學校的 AI 服務（建議）','登入雲端後使用，經過學校的 Firebase 伺服器呼叫 Google Vertex AI；瀏覽器裡沒有金鑰，每次使用都有稽核紀錄。'+(signed?'':'（現在沒有登入雲端，不能用）')),
+    radio('browser','自己的金鑰（個人試用）','瀏覽器直接呼叫 Google，適合沒有雲端時自己試用。'),
+    mode==='browser'?gmEl('div',null,
+      gmEl('div',{class:'aisafe warnbox'},gmEl('b',null,'請注意：'),'資料會直接送到 Google。免費金鑰的內容可能被 Google 用來改進服務；有真實學生資料時，請改用「學校的 AI 服務」或已開通付費的金鑰。金鑰只存在這台電腦的這個瀏覽器（不進名冊、不跟著雲端或備份出去），但網頁若被植入惡意程式就可能被偷，公用電腦用完請按「清除金鑰」。'),
+      gmEl('p',{class:'note'},'到 ',gmEl('a',{href:GEMINI.AI_STUDIO,target:'_blank',rel:'noopener'},'Google AI Studio'),' 用 Google 帳號登入，按「Create API key」（建立 API 金鑰），把那一串 AIza 開頭的字貼到下面。'),
+      gmEl('div',{class:'bar'},keyIn,gmEl('button',{class:'b sm',onclick:()=>{keyIn.type=keyIn.type==='password'?'text':'password';}},'顯示'))):
+      gmEl('p',{class:'note'},'服務網址：'+(GEMINI.getProxy()||'（還沒有：請先登入雲端）')+'。只有共用名單裡「編輯」以上的老師可以用，每人每分鐘、每天有次數上限。'),
+    gmEl('div',{class:'bar'},gmEl('button',{class:'b pri gmgo',onclick:gmTest},mode==='browser'?'儲存並測試連線':'測試連線'),
+      GEMINI.getKey()?gmEl('button',{class:'b',onclick:()=>{if(!confirm('清除這個瀏覽器裡的 Gemini 金鑰？'))return;GEMINI.setKey('');gmSettings();toast('已清除金鑰');}},'清除金鑰'):null,
+      gmEl('button',{class:'b',id:'gmStop',hidden:true,onclick:()=>{if(gmCtl)gmCtl.abort();}},'取消'),gmEl('span',{id:'gmSt',class:'gmst'})),
+    gmEl('h4',null,'2. 模型'),
+    gmEl('div',{class:'bar'},sel,gmEl('button',{class:'b gmgo',onclick:gmRefresh,disabled:!GEMINI.ready()},'重新整理模型清單')),
+    gmEl('p',{class:'note'},'清單是直接向 Google 查的，新模型出來會自動出現（每天自動檢查一次）'+(c?'；上次檢查 '+fmtTime(c.at)+'，有 '+c.list.length+' 個可以用':'')+'。建議用標「建議」的；pro 比較聰明但比較慢、額度比較少；預覽版可能隨時被換掉。'),
+    gmEl('h4',null,'3. 送出哪些資料'),
+    gmEl('label',{class:'note'},gmEl('input',{type:'checkbox',checked:GEMINI.namesOk(),onchange:e=>{GEMINI.setNamesOk(e.target.checked);}}),' 可以送出老師姓名（不勾的話，老師也換成代號 T1、T2…；看圖核對課表一定要勾，因為圖上就有名字）'),
+    gmEl('ul',{class:'note gmul'},gmEl('li',null,'學生姓名一律換成代號（S1、S2…），不會送出。'),gmEl('li',null,'每一種功能第一次送出前，會先給你看完整內容。'),gmEl('li',null,'學校的 AI 服務在伺服器上會再換一次姓名，並記下誰、何時、用途、用量（不記內容）。')),
+    gmEl('h4',null,'4. 這台瀏覽器的使用紀錄'),gmLogView(),
+    gmEl('div',{class:'bar',style:'margin:12px 0 0'},gmEl('button',{class:'b',onclick:()=>{if(!confirm('清除這個瀏覽器裡所有 Gemini 設定與使用紀錄？'))return;GEMINI.forget();gmSettings();toast('已清除');}},'全部清除'),gmEl('button',{class:'b',onclick:closeDlg},'關閉')));}
+// 使用紀錄：每次送了什麼、回了什麼、最後套用了什麼；套用過的可以回到那次之前
+function gmLogView(){const a=GEMINI.logList().slice().reverse();if(!a.length)return gmEl('p',{class:'note'},'還沒有使用紀錄。');
+  return gmEl('ul',{class:'gmlog'},a.map(x=>{const det=(t,s)=>gmEl('details',null,gmEl('summary',null,t),gmEl('pre',{class:'gmpre'},s||'（沒有）'));
+    const i=x.snapAt?snaps().findIndex(s=>s.at===x.snapAt):-1;
+    return gmEl('li',null,gmEl('div',null,gmEl('b',null,fmtTime(x.at)+' '+(GM_KIND[x.kind]||x.kind)),' '+(x.model||'')+(x.images?'（含 '+x.images+' 張圖）':'')),
+      x.error?gmEl('div',{class:'warn'},'失敗：'+x.error):null,x.applied?gmEl('div',{class:'ok'},'已套用：'+x.applied):gmEl('div',{class:'dim'},x.error?'':'沒有套用'),
+      det('送出的內容',x.prompt),det('Gemini 的回覆',x.reply),
+      i>=0?gmEl('button',{class:'b sm',onclick:()=>{closeDlg();restoreSnap(i);}},'回到這次之前'):null);}));}
+async function gmTest(){const k=$('gmKey');if(k){if(!k.value.trim()){toast('請先貼上金鑰');return;}GEMINI.setKey(k.value);}
+  gmStart('連線中…');
+  try{const r=await GEMINI.test();gmEnd();gmSettings();
+    gmSetStatus(r.err?'找到 '+r.list.length+' 個模型；但試用「'+gmLabel(r.model)+'」時：'+gmMsg(r.err):'連線成功：找到 '+r.list.length+' 個模型，「'+gmLabel(r.model)+'」回覆「'+r.reply.slice(0,20)+'」',!!r.err);gmNews(r);}
+  catch(e){gmEnd();gmSetStatus(gmMsg(e),true);}}
+async function gmRefresh(){gmStart('查詢模型中…');
+  try{const r=await GEMINI.ensureModels({force:true});gmEnd();gmSettings();gmSetStatus('已更新：有 '+r.list.length+' 個可以用'+(r.added.length?'，新的有 '+r.added.length+' 個':'，沒有新的'));gmNews(r);}
+  catch(e){gmEnd();gmSetStatus(gmMsg(e),true);}}
+function gmNews(r){if(r.added&&r.added.length)toast('Gemini 有新模型：'+r.added.slice(0,3).map(gmLabel).join('、')+(r.added.length>3?' 等 '+r.added.length+' 個':'')+'，可以到 AI 設定改用');
+  if(r.dropped)toast('原本選的模型「'+r.dropped+'」已經下架，改用「'+gmLabel(GEMINI.getModel())+'」');}
+
+/* ───── (a) AI 排課：Gemini 或複製貼上的 AI 排法都只是「候選」，本機檢查後比現在好才給選 ───── */
+if(typeof aiOpen==='function'){const aiOpen0=aiOpen;aiOpen=function(){aiOpen0();const h=$('dlgBody').querySelector('h3');if(!h)return;
+  const box=gmReady()?gmEl('div',{class:'gmbox'},gmEl('b',null,'直接請 Gemini 提一份排法（'+gmLabel(GEMINI.getModel())+'）'),
+    gmEl('p',{class:'note'},'按一下就送出，不用複製貼上。回來的排法會先用系統的衝堂檢查比過：衝突沒有變多、而且比現在的好，才會讓你套用；不然會說明為什麼不採用。'),
+    gmEl('label',{class:'note'},gmEl('input',{type:'checkbox',id:'gmFix',checked:true}),' Gemini 排好的先保留，衝突的那幾節交給系統修'),
+    gmBar('請 Gemini 排',gmSched),gmEl('div',{id:'gmRes'}),gmNotice('學生、老師都換成代號，不送姓名。')):gmNoReady('可以按一下直接請 AI 排，不用複製貼上');
+  h.after(box,gmEl('h4',null,'或用複製貼上'));};}
+async function gmSched(){if(!M.L.length){toast('還沒有要排的組，請先到「老師開課」建立');return;}
+  const D0=JSON.parse(JSON.stringify(D)),req=AI.schedRequest(D0,{names:GEMINI.namesOk()}),fix=$('gmFix')&&$('gmFix').checked,host=$('gmRes');host.replaceChildren();
+  const r=await gmAsk('sched',req,host,'Gemini 排課中（題目 '+req.prompt.length+' 字）；pro 類的模型可能要想一兩分鐘…');if(!r)return;
+  gmOffer(D0,r.json,req.v,fix,r.logId,host);}
+// 評估候選排法並顯示：比現在好才有「套用」按鈕
+function gmOffer(D0,reply,v,fix,logId,host){let K;
+  try{K=AI.schedCheck(D0,reply,v);}catch(e){host.replaceChildren(gmEl('div',{class:'probs'},e.code==='stale'?e.message:'看不懂這份排法：'+(e.message||e)));if(logId)GEMINI.logUpdate(logId,{error:'無法套用：'+(e.message||e)});return;}
+  let slot=K.S.slot,moved=0;if(fix&&K.viol){const R=AI.schedRepair(K.M,K.S,K.out,{seed:D.settings.seed||1});slot=R.slot;moved=R.moved;}
+  const J=AI.schedJudge(M,ST.slot,K.M,slot),bad=K.out.filter(o=>o.k!=='un').length,tot=K.M.L.length;
+  const line=t=>gmEl('div',null,t);
+  const box=gmEl('div',{class:'probs'+(J.ok?' ok':'')},
+    line('AI 排了 '+(tot-K.un)+' / '+tot+' 節'+(bad?'，其中 '+bad+' 個衝突':'，沒有衝突')+(K.un?'，'+K.un+' 節沒排':'')+'；新編入 '+K.r.members+' 人次。'),
+    K.r.bad.length?gmEl('details',null,gmEl('summary',null,'有 '+K.r.bad.length+' 項不符合規則，沒有採用'),gmEl('ul',null,K.r.bad.slice(0,40).map(t=>gmEl('li',null,t)))):null,
+    moved?line('系統修改了 '+moved+' 節衝突的課。'):null,
+    line('和現在比：問題 '+J.cand.viol+'（現在 '+J.cur.viol+'）、待安排的學生 '+J.cand.pend+' 人次（現在 '+J.cur.pend+'）、分數 '+J.cand.cost.toFixed(1)+'（現在 '+J.cur.cost.toFixed(1)+'，越小越好）'+(K.M.flex?'、鎖不到課 '+J.cand.open+'（現在 '+J.cur.open+'）':'')+'。'),
+    K.note?gmEl('div',{class:'dim'},'AI 的說明：'+AI.unscrub(D0,K.note)):null,
+    J.ok?null:gmEl('div',{class:'err'},'不採用：'+J.why.join('；')+'。目前的課表不會被改動。'));
+  const draft=typeof window.setDraft==='function';
+  host.replaceChildren(box,J.ok?gmEl('div',{class:'bar'},gmEl('button',{class:'b pri',onclick:()=>gmSchedApply(K,slot,v,logId)},draft?'放進試排':'套用到課表'),
+    gmEl('span',{class:'note',style:'margin:0'},draft?'放進試排後可以和目前的課表比較，再決定要不要確定。':'套用前會自動保留一份，可以按「復原」或在使用紀錄裡回到這次之前。')):null);
+  if(logId)GEMINI.logUpdate(logId,{judged:J.ok?'比現在好':'不採用：'+J.why.join('；')});}
+function gmSchedApply(K,slot,v,logId){if(isRO()){toast('你是檢視權限，不能修改');return;}
+  if(aiProblem(D).v!==v){toast('資料在等待的時候被改過了，請重新請 AI 排');return;}
+  const diff=AI.schedDiff(D,M,ST.slot,K.X,slot);pushUndo();const snapAt=gmSnap('AI 排課之前');
+  K.X.groups.forEach(g=>{const d=D.groups.find(x=>x.id===g.id);if(d)d.students=g.students.slice();});   // AI 新編進課裡的學生
+  rebuild();closeDlg();
+  if(logId)GEMINI.logUpdate(logId,{applied:diff+(typeof window.setDraft==='function'?'（放進試排）':''),snapAt});
+  if(typeof window.setDraft==='function'){D.assign=fromState(M,ST);save();window.setDraft(Int16Array.from(slot),'AI 排課');render();toast('AI 的排法放進試排了');return;}
+  setST({slot:Int16Array.from(slot),pin:Uint8Array.from(K.S.pin),rfix:ST.rfix});commit();
+  const o=[];evaluate(M,ST.slot,o);toast('已套用 AI 的排法（'+diff+'）；'+(o.length?'還有 '+o.length+' 個問題':'沒有衝堂'));}
+
+/* ───── (b) 用文字加限制、調整：AI 只把文字拆成動作，每一項附原文那一句；系統檢查後老師逐項勾選 ───── */
+/* ───── (d) 說明問題：系統先算出可以協商的選項，AI 用白話說明、建議先問誰 ───── */
+if(typeof renderBoard==='function'){const rb0=renderBoard;renderBoard=function(){rb0();if(isRO())return;
+  const a=document.querySelector('#page button[onclick="aiOpen()"]');if(!a)return;
+  const o=[];evaluate(M,ST.slot,o);
+  a.after(gmEl('button',{class:'b',onclick:gmAdjOpen},'用文字調整'),o.length?gmEl('button',{class:'b',onclick:gmExplain},'請 AI 說明問題'):'');};}
+function gmAdjOpen(){openDlg('');const B=$('dlgBody');
+  const ta=gmEl('textarea',{id:'gmAdjTxt',class:'gmadj',placeholder:'想怎麼改？可以貼一段會議紀錄（Ctrl+Enter 送出）'});
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey))gmAdjAsk();});
+  B.append(gmEl('h3',null,'用文字加限制、調整課表'),
+    gmEl('p',{class:'note'},'例如「王老師週三下午不能排」「把七國移到早上」「八數固定用資源教室二」「701 週五第7節不要抽」，也可以貼一段會議紀錄。AI 會拆成一項一項，每一項附上原文是哪一句；系統檢查過後列給你逐項勾選，按「套用」才會改。'),
+    ...(gmReady()?[ta,gmBar('請 AI 整理',gmAdjAsk),gmEl('div',{id:'gmRes'}),gmNotice('只送'+(GEMINI.namesOk()?'老師名字':'老師代號')+'、課名、教室和目前的時段，不送學生資料。')]:[gmNoReady('就可以用文字調整課表')]),
+    gmEl('div',{class:'bar',style:'margin:12px 0 0'},gmEl('button',{class:'b',onclick:closeDlg},'關閉')));
+  if(gmReady())ta.focus();}
+async function gmAdjAsk(){const txt=($('gmAdjTxt')||{}).value||'';if(!txt.trim()){toast('請先寫下想怎麼改');return;}if(gmCtl)return;
+  const v=aiProblem(D).v,req=AI.adjRequest(D,M,ST,txt,{names:GEMINI.namesOk()}),host=$('gmRes');host.replaceChildren();
+  const r=await gmAsk('adj',req,host);if(!r)return;
+  if(aiProblem(D).v!==v){gmSetStatus('等待的時候課表被改過了，請再按一次',true);return;}
+  const items=AI.adjCheck(D,M,ST,r.json.actions,req.said),checks=[];
+  host.replaceChildren(r.json.reply?gmEl('p',{class:'gmreply'},AI.unscrub(D,r.json.reply)):'',
+    items.length?gmEl('ul',{class:'gmacts'},items.map(it=>{const cb=gmEl('input',{type:'checkbox',checked:it.ok,disabled:!it.ok});checks.push([cb,it]);
+      return gmEl('li',{class:it.ok?'':'no'},gmEl('label',null,cb,' '+it.text),it.quote?gmEl('small',{class:'q'},'原文：「'+it.quote+'」'):null,it.why?gmEl('small',null,it.why):null,it.warn?gmEl('small',{class:'warn'},'注意：'+it.warn):null);})):gmEl('p',{class:'note'},'AI 沒有整理出可以做的動作，換個說法試試。'),
+    items.some(x=>x.ok)?gmEl('div',{class:'bar'},gmEl('button',{class:'b pri',onclick:()=>gmAdjApply(checks,v,r.logId)},'套用勾選的'),gmEl('span',{class:'note',style:'margin:0'},'灰色的是找不到、或本來就是這樣的，不會套用。')):null);}
+function gmAdjApply(checks,v,logId){if(isRO()){toast('你是檢視權限，不能修改');return;}
+  if(aiProblem(D).v!==v){toast('課表被改過了，請再請 AI 整理一次');return;}
+  const pick=checks.filter(([cb,it])=>cb.checked&&it.ok).map(([cb,it])=>it);if(!pick.length){toast('沒有勾選要套用的');return;}
+  pushUndo();const snapAt=gmSnap('用文字調整之前');const ops=AI.adjApply(D,pick.map(it=>it.act));changed();   // 先改不排課時段、教室，重新整理後再移課
+  const n=ops.length?AI.adjLessons(M,ST,ops):0;closeDlg();commit();
+  if(logId)GEMINI.logUpdate(logId,{applied:pick.map(it=>it.text).join('；'),snapAt});
+  const o=[];evaluate(M,ST.slot,o);toast('已套用 '+pick.length+' 項'+(n?'（動到 '+n+' 節）':'')+'；'+(o.length?'目前有 '+o.length+' 個問題，請看上方說明':'沒有衝堂'));}
+async function gmExplain(){openDlg('');const B=$('dlgBody'),out=[];evaluate(M,ST.slot,out);
+  B.append(gmEl('h3',null,'請 AI 說明排不開的原因'),gmEl('p',{class:'note'},'系統先算出「哪一位老師哪一節如果可以排，就多一個位置」，AI 只用這些選項用白話說明、建議先跟誰商量；不會改動課表。'),
+    ...(gmReady()?[gmBar('請 AI 說明',gmExplainGo),gmEl('div',{id:'gmRes'}),gmNotice('只送課和老師的代號、時段與問題種類，不送姓名。')]:[gmNoReady('可以請 AI 用白話說明排不開的原因')]),
+    gmEl('div',{class:'bar',style:'margin:12px 0 0'},gmEl('button',{class:'b',onclick:closeDlg},'關閉')));
+  if(gmReady()&&GEMINI.seen('explain'))gmExplainGo();}
+async function gmExplainGo(){if(gmCtl)return;const out=[];evaluate(M,ST.slot,out);if(!out.length){gmSetStatus('現在沒有問題');return;}
+  const req=AI.explainRequest(D,M,ST,out,{names:GEMINI.namesOk()}),host=$('gmRes');host.replaceChildren();
+  const r=await gmAsk('explain',req,host);if(!r)return;const U=t=>AI.unscrub(D,t||''),byId={};req.options.forEach(o=>{byId[o.id]=o;});
+  const opt=id=>{const o=byId[id];return o?'若 '+D.teachers[o.t].name+' '+o.slotName+' 可以排，'+M.G[o.gi].name+' 就多一個位置':'';};
+  host.replaceChildren(gmEl('p',{class:'gmreply'},U(r.json.summary)),gmEl('ul',{class:'gmacts'},(r.json.items||[]).map(it=>gmEl('li',null,
+    gmEl('b',null,U(it.course)),' '+U(it.explain),it.suggest?gmEl('small',null,'建議：'+U(it.suggest)):null,
+    (it.options||[]).filter(id=>byId[id]).map(id=>gmEl('small',{class:'q'},'系統算過：'+opt(id)))))),
+    gmEl('p',{class:'note'},'「系統算過」的選項是本機排課程式算出來的；AI 的說明僅供參考，要不要協商請自己判斷。'));
+  if(r.logId)GEMINI.logUpdate(r.logId,{applied:'（只有說明，沒有改課表）'});}
+
+/* ───── (c) 全校課表：文字辨識認不出的（橘色），把截下來的統計區圖片給 Gemini 看 ─────
+   AI 只能從已知的老師名單裡挑、附把握程度，不准自己編名字；結果只是建議，打開班級核對、按儲存才寫入 */
+const gmTTTodo=()=>Object.keys(D.tt||{}).filter(c=>TTIMG[c]&&!TTSUG[c]&&(c[0]==='?'||D.tt[c].guessCls||Object.values(D.tt[c].subj).flat().some(x=>x[2])));
+const gmTTGate=()=>!gmReady()?'接上 Gemini（側邊欄「AI 設定」）可以請它看圖核對橘色的名字。':!GEMINI.namesOk()?'要請 AI 看圖核對，請先到「AI 設定」勾選「可以送出老師姓名」（圖上就有老師名字）。':'';
+if(typeof renderTT==='function'){const rt0=renderTT;renderTT=function(){rt0();const bar=document.querySelector('#page .bar');if(!bar)return;
+  const todo=gmTTTodo(),ns=Object.keys(TTSUG).filter(c=>D.tt&&D.tt[c]).length,gate=gmTTGate();
+  if(GMTT)bar.after(gmEl('div',{class:'chk'},gmEl('b',null,'Gemini 看圖中'),gmEl('span',{class:'mid'},GMTT.done+' / '+GMTT.total+' 班'),gmEl('button',{class:'b sm',onclick:()=>{GMTT.stop=1;if(gmTTCtl)gmTTCtl.abort();}},'停止')));
+  else if(todo.length||ns)bar.append(gate?gmEl('span',{class:'note',style:'margin:0'},gate):'',!gate&&todo.length?gmEl('button',{class:'b',onclick:gmTTAll},'請 AI 看圖核對（'+todo.length+' 班）'):'',
+    ns?gmEl('span',{class:'note gmst',style:'margin:0'},ns+' 班有 AI 的建議，點標色的班級核對後按儲存'):'');
+  Object.keys(TTSUG).forEach(c=>{const b=[...document.querySelectorAll('#page button')].find(x=>x.getAttribute('onclick')==="ttEdit('"+c+"')");if(b)b.classList.add('gmsugb');});};}
+async function gmTTOne(c,signal){const r=await GEMINI.generate(Object.assign({},AI.ttRequest(TTIMG[c],c,ttKnown(D)),{kind:'tt',signal,names:true}));TTSUG[c]={json:r.json,logId:r.logId};return TTSUG[c];}
+async function gmTTAll(){const todo=gmTTTodo();if(!todo.length||GMTT||gmTTGate())return;
+  if(!GEMINI.seen('tt')){ttEdit(todo[0]);toast('第一次使用：請先在這一班看過要送出的內容');gmTTAsk(todo[0]);return;}   // 第一次先單獨給老師看
+  GMTT={done:0,total:todo.length};gmTTCtl=new AbortController();render();let err=null;
+  for(const c of todo){if(GMTT.stop)break;   // 一班一班來：每分鐘有次數上限，一次全丟會被擋
+    try{await gmTTOne(c,gmTTCtl.signal);}catch(e){if(e.code!=='safety'&&e.code!=='format'&&e.code!=='empty'){err=e;break;}}
+    GMTT.done++;if(page==='roster'&&sub==='tt'&&!$('dlg').open)render();}
+  const n=GMTT.done;GMTT=null;gmTTCtl=null;if(page==='roster'&&sub==='tt')render();
+  toast(err&&err.code!=='cancel'?'看到第 '+(n+1)+' 班時停下來：'+gmMsg(err):'AI 看完 '+n+' 班；標色的班級點進去核對，按儲存才會寫入');}
+if(typeof ttEdit==='function'){const te0=ttEdit;ttEdit=function(c){te0(c);if(!TTIMG[c])return;const bar=$('dlgBody').querySelector('.bar');if(!bar)return;
+  const gate=gmTTGate();bar.append(gate?gmEl('span',{class:'note',style:'margin:0'},gate):gmEl('button',{class:'b sm gmgo',onclick:()=>gmTTAsk(c)},'請 AI 看圖'),
+    gmEl('button',{class:'b sm',id:'gmStop',hidden:true,onclick:()=>{if(gmCtl)gmCtl.abort();}},'取消'),gmEl('span',{id:'gmSt',class:'gmst'}));
+  bar.after(gmEl('div',{id:'gmRes'}));if(TTSUG[c])gmTTFill(c,TTSUG[c]);};}
+async function gmTTAsk(c){if(gmCtl||gmTTGate())return;const req=AI.ttRequest(TTIMG[c],c,ttKnown(D)),host=$('gmRes');if(!host)return;
+  const r=await gmAsk('tt',Object.assign(req,{scrubbed:0}),host,'AI 看圖中…');if(!r)return;TTSUG[c]={json:r.json,logId:r.logId};gmTTFill(c,TTSUG[c]);}
+// 把建議填進核對表：換掉的格子標色並寫出原本認成什麼、把握多少；老師可以再改，按「儲存」才算數
+function gmTTFill(c,sug){const o=D.tt[c],tb=$('ttRows');if(!o||!tb)return;
+  const rows=Object.keys(o.subj).flatMap(s=>o.subj[s].map(x=>[s,x[0],x[1],x[2]])),R=AI.ttMerge(rows,sug.json,ttKnown(D));
+  const inp=(cls,v)=>gmEl('td',null,gmEl('input',{type:'text',class:cls,value:v==null?'':String(v)}));
+  tb.replaceChildren(gmEl('tr',null,['科目','老師','節數','AI'].map(t=>gmEl('th',null,t))),
+    ...R.rows.concat([{sj:'',t:'',n:''}]).map(r=>gmEl('tr',{class:r.was?'gmsug':''},inp('w8',r.sj),inp('w5'+(r.unk?' warn':''),r.t),inp('w3',r.n),
+      gmEl('td',{class:'dim'},(r.sug||'')+(r.was?'（原本認成「'+r.was+'」）':'')))));
+  const ci=$('ttCls');if(ci&&!ci.value&&R.cls)ci.value=R.cls;
+  gmSetStatus((R.changed?'AI 建議改 '+R.changed+' 格（標色），核對後按儲存':'AI 沒有把握的建議，維持原本的')+(R.rejected?'；有 '+R.rejected+' 個名字不在名單上，已略過':''));
+  tb.dataset.gmLog=sug.logId||'';}
+if(typeof ttEditOk==='function'){const tk0=ttEditOk;ttEditOk=function(c){const tb=$('ttRows'),id=tb&&tb.dataset.gmLog;const snapAt=id?gmSnap('AI 核對課表之前'):0;
+  tk0(c);if(id)GEMINI.logUpdate(id,{applied:c+' 班的課表（核對後儲存）',snapAt});delete TTSUG[c];};}
+
+// 背景每天檢查一次有沒有新模型（不擋畫面；失敗就算了，下次再試）。代理模式要等登入完成
+setTimeout(()=>{if(gmReady())GEMINI.ensureModels().then(gmNews).catch(()=>{});},8000);
 
 /* ───── 啟動 ───── */
 D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();

@@ -147,8 +147,24 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   // AI 接口：題目不含姓名，回覆可以套回來
   const txt=C.aiPrompt(D);ok(!D.students.some(s=>txt.includes(s.name))&&!D.teachers.some(t=>txt.includes(t.name)),'給 AI 的題目不含學生與老師姓名');
   const D5=C.defaultData();D5.students[7].needs=['國文'];
-  const res=C.aiApply(D5,'好的：```json\n{"slots":{"C1":["0-1","1-2","9-9"]},"members":{"C1":["S1","S8"]}}\n```');
-  ok(D5.groups[0].students.join()==='s1,s8'&&D5.assign.g1.length===2&&res.bad===1,'AI 的回覆會套回課表，看不懂的時段會略過並回報');
+  const v5=C.aiProblem(D5).v,before=D5.groups[0].students.slice();
+  const res=C.aiApply(D5,'好的：```json\n{"slots":{"C1":["0-1","1-2","9-9"]},"members":{"C1":["S1","S8"]}}\n```',v5);
+  ok(D5.groups[0].students.join()===before.concat('s8').join()&&D5.assign.g1.length===1&&res.bad.length===2&&res.members===1,'AI 的回覆會套回課表，學生只會加進去；看不懂的時段、新學生原班老師不能排的時段都會略過並回報');
+  // 代號對錯人的保護：題目版本對不上就不套用
+  {const X=C.defaultData(),P=C.aiProblem(X);
+    ok(/^[0-9a-f]{16}$/.test(P.v)&&P.codes.S.S1==='s1'&&!JSON.stringify(P).includes('"codes"'),'題目附上版本 v；代號對照表留在本機、不會送出');
+    ok(P.courses.every(c=>Array.isArray(c.allowedSlots)&&c.allowedSlots.length)&&P.courses.find(c=>c.id==='C1').allowedSlots.every(k=>!/-m$/.test(k)),'每門課附上可排時段，抽離課不含早自習');
+    X.students.splice(0,1);let e1=null;try{C.aiApply(X,JSON.stringify({v:P.v,slots:{C1:['0-1']}}));}catch(e){e1=e;}
+    ok(e1&&e1.code==='stale','資料改過（少一位學生）之後，舊題目的回覆會被拒絕');
+    let e2=null;try{C.aiApply(C.defaultData(),'{"slots":{"C1":["0-1"]}}');}catch(e){e2=e;}ok(e2&&e2.code==='stale','回覆沒有版本 v 也不套用');}
+  {const X=C.defaultData(),v=C.aiProblem(X).v,n0=X.groups[0].students.length;
+    const r=C.aiApply(X,JSON.stringify({v,members:{C1:['S99']}}));
+    ok(X.groups[0].students.length===n0&&r.bad.length===1,'不認得的學生不會把整組清空');}
+  {const X=C.defaultData();X.students[20].needs=['國文'];const v=C.aiProblem(X).v,n0=X.groups[0].students.length;
+    const r=C.aiApply(X,JSON.stringify({v,members:{C1:['S21'],C2:['S1']}}));
+    ok(X.groups[0].students.length===n0&&!X.groups[1].students.includes('s1')&&r.bad.length===2,'年級不對（902 進七國）、科目不需要（七國的學生進七數）都會拒絕');}
+  {const X=C.defaultData(),v=C.aiProblem(X).v,r=C.aiApply(X,JSON.stringify({v,slots:{C1:['0-m','0-1'],C10:['0-m']}}));
+    ok(X.assign.g1.length===1&&X.assign.g1[0].s==='0-1'&&X.assign.g10.length===1&&r.bad.length===1,'抽離課排在早自習會被拒絕；外加課可以');}
 }
 
 // 10. 貼上課程一覽表：每一組各自的節數、遮名對回名冊、鐘點表

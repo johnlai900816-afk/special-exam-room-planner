@@ -26,6 +26,13 @@ service cloud.firestore {
       allow write: if editor();
     }
 
+    // AI 代理（functions/ai.js）用的：稽核紀錄只有主持人看得到，任何人都不能從網頁寫入；
+    // aiRate（每人使用次數）、aiCache（模型清單快取）只給伺服器用，網頁讀寫一律拒絕（沒有列出就是拒絕）
+    match /auditLogs/{id} {
+      allow read: if signedIn() && access().admin == email();
+      allow write: if false;
+    }
+
     // ── 以下和「段考特殊試場排列機」的規則相同，段考考場頁沿用 ──
     match /exams/presence {
       allow read, write: if member();

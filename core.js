@@ -317,26 +317,38 @@ function aiProblem(D){
   const setOff={};(D.sets||[]).forEach(x=>(x.students||[]).forEach(id=>{setOff[id]=(setOff[id]||[]).concat(x.off||[]);}));
   const OB=D.offBy||{},pend={};needList(D).forEach(n=>{(pend[n.id]=pend[n.id]||[]).push(n.subject);});
   const st=D.settings||{},cs={};for(const k in D.classSubj)if(tc[D.classSubj[k]])cs[k]=tc[D.classSubj[k]];
-  return {
+  // 每門課「可以排的時段」直接用 compile 算好的 alist：班級不能鎖課、鎖課方式、外加／抽離……這些規則 AI 不用自己推
+  const M=compile(D);
+  const P0={
     slots:DAYS.flatMap((d,di)=>P.map(p=>({k:di+'-'+p.id,name:'週'+d+p.name,extra:!!p.extra}))),
     blocked:D.blocked,rooms:D.rooms.length,
-    rules:{maxPerDayPerCourse:st.maxDay>0?st.maxDay:1,teacherMaxConsecutive:st.tRun>0?st.tRun:3,studentMaxPerDay:st.sDay>0?st.sDay:3},
+    rules:{maxPerDayPerCourse:st.maxDay>0?st.maxDay:1,teacherMaxConsecutive:st.tRun>0?st.tRun:3,studentMaxPerDay:st.sDay>0?st.sDay:3,lockMode:M.flex?'flex':'same'},
     teachers:D.teachers.map(t=>({id:tc[t.id],role:t.role,hours:t.hours||0,off:t.off})),
     courses:D.groups.map((g,i)=>({id:'C'+(i+1),on:g.on!==false,subject:g.subject,grade:g.grade||'',mode:g.mode,teacher:tc[g.teacher]||null,perWeek:g.per,
-      members:g.students.map(id=>sc[id]).filter(Boolean),fixed:(D.assign[g.id]||[]).filter(e=>e&&e.pin&&e.s).map(e=>e.s)})).filter(c=>c.on),
+      members:g.students.map(id=>sc[id]).filter(Boolean),fixed:(D.assign[g.id]||[]).filter(e=>e&&e.pin&&e.s).map(e=>e.s),
+      allowedSlots:M.G[i].alist.map(M.s2key)})).filter(c=>c.on),
     students:D.students.map(s=>({id:sc[s.id],cls:String(s.cls),toPlace:pend[s.id]||[],
       off:[...new Set([].concat(OB['g:'+gradeOfCls(s.cls)]||[],OB['c:'+s.cls]||[],OB['s:'+s.id]||[],setOff[s.id]||[]))]})),
     classSubjectTeacher:cs
   };
+  // 代號是陣列位置：資料一改就會對錯人。所以把題目內容和每個代號對到的 id 一起算成版本 v，套回來時要一樣才准套用
+  const codes={S:{},T:{},C:{}};D.students.forEach((s,i)=>{codes.S['S'+(i+1)]=s.id;});D.teachers.forEach((t,i)=>{codes.T['T'+(i+1)]=t.id;});D.groups.forEach((g,i)=>{codes.C['C'+(i+1)]=g.id;});
+  const out=Object.assign({v:aiHash(JSON.stringify(P0)+JSON.stringify(codes))},P0);
+  Object.defineProperty(out,'codes',{value:codes,enumerable:false});   // 不送給 AI，只留在本機對照
+  return out;
 }
+// 兩組 FNV-1a 合成 16 位十六進位；只用來判斷「資料有沒有變」，不是加密
+function aiHash(s){let a=0x811c9dc5,b=0x01000193^0x5bd1e995;for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);a=Math.imul(a^c,16777619)>>>0;b=Math.imul(b^c,0x5bd1e995)>>>0;b^=b>>>15;}
+  return (a>>>0).toString(16).padStart(8,'0')+(b>>>0).toString(16).padStart(8,'0');}
 function aiPrompt(D){
   return `你是國中資源班的排課助理。下面的 JSON 是題目（人名都已換成代號），請排出一份沒有衝堂的課表。
 
 做法（老師優先）：
 1. 先替每門課 courses 決定時段：每門課要排 perWeek 節，時段用 slots 裡的 k。fixed 是已經固定的時段，一定要保留。
-2. 再把 students 裡 toPlace 列出的科目，分配到同科目、同年級（grade 空白表示不限）的課，寫進該課的 members。已經在 members 裡的學生不要移動。
+2. 再把 students 裡 toPlace 列出的科目，分配到同科目、同年級（grade 空白表示不限）的課，寫進該課的 members。已經在 members 裡的學生不要移動，也不能拿掉。
 
 一定要遵守：
+- 每門課只能排在它自己的 allowedSlots 裡（系統已經扣掉外加／抽離、blocked、老師與學生的 off、班級不能鎖課等規則）。新加進課的學生，他的 off 時段也要避開。
 - mode 是「抽離」的課只能排在 extra 為 false 的時段；「外加」只能排在 extra 為 true 的時段。
 - blocked 的時段都不能排。課的老師、課裡每位學生的 off 時段都不能排。
 - 同一位老師同一個時段只能有一門課；同一位學生同一個時段只能在一門課。
@@ -345,25 +357,36 @@ function aiPrompt(D){
 盡量做到：rules 裡的三個上限、每位老師每天節數平均。
 
 只回覆一段 JSON，不要其他文字，格式：
-{"slots":{"C1":["0-1","2-3"]},"members":{"C1":["S1","S2"]}}
-slots 要包含每一門課；members 只要列出有新增學生的課（要寫出完整名單）。
+{"v":"題目裡的 v 原樣抄回","slots":{"C1":["0-1","2-3"]},"members":{"C1":["S1","S2"]}}
+slots 要包含每一門課；members 只要列出要新增進課的學生。
 
 題目：
 `+JSON.stringify(aiProblem(D));
 }
-// 把 AI 的回覆套回資料；回傳套用了幾門課、幾節，以及看不懂的項目數。排得對不對交給原本的衝堂檢查
-function aiApply(D,text){
+// 把 AI 的回覆套回資料。v 是題目的版本（呼叫端記下的，或 AI 抄回來的），和現在的資料不一樣就拒絕，免得代號對錯人。
+// 學生只會「加進」課裡、不會被拿掉；年級或科目不對、時段不在這門課可以排的範圍，都不套用並列在 bad。
+// 回傳 {courses, lessons, members, bad:[說明]}；排得好不好交給原本的衝堂檢查
+function aiApply(D,text,v){
   const a=text.indexOf('{'),b=text.lastIndexOf('}');if(a<0||b<=a)throw new Error('找不到 JSON');
-  const R=JSON.parse(text.slice(a,b+1)),sid={},gid={},M=compile(D);
-  D.students.forEach((s,i)=>{sid['S'+(i+1)]=s.id;});D.groups.forEach((g,i)=>{gid['C'+(i+1)]=g;});
-  let nm=0,nl=0,bad=0;const mem=R.members||{},sl=R.slots||{};
-  for(const c in mem){const g=gid[c];if(!g||!Array.isArray(mem[c])){bad++;continue;}
-    const ids=[...new Set(mem[c].map(x=>sid[x]))];if(ids.some(x=>!x))bad++;g.students=ids.filter(Boolean);nm++;}
-  for(const c in sl){const g=gid[c];if(!g||!Array.isArray(sl[c])){bad++;continue;}
-    const arr=(D.assign[g.id]||[]).filter(e=>e&&e.pin&&e.s),used=new Set(arr.map(e=>e.s));
-    sl[c].forEach(k=>{k=String(k);if(M.key2s(k)<0){bad++;return;}if(arr.length>=g.per||used.has(k))return;used.add(k);arr.push({s:k,pin:false});nl++;});
+  const R=JSON.parse(text.slice(a,b+1)),cur=aiProblem(D),want=v||R.v;
+  if(want!==cur.v){const e=new Error(want?'題目已經過期：複製題目之後資料改過了，請重新複製題目給 AI':'回覆裡沒有題目版本 v，請重新複製題目給 AI');e.code='stale';throw e;}
+  const byId={},gid={};D.students.forEach(s=>{byId[s.id]=s;});D.groups.forEach(g=>{gid[g.id]=g;});
+  const stu=c=>byId[cur.codes.S[c]],grp=c=>gid[cur.codes.C[c]],lab=s=>s.cls+' '+s.name;
+  let nm=0,nl=0;const bad=[],mem=R.members||{},sl=R.slots||{};
+  for(const c in mem){const g=grp(c);if(!g||!Array.isArray(mem[c])){bad.push('不認得的課 '+c);continue;}
+    if(g.on===false){bad.push(g.name+' 這學期不開，不能加學生');continue;}
+    mem[c].forEach(x=>{const s=stu(x);if(!s){bad.push(g.name+'：不認得的學生 '+x);return;}if(g.students.includes(s.id))return;
+      if(!needList(D).some(n=>n.id===s.id&&n.subject===g.subject)){bad.push(lab(s)+' 不需要再排'+g.subject+'，沒有加進 '+g.name);return;}
+      if(!candidates(D,s,g.subject).includes(g)){bad.push(lab(s)+' 的年級和 '+g.name+' 不同，沒有加進去');return;}
+      g.students.push(s.id);nm++;});}
+  const M=compile(D),gi={};D.groups.forEach((g,i)=>{gi[g.id]=i;});   // 學生加完再算可排時段：新學生的不排課也要算進去
+  for(const c in sl){const g=grp(c);if(!g||!Array.isArray(sl[c])){bad.push('不認得的課 '+c);continue;}
+    const G=M.G[gi[g.id]],arr=(D.assign[g.id]||[]).filter(e=>e&&e.pin&&e.s),used=new Set(arr.map(e=>e.s));
+    sl[c].forEach(k=>{k=String(k);const s=M.key2s(k);if(s<0){bad.push(g.name+'：看不懂的時段 '+k);return;}
+      if(!G.allowed[s]){bad.push(g.name+' 不能排在'+M.sn(s)+'（'+why(M,G.gi,s).join('、')+'）');return;}
+      if(arr.length>=g.per||used.has(k))return;used.add(k);arr.push({s:k,pin:false});nl++;});
     D.assign[g.id]=arr;}
-  return {courses:Math.max(nm,Object.keys(sl).length),lessons:nl,bad};
+  return {courses:Object.keys(sl).length,lessons:nl,members:nm,bad};
 }
 
 /* 貼上「課程領域分組及節數一覽表」：領域、年級、組別、抽離或外加、學生名單、節數、人數、人次、授課教師。
@@ -634,5 +657,5 @@ function newTerm(D,opt){
   return R;
 }
 
-const CORE={ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+const CORE={ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,aiHash,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;
