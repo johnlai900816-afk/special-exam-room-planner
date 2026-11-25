@@ -95,6 +95,7 @@ function InvCard({ v }: { v: IepInviteDoc }) {
                         type="button"
                         className={cx("c", on ? "y" : bz ? "a" : "")}
                         aria-pressed={on}
+                        aria-label={IEP.fmtDate(d) + p.n + (bz ? "（" + bz + "）" : "")}
                         title={bz || ""}
                         disabled={ro}
                         onClick={() => {

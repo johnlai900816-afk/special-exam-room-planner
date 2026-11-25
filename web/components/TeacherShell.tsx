@@ -37,18 +37,7 @@ function DemoPicker() {
 function UserBox({ compact }: { compact?: boolean }) {
   const x = useNx();
   const router = useRouter();
-  if (x.demo)
-    return (
-      <div className={cx("flex items-center gap-2", compact ? "" : "flex-col items-stretch")}>
-        <DemoPicker />
-        {x.cloud && (
-          <Link href="/login/" className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full border border-line2 bg-card px-3.5 text-sm text-ink hover:bg-hover">
-            <LogIn size={16} />
-            登入
-          </Link>
-        )}
-      </div>
-    );
+  if (x.demo) return null;
   if (!x.user) return null;
   return (
     <details className="relative">
@@ -90,7 +79,7 @@ export function TeacherShell({ title, children }: { title: string; children: Rea
   }, [away, router]);
 
   const here = (h: string) => (h === "/me/" ? path === "/me" || path === "/me/" : path.startsWith(h.replace(/\/$/, "")));
-  const sub = x.demo ? "範例資料（虛構）" : x.schoolName;
+  const sub = x.demo ? "範例國中" : x.schoolName;
 
   return (
     <div className="flex min-h-dvh">
@@ -126,6 +115,18 @@ export function TeacherShell({ title, children }: { title: string; children: Rea
           </Link>
           <UserBox compact />
         </header>
+        {x.demo && (
+          <div className="no-print flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-sunk px-4 py-2 text-sm text-ink2 md:px-10">
+            <span>範例資料</span>
+            <DemoPicker />
+            {x.cloud && (
+              <Link href="/login/" className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-line2 bg-card px-3.5 text-ink hover:bg-hover">
+                <LogIn size={16} />
+                登入
+              </Link>
+            )}
+          </div>
+        )}
         {x.repo?.readOnly && (
           <div className="no-print bg-warn-l px-4 py-2 text-sm text-warn md:px-10">過渡期：資料由舊版同步，這裡只能看</div>
         )}

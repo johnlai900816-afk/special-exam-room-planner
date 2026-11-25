@@ -244,3 +244,10 @@ textarea {
     font-size: 16pt;
   }
 }
+
+/* 手機上 A4 的紙比畫面寬：可以左右捲動（列印時不影響） */
+@media screen {
+  #outArea {
+    overflow-x: auto;
+  }
+}
