@@ -208,7 +208,9 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(C.importTeacherList(D0,bad).set===0,'「資料輸入」這種有班級號碼但不是名單的表，不會被誤讀');
   const D2=C.defaultData(),r2=C.importStudents(D2,J([['班級','座號','姓名','個管老師','導師'],['701','3','王小明','王老師','蕭老師'],['799-05新同學'],['798','1','另一位','不存在']]));
   const s=D2.students.find(x=>x.cls==='701'&&x.seat==='03');
-  ok(r2.add===2&&r2.upd===1&&s.caseMgr==='r2'&&s.note==='蕭老師'&&D2.students.some(x=>x.cls==='799'&&x.seat==='05'&&x.name==='新同學')&&r2.noCM.join()==='不存在','學生名單：照標題找欄位、班級座號姓名同一格、個管老師對回名冊');
+  ok(r2.add+r2.upd===3&&s&&s.caseMgr==='r2'&&D2.classHead['701']==='蕭'&&D2.students.some(x=>x.cls==='799'&&x.seat==='05'&&x.name==='新同學')&&r2.newCM.join()==='不存在','學生名單：照標題找欄位、班級座號姓名同一格、個管老師對回名冊（沒有的建成資源班老師）、導師另外存');
+  { const E=C.defaultData(),o=E.students[0],r=C.importStudents(E,[o.cls,o.seat,'新轉入生'].join('\t')+'\n'+[o.cls,'','沒有座號','王老師'].join('\t'));
+    ok(o.name!=='新轉入生'&&r.conflict.length===1&&E.students.some(x=>x.name==='新轉入生')&&E.students.some(x=>x.name==='沒有座號'&&!x.seat),'座號相同但名字不同不會蓋掉原本的學生；沒有座號時欄位不會錯位'); }
   const D3=C.defaultData(),n9=D3.students.filter(x=>x.cls[0]==='9').length,n7=D3.students.filter(x=>x.cls[0]==='7').length,n8=D3.students.filter(x=>x.cls[0]==='8').length;
   const r3=C.newTerm(D3,{promote:true,title:'新學年'});
   ok(r3.grad===n9&&D3.students.filter(x=>x.cls[0]==='8').length===n7&&D3.students.filter(x=>x.cls[0]==='9').length===n8&&!D3.students.some(x=>x.cls[0]==='7'),'升年級：七升八、八升九、九年級畢業');

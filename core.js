@@ -597,24 +597,33 @@ function importTeacherList(D,text){
 /* 學生名單：班級、座號、姓名，可以再加個管老師、備註。也接受「701-13」或「701-13王小明」寫在同一格。
    有標題列時照標題找欄位（班級、座號、姓名、個管、備註/導師）。班級座號相同的會更新，不會重複新增 */
 function importStudents(D,text){
-  const R={add:0,upd:0,skip:0,cm:0,noCM:[]};let col=null;
+  const R={add:0,upd:0,skip:0,cm:0,noCM:[],newCM:[],conflict:[]};let col=null;
   String(text).split(/\r?\n/).forEach(line=>{
-    let a=line.split(line.includes('\t')?'\t':/[,，\s]+/).map(x=>x.trim());if(!a.some(Boolean))return;
-    if(!col&&a.some(x=>/^(學生)?姓名$/.test(x))&&a.some(x=>/班級/.test(x))){const f=re=>a.findIndex(x=>re.test(x));col={cls:f(/班級/),seat:f(/座號/),name:f(/^(學生)?姓名$/),cm:f(/個管/),note:f(/備註|導師/)};return;}
-    let cls,seat='',name,cm='',note='';
-    if(col){cls=a[col.cls];seat=col.seat>=0?a[col.seat]:'';name=a[col.name];cm=col.cm>=0?a[col.cm]:'';note=col.note>=0?a[col.note]:'';}
+    const tab=line.includes('\t');let a=line.split(tab?'\t':/[,，\s]+/).map(x=>x.trim());if(!a.some(Boolean))return;
+    if(!col&&a.some(x=>/^(學生)?姓名$/.test(x))&&a.some(x=>/班級/.test(x))){const f=re=>a.findIndex(x=>re.test(x));col={cls:f(/班級/),seat:f(/座號/),name:f(/^(學生)?姓名$/),cm:f(/個管/),note:f(/備註/),hr:f(/導師/)};return;}
+    let cls,seat='',name,cm='',note='',hr='';
+    if(col){cls=a[col.cls];seat=col.seat>=0?a[col.seat]:'';name=a[col.name];cm=col.cm>=0?a[col.cm]:'';note=col.note>=0?a[col.note]:'';hr=col.hr>=0?a[col.hr]:'';}
+    else if(tab){[cls,seat,name,cm,note]=a;if(!name&&seat&&!/^\d+$/.test(seat)){name=seat;seat='';}}   // 有 Tab 就照欄位位置讀，空的座號不會讓後面的欄位往前擠
     else{a=a.filter(Boolean);[cls,seat,name,cm,note]=a.length>=3?a:[a[0],'',a[1]];}
     const m=String(cls||'').match(/^(\d{3,4})\s*[-－]\s*(\d{1,2})\s*(.*)$/);
     if(m){cls=m[1];if(!seat||!name){name=m[3]||seat||name;seat=m[2];}}
     if(!/^\d{3,4}$/.test(String(cls||''))||!name){R.skip++;return;}
     seat=seat?String(+seat||seat).padStart(2,'0'):'';
-    let s=D.students.find(x=>String(x.cls)===cls&&((seat&&x.seat&&+x.seat===+seat)||x.name===name));
+    // 先用「同班同名」對；座號相同但名字不同，不直接改名（可能是轉入、換座號），新增一筆並列出來讓人確認
+    let s=D.students.find(x=>String(x.cls)===cls&&x.name===name);
+    const same=!s&&seat&&D.students.find(x=>String(x.cls)===cls&&x.seat&&+x.seat===+seat);
+    if(same&&!same.name)s=same;else if(same)R.conflict.push(cls+'-'+seat+'：名冊是 '+same.name+'，表上是 '+name);
     if(s){s.name=name;if(seat)s.seat=seat;R.upd++;}else{s={id:uid('s'),cls,seat,name,caseMgr:'',note:'',needs:[]};D.students.push(s);R.add++;}
-    if(cm){const t=D.teachers.find(x=>x.name===cm.replace(/老師$/,''))||D.teachers.find(x=>x.name===cm);if(t){s.caseMgr=t.id;R.cm++;}else R.noCM.push(cm);}
+    if(cm){const nm=normName(cm);let t=D.teachers.find(x=>normName(x.name)===nm);
+      if(!t&&nm){t=newTeacher(D,nm,'資源班');R.newCM.push(nm);}   // 個管老師一定是資源班老師：名冊還沒有就先建起來
+      if(t){s.caseMgr=t.id;R.cm++;}else R.noCM.push(cm);}
     if(note)s.note=note;
+    if(hr){D.classHead=D.classHead||{};D.classHead[cls]=normName(hr);}
   });
-  R.noCM=[...new Set(R.noCM)];return R;
+  R.noCM=[...new Set(R.noCM)];R.newCM=[...new Set(R.newCM)];return R;
 }
+// 姓名比對用：去掉空白和稱謂（老師、主任、組長…）
+function normName(s){return String(s||'').replace(/\s+/g,'').replace(/(老師|教師|主任|組長|導師|校長)$/,'');}
 /* 開始新學期。opt：clearAssign 清空排課結果、clearGroups 清空課程、clearCS 清空任課老師、clearClassOff 清空班級不排課、
    clearTeaOff 清空所有老師的不排課、promote 升年級（七→八、八→九，九年級畢業移出名冊；國小一到六年級同理）。
    升年級時班級號碼會變，所以課程、任課老師、班級不排課一定一起清空 */
@@ -634,5 +643,5 @@ function newTerm(D,opt){
   return R;
 }
 
-const CORE={ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+const CORE={normName,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;
