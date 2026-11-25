@@ -636,8 +636,9 @@ function importStudents(D,text){
     // 先用「同班同名」對；座號相同但名字不同，不直接改名（可能是轉入、換座號），新增一筆並列出來讓人確認
     let s=D.students.find(x=>String(x.cls)===cls&&x.name===name);
     const same=!s&&seat&&D.students.find(x=>String(x.cls)===cls&&x.seat&&+x.seat===+seat);
-    if(same&&!same.name)s=same;else if(same)R.conflict.push(cls+'-'+seat+'：名冊是 '+same.name+'，表上是 '+name);
+    if(same&&!same.name)s=same;
     if(s){s.name=name;if(seat)s.seat=seat;R.upd++;}else{s={id:uid('s'),cls,seat,name,caseMgr:'',note:'',needs:[]};D.students.push(s);R.add++;}
+    if(same&&same!==s)R.conflict.push({cls,seat,old:same.id,oldName:same.name,id:s.id,name,text:cls+'-'+seat+'：名冊是 '+same.name+'，表上是 '+name});
     if(cm){const nm=normName(cm);let t=D.teachers.find(x=>normName(x.name)===nm);
       if(!t&&nm){t=newTeacher(D,nm,'資源班');R.newCM.push(nm);}   // 個管老師一定是資源班老師：名冊還沒有就先建起來
       if(t){s.caseMgr=t.id;R.cm++;}else R.noCM.push(cm);}
