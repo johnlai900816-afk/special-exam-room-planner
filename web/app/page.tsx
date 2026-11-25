@@ -1,14 +1,13 @@
 "use client";
-/* 首頁只負責分流：管理者到總覽、老師到我的頁面、還沒加入的到登入頁 */
+/* 首頁只負責分流：老師（或沒登入看範例資料）到「今天」；其他（管理者、還沒有邀請…）到登入頁 */
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { homeOf } from "@/components/AppShell";
-import { useSession } from "@/lib/session";
+import { useNx } from "@/lib/nx/session";
 
 export default function Home() {
-  const s = useSession();
+  const x = useNx();
   const router = useRouter();
-  const go = s.ready && s.cloud !== "wait" ? homeOf(s.role) : "";
+  const go = x.phase === "teacher" || x.phase === "demo" ? "/me/" : x.phase === "boot" || x.phase === "signing" ? "" : "/login/";
   useEffect(() => {
     if (go) router.replace(go);
   }, [go, router]);

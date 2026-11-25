@@ -4,7 +4,6 @@
    管理者：總覽、學期初準備、排課、段考考場、簽到退、資料與帳號＋「以教師身分預覽」
    檢視：排課總表、設定 */
 import {
-  Ban,
   CalendarCheck,
   CalendarRange,
   ClipboardCheck,
@@ -17,6 +16,7 @@ import {
   ListChecks,
   LogIn,
   LogOut,
+  ClipboardList,
   School,
   Settings,
   Sparkles,
@@ -39,13 +39,13 @@ interface NavItem {
 
 const I = 20;
 export const NAV: Record<AppRole, NavItem[]> = {
+  // 老師端在 components/TeacherShell.tsx（新資料模型）；這裡只留連結，舊的 legacy 預覽也走同一組頁面
   teacher: [
     { href: "/me/", label: "今天", icon: <Sun size={I} /> },
-    { href: "/checkin/", label: "點名", icon: <ClipboardCheck size={I} /> },
     { href: "/me/students/", label: "我的學生", icon: <Users size={I} /> },
-    { href: "/me/off/", label: "不排課時段", icon: <Ban size={I} /> },
-    { href: "/me/exam/", label: "段考查詢", icon: <School size={I} /> },
-    { href: "/settings/", label: "設定", icon: <Settings size={I} /> },
+    { href: "/me/iep/", label: "我的 IEP", icon: <ClipboardList size={I} /> },
+    { href: "/me/check/", label: "點名", icon: <ClipboardCheck size={I} /> },
+    { href: "/me/settings/", label: "我的設定", icon: <Settings size={I} /> },
   ],
   admin: [
     { href: "/admin/", label: "總覽", icon: <LayoutDashboard size={I} /> },

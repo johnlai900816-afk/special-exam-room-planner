@@ -1,5 +1,6 @@
 /* 老師的「今天」與「點名」：照正式課表找出我的課、現在這一節、待辦。純函式，單元測試在 test/teacher.test.ts。
    行為照舊版 teacher.js（rToday）與 checkin.js（sessionsOn、countIn、attStats），資料改成分拆後的 records（點名一節一份文件）。 */
+import { DAYS } from "../core";
 import { IEP } from "../iep";
 import type { AttendanceDoc, IepInviteDoc } from "../model";
 import type { Board } from "../schedule";
@@ -195,4 +196,17 @@ export function attSummary(att: Record<string, AttendanceDoc>, sid: string, peri
       o.rows.push({ date: a.date, p: p ? p.name : a.pid, g: info.g || a.gid, st: r ? ST_NAME[r.st] || r.st : "未到", note: String((r && r.note) || "") });
     });
   return o;
+}
+
+/** 一位學生一週的資源班課（照正式課表） */
+export function lessonsOf(board: Board, sid: string): { s: number; t: string; g: string }[] {
+  const { M, S } = board;
+  const out: { s: number; t: string; g: string }[] = [];
+  M.L.forEach((l, i) => {
+    const g = M.G[l.g];
+    const sl = S.slot[i];
+    if (sl < 0 || !(g.ref.students || []).includes(sid)) return;
+    out.push({ s: sl, t: "週" + DAYS[Math.floor(sl / M.NP)] + " " + M.P[sl % M.NP].name, g: g.name });
+  });
+  return out.sort((a, b) => a.s - b.s);
 }

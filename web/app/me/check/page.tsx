@@ -215,7 +215,7 @@ function Check() {
                             st === "late" && "border-warn/50 bg-warn-l",
                             (st === "leave" || st === "abs") && "border-bad/40 bg-bad-l",
                             !st && (over ? "border-dashed border-bad/50 bg-card" : "border-line bg-card"),
-                            r?.tout && "opacity-70",
+                            !!r?.tout && "opacity-70",
                           )}
                           role="button"
                           tabIndex={0}

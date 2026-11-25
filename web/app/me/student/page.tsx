@@ -3,11 +3,10 @@
    私密的部分在 students/{id}/private/profile（規則只給個管），寫入一律 Repo.patch 帶 rev。 */
 import { ArrowLeft, Copy, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { failText, toast } from "@/components/Toast";
 import { TeacherShell } from "@/components/TeacherShell";
 import { Badge, Button, Card, Input, Select, SectionTitle, Textarea, cx } from "@/components/ui";
-import { DAYS } from "@/lib/core";
 import { NX } from "@/lib/legacy";
 import type { StudentPrivateDoc } from "@/lib/model";
 import { useQuery } from "@/lib/nx/hooks";
@@ -28,7 +27,7 @@ import {
   type PrivField,
 } from "@/lib/nx/privacy";
 import { useNx } from "@/lib/nx/session";
-import { attSummary, hmOf, md, ymd } from "@/lib/nx/today";
+import { attSummary, hmOf, lessonsOf, md, ymd } from "@/lib/nx/today";
 import { revKey } from "@/lib/repo";
 
 const DL = ({ k, children }: { k: string; children: ReactNode }) => (
@@ -242,18 +241,7 @@ function CasePage() {
   const D = x.D!;
   const board = x.board;
   const groups = D.groups.filter((g) => g.on !== false && g.students.includes(sid));
-  const lessons = useMemo(() => {
-    const out: { s: number; t: string; g: string }[] = [];
-    if (!board) return out;
-    const { M, S } = board;
-    M.L.forEach((l, i) => {
-      const g = M.G[l.g];
-      const sl = S.slot[i];
-      if (sl < 0 || !(g.ref.students || []).includes(sid)) return;
-      out.push({ s: sl, t: "週" + DAYS[Math.floor(sl / M.NP)] + " " + M.P[sl % M.NP].name, g: g.name });
-    });
-    return out.sort((a, b) => a.s - b.s);
-  }, [board, sid]);
+  const lessons = board ? lessonsOf(board, sid) : [];
   const now = new Date();
   const att = attSummary(R.attendance, sid, D.periods, ymd(now), hmOf(now));
   const cm = s ? D.teachers.find((t) => t.id === s.caseMgrId) : null;

@@ -1,13 +1,14 @@
 "use client";
-import { ArrowRight, Copy, LogOut, Monitor, Send, Sparkles } from "lucide-react";
+/* 登入（新資料模型）：Google 登入 → 有邀請就領取（nxAcceptInvite）→ getIdToken(true) 拿 claims →
+   老師到「今天」；管理者／編輯／檢視這一階段先用舊版。狀態：還沒有邀請、找不到綁定的老師、學期還沒設定。 */
+import { ArrowRight, Copy, ExternalLink, LogOut, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { homeOf } from "@/components/AppShell";
-import { Button, Card, Note } from "@/components/ui";
-import { submitJoinRequest } from "@/lib/cloud";
-import { signInWithGoogle } from "@/lib/firebase";
-import { useSession } from "@/lib/session";
+import { OLD_APP } from "@/components/Planned";
+import { Brand, Button, Card, Note } from "@/components/ui";
+import { useNx } from "@/lib/nx/session";
+import { applyFontSize, applyTheme } from "@/lib/prefs";
 
 function GoogleMark() {
   return (
@@ -21,23 +22,25 @@ function GoogleMark() {
 }
 
 export default function LoginPage() {
-  const s = useSession();
+  const x = useNx();
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [name, setName] = useState("");
-  const [note, setNote] = useState("");
-  const [sent, setSent] = useState(false);
 
   useEffect(() => {
-    if (s.cloud === "on" && s.role && s.D) router.replace(homeOf(s.role));
-  }, [s.cloud, s.role, s.D, router]);
+    applyTheme();
+    applyFontSize();
+    document.title = "登入｜資源班管理系統";
+  }, []);
+  useEffect(() => {
+    if (x.phase === "teacher") router.replace("/me/");
+  }, [x.phase, router]);
 
   const login = async () => {
     setMsg("");
     setBusy(true);
     try {
-      await signInWithGoogle();
+      await x.login();
     } catch (e) {
       const c = (e as { code?: string }).code || (e as Error).message;
       if (c !== "auth/popup-closed-by-user" && c !== "auth/cancelled-popup-request") setMsg("登入失敗：" + c);
@@ -45,136 +48,106 @@ export default function LoginPage() {
       setBusy(false);
     }
   };
-
-  const demo = () => {
-    s.loadDemo();
-    router.push("/admin/");
-  };
-
-  const join = async () => {
-    if (!s.user) return;
-    setBusy(true);
-    setMsg("");
-    try {
-      await submitJoinRequest(s.user.uid, s.user.email, name.trim() || s.user.name, note.trim());
-      setSent(true);
-    } catch (e) {
-      const c = (e as { code?: string }).code || "";
-      setMsg(
-        /permission/.test(c)
-          ? "目前的雲端規則還沒開放線上申請。請直接把你的信箱傳給特教組長，請他在舊版「共用」或新版「資料與帳號」加入你。"
-          : "送出失敗：" + (c || (e as Error).message),
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const switchAccount = (
-    <Button tone="ghost" className="w-full" onClick={() => s.logout()}>
+  const out = (
+    <Button tone="ghost" className="w-full" onClick={() => x.logout()}>
       <LogOut size={16} />
       換一個帳號
     </Button>
   );
+  const oldLink = (
+    <a href={OLD_APP} className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full border border-ink bg-ink px-4 text-[15px] font-medium text-on-ink">
+      <ExternalLink size={16} />
+      管理功能請先用舊版
+    </a>
+  );
+  const signedIn = !!x.user;
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <div className="mb-6 text-center">
-          <h1 className="text-2xl text-ink">資源班管理系統</h1>
-          <p className="mt-2 text-ink2">排課、名冊、段考考場，每位老師有自己的頁面</p>
+        <div className="mb-6 flex justify-center">
+          <Brand />
         </div>
-
         <Card>
-          {!s.ready || s.cloud === "wait" ? (
-            <p className="py-6 text-center text-mute">連線中…</p>
-          ) : s.cloud === "off" ? (
+          {x.phase === "boot" || x.phase === "signing" || x.phase === "teacher" ? (
+            <p className="py-6 text-center text-mute">{x.phase === "signing" ? "確認身分中…" : "連線中…"}</p>
+          ) : x.phase === "demo" && !x.cloud ? (
             <div className="space-y-4">
-              <Note>這台電腦設定成「不使用雲端」，資料只存在這個瀏覽器。要改回雲端，請到舊版「共用 › 學校自己的雲端」。</Note>
-              <Link href="/admin/" className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-acc px-4 font-medium text-white hover:bg-acc-d">
+              <Note>這台電腦設定成不使用雲端，只能看範例資料</Note>
+              <Link href="/me/" className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full bg-ink px-4 font-medium text-on-ink">
                 進入
                 <ArrowRight size={16} />
               </Link>
             </div>
-          ) : !s.user ? (
+          ) : x.phase === "demo" ? (
             <div className="space-y-4">
-              <Button className="w-full py-2.5 text-base" disabled={busy} onClick={login}>
+              <Button tone="primary" className="w-full" disabled={busy} onClick={login}>
                 <GoogleMark />
                 用 Google 帳號登入
               </Button>
-              <label className="flex min-h-10 items-center gap-2 text-md text-ink2">
-                <input type="checkbox" className="size-5 accent-acc" checked={s.publicMode} onChange={(e) => s.setPublicMode(e.target.checked)} />
-                <Monitor size={16} />
-                這是公用電腦（不留下資料，關掉分頁就登出）
+              <label className="flex min-h-10 items-center gap-2 text-sm text-ink2">
+                <input type="checkbox" className="size-5" checked={x.publicMode} onChange={(e) => x.setPublicMode(e.target.checked)} />
+                公用電腦（關掉分頁就登出）
               </label>
-              <p className="text-md leading-relaxed text-ink2">
-                組長／排課老師看得到全部；一般老師看到自己的課表、學生和監考，並可以填自己的不排課時段。
-              </p>
               <div className="border-t border-line pt-4">
-                <Button tone="ghost" className="w-full" onClick={demo}>
+                <Link href="/me/" className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full px-4 text-[15px] text-ink2 hover:bg-hover">
                   <Sparkles size={16} />
                   先看範例資料（虛構）
-                </Button>
+                </Link>
               </div>
             </div>
-          ) : s.cloud === "nohost" ? (
+          ) : x.phase === "noInvite" ? (
             <div className="space-y-4">
-              <Note tone="warn">雲端「{s.projectId}」還沒有設定管理者。第一位管理者要由系統管理員用部署腳本建立，不能從這裡自己認領。</Note>
-              {switchAccount}
+              <h2 className="text-[17px] font-bold">還沒有邀請</h2>
+              <p className="text-sm text-ink2">
+                把 <b>{x.user?.email}</b> 給特教組長，邀請好之後按「再試一次」。
+              </p>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={() => navigator.clipboard?.writeText(x.user!.email).then(() => setMsg("已複製信箱"), () => setMsg(x.user!.email))}>
+                  <Copy size={16} />
+                  複製信箱
+                </Button>
+                <Button className="flex-1" onClick={() => x.refresh()}>
+                  <RefreshCw size={16} />
+                  再試一次
+                </Button>
+              </div>
+              {out}
             </div>
-          ) : s.cloud === "denied" ? (
+          ) : x.phase === "missingTeacher" ? (
             <div className="space-y-4">
-              <Note tone="warn">
-                <b>{s.user.email}</b> 還不在學校的使用名單裡。請把這個信箱給特教組長，組長加入並指定你是名冊上的哪一位老師後，重新整理就可以了。
-              </Note>
-              <Button
-                className="w-full"
-                onClick={() => navigator.clipboard?.writeText(s.user!.email).then(() => setMsg("已複製信箱"), () => setMsg(s.user!.email))}
-              >
-                <Copy size={16} />
-                複製我的信箱
+              <h2 className="text-[17px] font-bold">找不到綁定的老師</h2>
+              <p className="text-sm text-ink2">帳號綁定的老師不在這學期的名冊裡，請特教組長重新綁定。</p>
+              <Button className="w-full" onClick={() => x.refresh()}>
+                <RefreshCw size={16} />
+                再試一次
               </Button>
-              {sent ? (
-                <Note tone="ok">已送出加入申請，組長核准後重新整理這一頁。</Note>
-              ) : (
-                <div className="space-y-2 border-t border-line pt-4">
-                  <div className="font-medium">或線上送出加入申請</div>
-                  <input
-                    className="min-h-10 w-full rounded-lg border border-line2 px-3"
-                    placeholder="名冊上的姓名，例：王老師"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                  <input
-                    className="min-h-10 w-full rounded-lg border border-line2 px-3"
-                    placeholder="備註（任教科目、班級…）"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                  <Button tone="primary" className="w-full" disabled={busy} onClick={join}>
-                    <Send size={16} />
-                    送出申請
-                  </Button>
-                </div>
-              )}
-              {switchAccount}
+              {out}
             </div>
-          ) : s.cloud === "error" ? (
+          ) : x.phase === "noTerm" ? (
             <div className="space-y-4">
-              <Note tone="bad">連不上雲端，可能是沒有網路。</Note>
-              <Link href="/admin/" className="flex min-h-10 items-center justify-center text-acc">
-                先用這台電腦的資料
-              </Link>
+              <Note tone="warn">學校還沒有設定這學期的資料</Note>
+              {out}
             </div>
-          ) : s.cloud === "on" && !s.D ? (
+          ) : x.phase === "staff" || x.phase === "viewer" ? (
             <div className="space-y-4">
-              <Note>雲端還沒有名冊與排課資料。請組長先在舊版建立或還原一份。</Note>
-              {switchAccount}
+              <p className="text-sm text-ink2">
+                {x.user?.email}・{x.phase === "staff" ? (x.claims?.role === "editor" ? "編輯" : "管理者") : "檢視"}
+              </p>
+              {oldLink}
+              {out}
             </div>
           ) : (
-            <p className="py-6 text-center text-mute">登入成功，正在進入…</p>
+            <div className="space-y-4">
+              <Note tone="bad">連不上雲端{x.msg ? "：" + x.msg : ""}</Note>
+              <Button className="w-full" onClick={() => x.refresh()}>
+                <RefreshCw size={16} />
+                再試一次
+              </Button>
+              {signedIn && out}
+            </div>
           )}
-          {msg && <p className="mt-3 text-md text-bad">{msg}</p>}
+          {msg && <p className="mt-3 text-sm text-bad">{msg}</p>}
         </Card>
       </div>
     </div>
