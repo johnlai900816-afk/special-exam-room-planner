@@ -306,6 +306,20 @@ service cloud.firestore {
         && optMap('proctorOf', 3000) && optMap('supportOf', 3000) && optMap('packed', 20);
     }
 
+    function placeShape() {
+      return incoming().keys().hasOnly(['ses', 'room', 'date', 'dow', 'per', 'lab', 't', 'roomName', 'proctor', 'support', 'proctorIds', 'stu', 'wait'].concat(META()))
+        && incoming().proctorIds is list && incoming().proctorIds.size() <= 4
+        && str(incoming().ses, 100) && str(incoming().room, 100)
+        && optStr('date', 40) && optStr('dow', 10) && optStr('per', 40) && optStr('lab', 100) && optStr('t', 40)
+        && optStr('roomName', 100) && optStr('proctor', 100) && optStr('support', 100)
+        && optList('stu', 300) && optList('wait', 300);
+    }
+    function seatShape() {
+      return incoming().keys().hasOnly(['teacherIds', 'cls', 'seat', 'name', 'rows'].concat(META()))
+        && incoming().teacherIds is list && incoming().teacherIds.size() <= 80
+        && optStr('cls', 20) && optStr('seat', 10) && optStr('name', 60) && optList('rows', 60);
+    }
+
     match /schools/{sid} {
       // 學校文件、成員、邀請只有 Cloud Functions（Admin SDK）寫
       allow get: if inSchool(sid);
@@ -436,11 +450,18 @@ service cloud.firestore {
             allow create: if isStaff(sid) && revCreate() && blobShape();
             allow update: if isStaff(sid) && revUpdate() && blobShape();
           }
-          // 每個試場的交卷名單：監考老師讀得到自己的（之後段考頁搬過來時產生）
+          // 每個試場（一節一間）的交卷名單：監考、支援老師（proctorIds）讀得到自己的；管理者存段考時產生
           match /placements/{pid} {
             allow get, list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.proctorIds);
-            allow create: if isStaff(sid) && revCreate() && incoming().proctorIds is list;
-            allow update: if isStaff(sid) && revUpdate() && incoming().proctorIds is list;
+            allow create: if isStaff(sid) && revCreate() && placeShape();
+            allow update: if isStaff(sid) && revUpdate() && placeShape();
+            allow delete: if isStaff(sid);
+          }
+          // 每位學生的考場：讀得到這位學生的老師（teacherIds，和學生文件一樣）讀得到；欄位和舊版班級查考場連結一樣少
+          match /seats/{stuId} {
+            allow get, list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.teacherIds);
+            allow create: if isStaff(sid) && revCreate() && seatShape();
+            allow update: if isStaff(sid) && revUpdate() && seatShape();
             allow delete: if isStaff(sid);
           }
         }
@@ -454,10 +475,32 @@ service cloud.firestore {
       }
     }
 
-    // 免登入檢視（家長、導師）：只能用鑰匙取得單一份、要沒過期；只有後端寫
+    // 免登入檢視（查考場連結，舊版 view/{鑰匙}）：只能用鑰匙取得單一份；要沒過期，而且鑰匙還登記在那份段考的
+    // exam/{eid}/private/view.keys 裡（換新連結、關閉連結後，就算舊文件沒刪掉也讀不到）。
+    // 管理者／編輯寫：鑰匙 32 碼亂數（可接 _班級），sid 是自己的學校，寫入的同一批要把鑰匙登記進 private/view（getAfter）。
+    function viewReg(d) {
+      return /databases/$(database)/documents/schools/$(d.sid)/terms/$(d.termId)/exam/$(d.eid)/private/view;
+    }
+    function viewShape(token) {
+      return token.matches('[0-9a-f]{32}(_[0-9A-Za-z]{1,40})?')
+        && incoming().keys().hasAll(['sid', 'termId', 'eid', 'rows', 'exp'])
+        && incoming().keys().hasOnly(['sid', 'termId', 'eid', 'v', 'title', 'cls', 'all', 'rows', 'exp', 'at'])
+        && str(incoming().sid, 60) && str(incoming().termId, 60) && str(incoming().eid, 60)
+        && str(incoming().rows, 900000) && optStr('title', 200) && optStr('cls', 20)
+        && (!('all' in incoming()) || incoming().all == true)
+        && (!('v' in incoming()) || incoming().v is int)
+        && (!('at' in incoming()) || incoming().at == request.time)
+        && incoming().exp is timestamp && incoming().exp > request.time && incoming().exp < request.time + duration.value(400, 'd');
+    }
     match /publicViews/{token} {
-      allow get: if resource.data.exp is timestamp && resource.data.exp > request.time;
-      allow list, write: if false;
+      allow get: if resource.data.get('exp', null) is timestamp && resource.data.exp > request.time
+        && exists(viewReg(resource.data)) && token in get(viewReg(resource.data)).data.get('keys', []);
+      allow list: if false;
+      allow create: if viewShape(token) && isStaff(incoming().sid)
+        && token in getAfter(viewReg(incoming())).data.get('keys', []);
+      allow update: if viewShape(token) && isStaff(incoming().sid) && incoming().sid == resource.data.sid
+        && token in getAfter(viewReg(incoming())).data.get('keys', []);
+      allow delete: if isStaff(resource.data.sid);
     }
   }
 }
