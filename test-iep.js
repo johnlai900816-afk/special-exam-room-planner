@@ -243,13 +243,33 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   ok(T.roleFor(A,'boss@school.tw',D.teachers).role==='admin','主持人一律是管理者（就算被綁定）');
   ok(T.roleFor(A,'new@school.tw',D.teachers).role==='admin','沒綁定的編輯維持管理者');
   ok(T.roleFor(null,'wang@school.tw').role==='admin'&&T.roleFor(A,'').role==='admin','沒有共用名單或沒登入：管理者（單機）');
-  ok(T.roleFor(Object.assign({},A,{bind:{'wang@school.tw':'gone'}}),'wang@school.tw',D.teachers).role==='admin','綁到已刪除的老師：不切成老師');
+  const gone=T.roleFor(Object.assign({},A,{bind:{'wang@school.tw':'gone'}}),'wang@school.tw',D.teachers);
+  ok(gone.role==='teacher'&&gone.tid===''&&gone.missing==='gone','綁到已刪除的老師：還是老師身分（沒有老師 id、標出找不到），絕不變成管理者');
   const b=T.setBind(A.bind,'NEW@school.tw','m1');
   ok(b['new@school.tw']==='m1'&&T.setBind(b,'new@school.tw','')['new@school.tw']===undefined,'設定、取消綁定');
   const c=T.cleanBind(b,['boss@school.tw','wang@school.tw'],'boss@school.tw');
   ok(JSON.stringify(c)==='{"wang@school.tw":"r2"}','移出名單的人、主持人的綁定都清掉');
   const keys=Object.keys(Object.assign({},A,{bind:c}));
   ok(keys.every(k=>['admin','emails','viewers','link','vcls','vk','bind'].includes(k)),'寫回 config/access 的欄位都在安全規則允許的範圍');
+}
+
+// 12. 老師身分的頁面白名單、個案頁只給自己的學生、私密欄位
+{
+  const T=require('./teacher.js'),D=C.defaultData(),S=T.myStudents(D,'r2'),cm=S.cm[0],tg=S.taught[0];
+  const other=D.students.find(s=>T.relation(D,'r2',s)==='');
+  ok(T.relation(D,'r2',cm)==='cm'&&T.relation(D,'r2',tg)==='taught'&&!!other,'和學生的關係：個管、有教、沒關係');
+  const R=(p,s,sid)=>JSON.stringify(T.route(D,'r2',p,s,sid));
+  ok(['me_today','me_stu','me_iep','me_check','me_set'].every(p=>T.route(D,'r2',p).p===p),'我的頁面都可以去');
+  ok(['home','stu','sched','exam','checkin','stats','set','x','',undefined].every(p=>T.route(D,'r2',p,'data').p==='me_today'),'管理者的頁面（名單、排課、段考、設定…）一律回「今天」');
+  ok(T.route(D,'r2','set','data').p==='me_today'&&T.route(D,'r2','set','account').p==='me_today','備份、帳號與共用都去不了');
+  ok(R('iep','plan')==='{"p":"me_iep","s":"plan"}'&&T.route(D,'r2','iep','ans').p==='me_iep'&&T.route(D,'r2','iep').s===undefined,'IEP 會議頁換成「我的 IEP」');
+  ok(R('stu','case',cm.id)==='{"p":"stu","s":"case"}'&&R('stu','case',tg.id)==='{"p":"stu","s":"case"}','自己個管、自己有教的學生可以看個案頁');
+  ok(R('stu','case',other.id)==='{"p":"me_stu"}'&&R('stu','case','nobody')==='{"p":"me_stu"}','別人的學生、不存在的學生：回「我的學生」');
+  ok(T.route(D,'','stu','case',cm.id).p==='me_stu','沒有老師 id（綁定的老師找不到）：任何個案頁都不能看');
+  ok(['contacts','examSvc','privNote','iepDate','reviewDate','certExp'].every(k=>T.PRIV.includes(k)),'家長聯絡、段考服務也算私密欄位');
+  const x=Object.assign({},tg,{examSvc:{ext:'*'},contacts:[1]}),v=T.studentView(x,'r2','teacher');
+  ok(!('examSvc' in v)&&!('contacts' in v)&&v.name===tg.name&&x.examSvc,'不是個管的看不到段考服務、家長聯絡（只拿掉副本的欄位，名冊不動）');
+  ok(T.studentView(Object.assign({},cm,{examSvc:{ext:'*'}}),'r2','teacher').examSvc.ext==='*','個管看得到');
 }
 
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');

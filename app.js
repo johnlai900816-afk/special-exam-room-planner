@@ -107,7 +107,8 @@ function paintRoleSw(){const el=$('roleSw');if(!el||typeof D==='undefined'||!D)r
     el.innerHTML=APPREVIEW?`<span class="rs">以 <b>${esc(t?t.name:'老師')}</b> 的身分看</span><button type="button" class="b sm" onclick="setRole('admin')">回到管理者</button>`:(t?`<span class="rs">${esc(t.name)}</span>`:'');return;}
   const ts=D.teachers.slice().sort((a,b)=>(a.role==='資源班'?0:1)-(b.role==='資源班'?0:1));
   el.innerHTML=ts.length?`<label class="rs">以老師身分看<select onchange="if(this.value)setRole('teacher',this.value,{preview:true})"><option value="">選老師</option>${ts.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label>`:'';}
-function appSetRole(role,tid,o){o=o||{};window.APPROLE=role==='teacher'?'teacher':'admin';window.ME_TID=role==='teacher'?String(tid||ME_TID||''):(o.keepTid?ME_TID:'');
+// o.exact：老師 id 就用傳進來的（可以是空白：綁定的老師找不到時），不沿用上一個
+function appSetRole(role,tid,o){o=o||{};window.APPROLE=role==='teacher'?'teacher':'admin';window.ME_TID=role==='teacher'?String(o.exact?(tid||''):(tid||ME_TID||'')):(o.keepTid?ME_TID:'');
   window.APPREVIEW=APPROLE==='teacher'&&!!o.preview;
   const home=APPROLE==='teacher'?'me_today':'home';const ok=APPROLE==='teacher'?page.slice(0,3)==='me_':page.slice(0,3)!=='me_';
   go(ok?page:home,ok?sub:undefined);}
@@ -120,7 +121,8 @@ function go(p,s){
   const r=REDIR[p+(s?'/'+s:'')]||REDIR[p];if(r){const a=r.split('/');p=a[0];s=a[1]||s;}
   if(p==='set'&&s==='school')s=lastSub.school||'import';
   const tch=APPROLE==='teacher';
-  if(tch&&p.slice(0,3)!=='me_'&&p!=='iep'&&!(p==='stu'&&s==='case'))p='me_today';   // 個案頁老師也能看（私密欄位只給自己個管的）   // 老師身分只看「我的」頁面
+  // 老師身分只走白名單（teacher.js 的 TEACH.route）：我的頁面（me_*）、自己學生（個管＋有教）的個案頁；IEP 會議換成「我的 IEP」；其他都回「今天」
+  if(tch){const r=typeof TEACH!=='undefined'&&TEACH.route?TEACH.route(D,ME_TID,p,s,stuCur):{p:p.slice(0,3)==='me_'?p:'me_today',s};p=r.p;s=r.s;}
   if(!tch&&p.slice(0,3)==='me_')p='home';
   if(!PAGES[p]&&p.slice(0,3)!=='me_'&&p!=='iep')p='home';
   const P=PAGES[p]||{t:p==='iep'?'IEP 會議':(NAV.teacher.find(x=>x[0]===p)||[0,''])[1]};page=p;
@@ -134,7 +136,10 @@ function go(p,s){
   render();$('main').scrollTo(0,0);
   const pg=$('page');pg.classList.remove('enter');void pg.offsetWidth;pg.classList.add('enter');   // 換頁時才淡入，同一頁重畫不閃
 }
+// 老師身分可以停留的頁面（render 再檢查一次：名冊或綁定改了之後，原本的個案頁可能已經不是他的學生）
+function teacherOk(){return /^me_/.test(page)||(page==='stu'&&sub==='case'&&typeof TEACH!=='undefined'&&!!TEACH.relation(D,ME_TID,D.students.find(x=>x.id===stuCur)));}
 function render(){
+  if(APPROLE==='teacher'&&!teacherOk()){go('me_today');return;}
   const P=PAGES[page]||{t:page==='iep'?'IEP 會議':(NAV.teacher.find(x=>x[0]===page)||[0,''])[1]};
   paintNav();
   $('pgTitle').textContent=P.t;document.title=P.t+'｜資源班管理系統';
@@ -181,7 +186,13 @@ function examInfo(){
 }
 // 進行中的 IEP 調查（不含直接開會）：給「今天」的待辦和個案頁用；沒有 IEP 模組時是空的
 function iepRounds(){try{if(typeof IEP==='undefined'||!D.iep||!Array.isArray(D.iep.rounds))return [];return D.iep.rounds;}catch(e){return [];}}
-function iepOpen(id,s){if(D.iep)D.iep.cur=id;go('iep',s||'ans');}
+// 老師身分：打開「我的 IEP」（只看得到自己開的調查；別人開、邀請我的到「填空堂」），不會進到全校的 IEP 會議頁
+function iepOpen(id,s){
+  if(APPROLE==='teacher'){const U=typeof IEP!=='undefined'&&IEP.ui&&IEP.ui.state,R=iepRounds().find(r=>r.id===id);
+    if(U&&R&&ME_TID&&IEP.canEdit(D,R,ME_TID)){if(R.quick){U.qk=R.id;go('me_iep','quick');}else{U.cur[ME_TID]=R.id;go('me_iep',s==='plan'?'plan':'survey');}}
+    else go('me_iep','inv');
+    return;}
+  if(D.iep)D.iep.cur=id;go('iep',s||'ans');}
 function renderHome(){
   const now=new Date(),wd=now.getDay(),isSchool=wd>=1&&wd<=5,d=isSchool?wd-1:0,hm=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   const out=[];evaluate(M,ST.slot,out);
@@ -278,9 +289,11 @@ function myTid(){if(window.ME_TID)return ME_TID;try{return localStorage.getItem(
 function canPriv(s){return APPROLE!=='teacher'||(!!ME_TID&&s.caseMgr===ME_TID);}
 function setStuId(id,k,v){const s=D.students.find(x=>x.id===id);if(!s)return;s[k]=String(v).trim();changed();if(k==='caseMgr'||k==='name'||k==='cls')render();}
 function renderCase(){
-  const s=D.students.find(x=>x.id===stuCur);
-  if(!s){$('page').innerHTML=emptyBox('找不到這位學生。',`<button class="b" onclick="go('stu')">回到名單</button>`);return;}
-  const si=M.sIdx[s.id],ro=APPROLE==='teacher',E=examInfo(),sv=((E&&E.sv)||{})[s.id]||[],at=attStats('0000','9999','')[s.id];
+  const ro=APPROLE==='teacher',s0=D.students.find(x=>x.id===stuCur);
+  // 老師身分：只看得到自己個管或有教的學生（rel＝cm／taught）；私密欄位、家長聯絡、段考服務（IEP）只給個管
+  const rel=!s0?'':ro?(typeof TEACH!=='undefined'?TEACH.relation(D,ME_TID,s0):''):'admin',s=rel?s0:null;
+  if(!s){$('page').innerHTML=emptyBox('找不到這位學生。',`<button class="b" onclick="go('${ro?'me_stu':'stu'}')">回到名單</button>`);return;}
+  const si=M.sIdx[s.id],E=examInfo(),sv=((E&&E.sv)||{})[s.id]||[],at=attStats('0000','9999','')[s.id];
   const gs=M.G.filter(g=>g.stu.includes(si)),cm=D.teachers.find(t=>t.id===s.caseMgr),sets=D.sets.filter(x=>x.students.includes(s.id)),idA=jsArg(s.id);
   const inp=(k,cls,ph)=>ro?`<span>${esc(s[k]||'—')}</span>`:`<input type="text" class="${cls}" value="${esc(s[k]||'')}"${ph?` placeholder="${ph}"`:''} onchange="setStuId(${idA},'${k}',this.value)">`;
   let h=`<div class="casehd"><button type="button" class="b sm ghost" onclick="go('${ro&&PAGES.me_stu?'me_stu':'stu'}')">${ico('back')}學生</button>
@@ -301,17 +314,22 @@ function renderCase(){
     (gs.length?`<p class="chips">${gs.map(g=>`<span class="ev c${colorOf(g)}">${esc(g.name)}<small>${esc(g.t>=0?M.T[g.t].name:'')}</small></span>`).join('')}</p>`:emptyBox('還沒分組。',ro?'':`<button class="b sm" onclick="go('sched','need')">去編組</button>`))+
     (n?`<div class="scroll"><table class="mini"><thead><tr><th></th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr></thead><tbody>${ps.map(p=>{const pi=D.periods.indexOf(p);return `<tr><th>${esc(p.name)}</th>${DAYS.map((d,di)=>{const o=of[di*M.NP+pi];return `<td>${o?`<span class="ev c${colorOf(o.g)}">${esc(o.g.name)}<small>${esc(ROOM[o.l]>=0?D.rooms[ROOM[o.l]].name:'')}</small></span>`:''}</td>`;}).join('')}</tr>`;}).join('')}</tbody></table></div>`:'')+
     (ro?'':`<div class="bar" style="margin:12px 0 0"><button class="b sm" onclick="offSel='s:'+${idA};go('set','off')">個人不排課時段${(D.offBy['s:'+s.id]||[]).length?'（'+D.offBy['s:'+s.id].length+' 格）':''}</button></div>`)+'</section>';
-  h+=`<section class="card">${secH(4,'考評服務')}${sv.length?`<p class="chips">${sv.map(x=>`<span class="tagv">${x}</span>`).join('')}</p>`:'<p class="dim">沒有。</p>'}${ro?'':`<button class="b sm" onclick="go('exam')">段考</button>`}</section>`;
-  h+=`<section class="card">${secH(5,'出缺席')}${at?`<div class="nums">${[['應到',at.exp],['實到',at.in],['遲到',at.late],['請假',at.leave],['缺席',at.abs]].map(([k,v])=>`<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`:'<p class="dim">還沒有點名紀錄。</p>'}</section>`;
-  const rs=iepRounds().map(R=>({R,m:(R.meets||[]).find(m=>m.s===s.id)})).filter(o=>o.m);
+  if(rel)h+=`<section class="card">${secH(4,'考評服務')}${sv.length?`<p class="chips">${sv.map(x=>`<span class="tagv">${x}</span>`).join('')}</p>`:'<p class="dim">沒有。</p>'}${ro?'':`<button class="b sm" onclick="go('exam')">段考</button>`}</section>`;
+  if(rel)h+=`<section class="card">${secH(5,'出缺席')}${at?`<div class="nums">${[['應到',at.exp],['實到',at.in],['遲到',at.late],['請假',at.leave],['缺席',at.abs]].map(([k,v])=>`<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`:'<p class="dim">還沒有點名紀錄。</p>'}</section>`;
+  // 老師身分只列自己開的、或邀請他的會議
+  const mineR=ro?new Set((typeof IEP!=='undefined'&&ME_TID?IEP.ownRounds(D,ME_TID).concat(IEP.invited(D,ME_TID)):[]).map(R=>R.id)):null;
+  const rs=iepRounds().filter(R=>!mineR||mineR.has(R.id)).map(R=>({R,m:(R.meets||[]).find(m=>m.s===s.id)})).filter(o=>o.m);
   h+=`<section class="card">${secH(6,'IEP 會議')}${rs.length?`<ul class="plain2">${rs.slice().reverse().map(({R,m})=>{let w='還沒排定';try{if(m.at){const f=IEP.slotInfo(D,m.at);w=IEP.fmtDate(f.date)+' '+(f.custom?'':f.name)+(m.room?'・'+m.room:'');}}catch(e){}
       return `<li><button type="button" onclick="iepOpen(${jsArg(R.id)},'${R.quick?'quick':'plan'}')"><span>${esc(R.name||R.kind||'IEP 會議')}</span><em>${esc(w)}${ico('next')}</em></button></li>`;}).join('')}</ul>`:'<p class="dim">沒有。</p>'}</section>`;
-  // extras.js 的區段：window.STU_SECTIONS＝[{id,t,render(學生)→html}]
-  let no=6;(window.STU_SECTIONS||[]).forEach(x=>{try{const b=x.render(s);if(b==null||b==='')return;h+=`<section class="card" data-sec="${esc(x.id||'')}">${secH(++no,esc(x.t||''))}${b}</section>`;}catch(e){}});
+  // extras.js 的區段：window.STU_SECTIONS＝[{id,t,render(學生,ctx)→html}]。
+  // 傳進去的是依身分過濾過的學生（TEACH.studentView：不是個管的拿掉私密欄位、家長聯絡、段考服務），ctx.canPriv＝能不能看私密欄位。
+  // 約定：render 回傳的 HTML 裡所有資料都要自己用 esc 轉義；要改資料時照 id 從 D.students 找回原本那一筆，不要改傳進去的副本
+  const view=ro&&typeof TEACH!=='undefined'?TEACH.studentView(s,ME_TID,'teacher'):s,ctx={canPriv:canPriv(s),role:ro?'teacher':'admin',rel};
+  let no=6;(window.STU_SECTIONS||[]).forEach(x=>{try{const b=x.render(view,ctx);if(b==null||b==='')return;h+=`<section class="card" data-sec="${esc(x.id||'')}">${secH(++no,esc(x.t||''))}${b}</section>`;}catch(e){}});
   h+='</div>';
   if(!ro)h+=`<div class="bar" style="margin-top:20px"><span class="grow"></span><button class="b danger" onclick="delStu(D.students.findIndex(x=>x.id===${idA}))">刪除學生</button></div>`;
   $('page').innerHTML=h;
-  try{if(typeof window.STU_SECTIONS_AFTER==='function')window.STU_SECTIONS_AFTER(s,$('page'));}catch(e){}
+  try{if(typeof window.STU_SECTIONS_AFTER==='function')window.STU_SECTIONS_AFTER(view,$('page'),ctx);}catch(e){}
 }
 let stuDue=0;const stuChk=new Set();
 // 私密日期欄位：只在個案頁看得到，不印、不出現在點名畫面
@@ -896,7 +914,7 @@ async function snapInit(){
 // 清除所有自動保留的版本（公用電腦模式、清除這台電腦上的資料）
 function snapWipe(){SNAPS=[];try{localStorage.removeItem(SNKEY);}catch(e){}
   if(snapDB)snapTx('readwrite',st=>{st.clear();}).catch(()=>{});else if(window.indexedDB)try{indexedDB.deleteDatabase('rc-snap');}catch(e){}}
-function restoreSnap(i){const a=snaps(),x=a[i];if(!x)return;if(!confirm('要回到 '+fmtTime(x.at)+'（'+x.label+'）的版本嗎？\n目前的資料會先自動保留一份，之後還可以再換回來。'))return;
+function restoreSnap(i){if(noTch())return;const a=snaps(),x=a[i];if(!x)return;if(!confirm('要回到 '+fmtTime(x.at)+'（'+x.label+'）的版本嗎？\n目前的資料會先自動保留一份，之後還可以再換回來。'))return;
   snapshot('回到舊版本之前');try{D=normalize(JSON.parse(x.json));}catch(e){toast('這個版本讀不出來');return;}undoStack=[];changed();$('title').value=D.title;paintSchool();render();toast('已回到 '+fmtTime(x.at)+' 的版本');}
 function fmtTime(t){const d=new Date(t),p=n=>String(n).padStart(2,'0');return (d.getMonth()+1)+'/'+d.getDate()+' '+p(d.getHours())+':'+p(d.getMinutes());}
 
@@ -1034,7 +1052,9 @@ function download(name,text){try{localStorage.setItem(LBKEY,String(Date.now()));
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;
   document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
 const bkDate=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());};
-function exportJson(){download('資源班管理系統_備份_'+bkDate()+'.json',JSON.stringify(backupObj(),null,1));}
+// 老師身分（cloud.js 的 tchBlock）：不能下載備份、還原、回到舊版本、全部清空
+const noTch=()=>typeof tchBlock==='function'&&tchBlock();
+function exportJson(){if(noTch())return;download('資源班管理系統_備份_'+bkDate()+'.json',JSON.stringify(backupObj(),null,1));}
 // 加密備份：AES-GCM 256，金鑰由密碼經 PBKDF2-SHA256（31 萬次）產生；密碼忘了就打不開
 const ENC_ITER=310000;
 function b64(u){const a=new Uint8Array(u);let s='';for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode.apply(null,a.subarray(i,i+0x8000));return btoa(s);}
@@ -1055,7 +1075,7 @@ function askPw(title,twice){shareOpen=false;return new Promise(res=>{let done=fa
   const ok=()=>{const a=$('pw1').value;if(!a)return;if(twice){if(a.length<8){toast('密碼至少要 8 個字');return;}if(a!==$('pw2').value){toast('兩次輸入的密碼不一樣');return;}}
     dlgDone=null;closeDlg();fin(a);};
   $('pwOk').onclick=ok;['pw1','pw2'].forEach(id=>{const el=$(id);if(el)el.onkeydown=e=>{if(e.key==='Enter')ok();};});setTimeout(()=>$('pw1').focus(),50);});}
-async function exportEnc(){if(!(window.crypto&&crypto.subtle)){toast('這個瀏覽器不能加密（網址要是 https）');return;}
+async function exportEnc(){if(noTch())return;if(!(window.crypto&&crypto.subtle)){toast('這個瀏覽器不能加密（網址要是 https）');return;}
   const pw=await askPw('下載加密備份檔',true);if(!pw)return;
   try{const o=await encPack(JSON.stringify(backupObj()),pw);download('資源班管理系統_加密備份_'+bkDate()+'.json',JSON.stringify(o));toast('已下載加密備份檔，請記好密碼');}
   catch(e){toast('加密失敗：'+(e.message||e));}}
@@ -1093,10 +1113,11 @@ function checkBackup(o){
   return {ok:!err.length,err:err.slice(0,6)};
 }
 function bkSum(o){return {t:String(o.title||'').trim()||'（沒有名稱）',s:(o.students||[]).length,te:(o.teachers||[]).length,g:(o.groups||[]).length,a:Object.keys(o._att||{}).length,e:!!o._exam};}
-function importJson(inp){const f=inp.files[0];if(!f)return;inp.value='';
+function importJson(inp){const f=inp.files[0];if(!f)return;inp.value='';if(noTch())return;
   if(f.size>BK_MAX_BYTES){toast('檔案太大（超過 30MB），不像是備份檔');return;}
   const rd=new FileReader();rd.onload=()=>{let o;try{o=JSON.parse(rd.result);}catch(e){toast('這不是備份檔');return;}restoreFrom(o);};rd.readAsText(f);}
 async function restoreFrom(o){
+  if(noTch())return;
   if(isRO()){toast('你是檢視權限，不能還原');return;}
   if(o&&o.rcEnc){const pw=await askPw('打開加密備份檔',false);if(!pw)return;
     try{o=JSON.parse(await encOpen(o,pw));}catch(e){toast('密碼不對，或檔案壞掉了');return;}}
@@ -1111,7 +1132,7 @@ async function restoreFrom(o){
   if(at){ATT=at;attSave();}
   try{if(ex)localStorage.setItem(EXKEY,JSON.stringify(ex));if(nt)localStorage.setItem(NKEY,JSON.stringify(nt));}catch(e){}
   D=normalize(o);undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();if($('dlg').open)closeDlg();reloadExam();render();toast('已還原');}
-function resetAll(){if(isRO()){toast('你是檢視權限，不能清空');return;}
+function resetAll(){if(noTch())return;if(isRO()){toast('你是檢視權限，不能清空');return;}
   if(cloudState==='on'&&!isAdmin()){toast('共用中只有主持人可以全部清空');return;}
   const t=String(D.title||'').trim(),pc=typeof pcMode==='function'&&pcMode();
   const w=prompt('全部清空會清掉目前的名冊、分組、排法、段考考場與點名紀錄'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。\n'+

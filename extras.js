@@ -26,8 +26,8 @@ const md=s=>{const m=String(s||'').match(/^\d{4}-(\d{2})-(\d{2})/);return m?(+m[
 const fmtAt=t=>{const d=new Date(+t||0);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes());};
 const role=()=>root.APPROLE==='teacher'?'teacher':'admin';
 const meTid=()=>String(root.ME_TID||'');
-// 私密區段：老師身分時只有這位學生的個管看得到；管理者都看得到
-function canSee(s){if(!s)return false;if(role()!=='teacher')return true;return !!meTid()&&s.caseMgr===meTid();}
+// 私密區段：老師身分時只有這位學生的個管看得到；管理者都看得到。ctx 是個案頁傳來的 {canPriv}：說不行就一定不行
+function canSee(s,ctx){if(!s)return false;if(ctx&&ctx.canPriv===false)return false;if(role()!=='teacher')return true;return !!meTid()&&s.caseMgr===meTid();}
 function canEdit(s){return canSee(s)&&!ro();}
 // 正式課表（D.assign）。app 的 ST 在排課頁可能是草稿，所以這裡自己算
 function official(){const d=XD();if(!d||!C)return null;const M=C.compile(d),S=C.toState(M,d);return {M,S};}
@@ -293,7 +293,8 @@ function locklogPage(el){
 
 /* ═════ 6. 個案頁：家長聯絡紀錄、段考服務（IEP） ═════ */
 const CT={edit:{},since:{},dig:{}};
-function contactsHtml(s){const d=XD();if(!d||!C||!canSee(s))return '';
+// 畫面裡的資料一律經過 E()（轉義）才放進 HTML
+function contactsHtml(s,ctx){const d=XD();if(!d||!C||!canSee(s,ctx))return '';
   const list=((d.contacts&&d.contacts[s.id])||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))),ed=canEdit(s),cur=list.find(x=>x.id===CT.edit[s.id])||null,t=todayS();
   let h=`<div class="xx xx-sec" data-xsec="contacts" data-sid="${E(s.id)}">`;
   h+=list.length?`<ul class="xx-list">${list.map(x=>`<li><span><b>${E(md(x.date))}</b> ${chip(x.how||'其他')} ${E(x.who||'')}<small>${E(x.note||'')}</small></span>${ed?btn('編輯','edit',{id:x.id},'sm')+btn('刪除','del',{id:x.id},'sm danger'):''}</li>`).join('')}</ul>`:`<p class="xx-dim" style="margin:0">還沒有紀錄。</p>`;
@@ -310,7 +311,7 @@ function svcSubjects(s){const E0=examData(),set=new Set();
   ((E0&&E0.sessions)||[]).forEach(x=>String(x.subject||'').split(/[\/／、,，]/).forEach(y=>{y=y.trim();if(y)set.add(y);}));
   if(!set.size)['國文','英文','數學','社會','自然','作文','英聽'].forEach(x=>set.add(x));
   const v=s.examSvc||{};SVC.forEach(([k])=>{if(Array.isArray(v[k]))v[k].forEach(x=>set.add(String(x)));});return [...set];}
-function svcHtml(s){const d=XD();if(!d||!canSee(s))return '';const v=s.examSvc||{},ed=canEdit(s),subs=svcSubjects(s),dis=ed?'':' disabled';
+function svcHtml(s,ctx){const d=XD();if(!d||!canSee(s,ctx))return '';const v=s.examSvc||{},ed=canEdit(s),subs=svcSubjects(s),dis=ed?'':' disabled';
   let h=`<div class="xx xx-sec" data-xsec="examsvc" data-sid="${E(s.id)}"><div class="xx-svc">`;
   SVC.forEach(([k,n])=>{const x=v[k],mode=x==='*'?'all':Array.isArray(x)?'some':'';
     h+=`<b>${E(n)}</b><div><select data-f="mode" data-k="${k}" aria-label="${E(n)}"${dis}><option value=""${mode?'':' selected'}>不需要</option><option value="all"${mode==='all'?' selected':''}>全部科目</option><option value="some"${mode==='some'?' selected':''}>指定科目</option></select>
@@ -323,7 +324,9 @@ function svcSave(s,box){const o={};
     const cks=[...box.querySelectorAll('input[data-f="sj"][data-k="'+k+'"]')];o[k]=cks.length?cks.filter(c=>c.checked).map(c=>c.value):((s.examSvc&&Array.isArray(s.examSvc[k]))?s.examSvc[k]:[]);});
   const n=box.querySelector('input[data-f="note"]'),note=n?n.value.trim():'';if(note)o.note=note;
   if(Object.keys(o).length)s.examSvc=o;else delete s.examSvc;store();}
-function sectionsAfter(s,container){if(!container||!s)return;
+// app.js 傳來的 s 是依身分過濾過的副本：要改資料時照 id 找回名冊裡原本那一筆
+function sectionsAfter(s0,container,ctx){if(!container||!s0||!canSee(s0,ctx))return;
+  const s=((XD()||{}).students||[]).find(x=>x&&x.id===s0.id);if(!s)return;
   const bind=sec=>{const box=container.querySelector('.xx-sec[data-xsec="'+sec+'"][data-sid="'+cssq(s.id)+'"]');if(!box||box._xx)return;box._xx=1;
     const redraw=()=>{const h=sec==='contacts'?contactsHtml(s):svcHtml(s);const tmp=document.createElement('div');tmp.innerHTML=h;const nb=tmp.firstElementChild;if(nb){box.replaceWith(nb);bind(sec);}else box.remove();};
     if(sec==='contacts'){

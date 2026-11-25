@@ -28,22 +28,32 @@ function avatar(x){const nm=x.name||who(x.email);return '<span class="av" title=
 function loadScript(src,integrity){return new Promise((ok,no)=>{const s=document.createElement('script');if(integrity){s.integrity=integrity;s.crossOrigin='anonymous';}s.src=src;s.onload=ok;s.onerror=()=>no(new Error(src));document.head.appendChild(s);});}
 
 /* ───── 這台電腦上的資料：公用電腦模式、登出時清除 ───── */
-const PCKEY='rc-pc-mode',USEDKEY='rc-cloud-used',SEENKEY='rc-cloud-seen',SYNCKEY='rc-cloud-sync';
-// 會存學生資料的鍵（含段考考場 exam.html 與通知單 notice.html 用的）
-const LOCAL_KEYS=['resource-class-v1','resource-class-snap','resource-class-lastbackup','resource-class-att-v1','special-exam-room-v1','exam-notice-v1',SYNCKEY];
+const PCKEY='rc-pc-mode',USEDKEY='rc-cloud-used',SEENKEY='rc-cloud-seen',SYNCKEY='rc-cloud-sync',TABKEY='rc-pc-tab';
+// 會存學生資料或個人資料的鍵（含段考考場 exam.html、通知單 notice.html、AI 設定 gemini.js、IEP 連結鑰匙 iep.js 用的）。
+// 不清的：外觀（rc-theme、rc-big）、公用電腦模式本身（rc-pc-mode）、學校雲端設定（rc-school-cloud）、用過雲端的標記（rc-cloud-used／seen：登出後仍要先登入才顯示資料）
+const LOCAL_KEYS=['resource-class-v1','resource-class-snap','resource-class-lastbackup','resource-class-att-v1','special-exam-room-v1','special-exam-room-v1-mine','exam-notice-v1',SYNCKEY,'rc-me','rc-iep-tok'];
+const LOCAL_PREFIX=['rc-gemini-'];   // rc-gemini-key（API 金鑰）、rc-gemini-log（使用紀錄）、模型、模式…
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}}
 function pcMode(){return lsGet(PCKEY)==='1';}
 function cloudUsed(){return lsGet(USEDKEY)==='1';}
 function hasData(o){return !!o&&((o.students||[]).length+(o.groups||[]).length)>0;}
+// 公用電腦模式：Google 登入只存在這個分頁（Firebase 的 SESSION 保存方式），關掉分頁就登出；不自動保留版本
 function setPcMode(on){
-  if(on){lsSet(PCKEY,'1');if(typeof snapWipe==='function')snapWipe();toast('已開啟公用電腦模式：不再自動保留版本'+(PID()?'，關掉分頁或登出時會清除這台電腦上的資料':''));}
-  else{try{localStorage.removeItem(PCKEY);}catch(e){}toast('已關閉公用電腦模式');}
+  if(on){lsSet(PCKEY,'1');try{sessionStorage.setItem(TABKEY,'1');}catch(e){}if(typeof snapWipe==='function')snapWipe();
+    toast('已開啟公用電腦模式：不再自動保留版本'+(PID()?'；登入只在這個分頁有效，關掉分頁就登出，資料都存上雲端後也會清除這台電腦上的資料':''));}
+  else{try{localStorage.removeItem(PCKEY);}catch(e){}toast('已關閉公用電腦模式'+(PID()?'：之後登入會一直保留，直到按「登出」':''));}
+  authPersist();
   if(shareOpen)renderShare();}
-// 清掉這台電腦上的學生資料（雲端上的不受影響）
-function wipeLocal(){LOCAL_KEYS.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});try{sessionStorage.clear();}catch(e){}
+// 登入要保存在哪裡：公用電腦模式＝只有這個分頁（SESSION）；平常＝這台電腦（LOCAL）。已經登入的會跟著搬過去
+function authPersist(){if(!CLOUD||!CLOUD.auth||typeof firebase==='undefined')return Promise.resolve();const P=firebase.auth.Auth.Persistence;
+  return CLOUD.auth.setPersistence(pcMode()?P.SESSION:P.LOCAL).catch(()=>{});}
+// 清掉這台電腦上的學生資料（雲端上的不受影響）。keepTab：關分頁時用，不清這個分頁的 sessionStorage（瀏覽器關分頁時自己會清）
+function wipeLocal(keepTab){LOCAL_KEYS.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
+  try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&LOCAL_PREFIX.some(p=>k.indexOf(p)===0))localStorage.removeItem(k);}}catch(e){}
+  if(!keepTab)try{sessionStorage.clear();}catch(e){}
   if(typeof snapWipe==='function')snapWipe();}
-function wipeAsk(){if(!confirm('要清除這台電腦上的名冊、排課、點名、段考考場、通知單和自動保留的版本嗎？\n雲端上大家共用的那一份不受影響。清除後沒辦法復原。'))return;
+function wipeAsk(){if(!confirm('要清除這台電腦上的名冊、排課、點名、段考考場、通知單、自動保留的版本、IEP 連結和 AI 設定（含金鑰）嗎？\n雲端上大家共用的那一份不受影響。清除後沒辦法復原。'))return;
   wipeLocal();toast('已清除這台電腦上的資料');setTimeout(()=>location.reload(),600);}
 // 有改了還沒存上雲端的內容
 function unsynced(){return cloudState==='on'&&!isRO()&&typeof D!=='undefined'&&JSON.stringify(D)!==lastPushed;}
@@ -64,7 +74,7 @@ function cloudLogout(){
   shareOpen=false;const pend=unsynced();
   openDlg('<h3>登出</h3><p class="lead">登出後，這台電腦就不會再同步雲端上的資料。</p>'+
     '<label class="note" style="display:block"><input type="checkbox" id="wipeChk"'+(pcMode()?' checked':'')+'> 同時清除這台電腦上的資料（建議學校公用電腦勾選）</label>'+
-    '<p class="note">會清掉這台電腦上的名冊、排課、點名、段考考場、通知單和自動保留的版本；雲端上大家共用的那一份不受影響。</p>'+
+    '<p class="note">會清掉這台電腦上的名冊、排課、點名、段考考場、通知單、自動保留的版本、IEP 連結和 AI 設定（含金鑰）；雲端上大家共用的那一份不受影響。</p>'+
     (pend?'<div class="box bad">還有修改沒存上雲端。清除的話，這些修改就沒了。</div>':'')+
     '<div class="bar" style="margin:12px 0 0"><span class="grow"></span><button class="b pri" onclick="doLogout($(\'wipeChk\').checked)">登出</button><button class="b" onclick="closeDlg()">取消</button></div>');
 }
@@ -80,7 +90,7 @@ function deniedOffer(){if(!cloudUsed()||(!hasData(D)&&!lsGet('special-exam-room-
     '<div class="bar" style="margin:12px 0 0"><span class="grow"></span><button class="b danger" onclick="closeDlg();wipeLocal();location.reload()">清除這台電腦上的資料</button><button class="b" onclick="closeDlg()">先不要</button></div>');}
 window.addEventListener('beforeunload',e=>{if(unsynced()){e.preventDefault();e.returnValue='';}});
 // 公用電腦模式：關掉分頁時，資料都已存上雲端就清掉這台電腦上的資料
-window.addEventListener('pagehide',()=>{if(pcMode()&&PID()&&cloudState==='on'&&!unsynced())wipeLocal();});
+window.addEventListener('pagehide',()=>{if(pcMode()&&PID()&&cloudState==='on'&&!unsynced())wipeLocal(true);});
 
 /* ───── 狀態列與學校雲端標示 ───── */
 function paintBadge(){const pid=window.SCHOOL_CLOUD_ACTIVE,c=$('cloud');let el=$('scBadge');
@@ -105,13 +115,16 @@ function setCloudUI(state){
   applyBind();
   if(typeof page!=='undefined'&&typeof M!=='undefined'&&M&&(g0!==gateOn()||page==='home'))render();
 }
+// 老師身分（綁定老師、或管理者預覽老師畫面）：不能下載備份、還原、全部清空、改學校雲端設定（畫面不顯示，函式也擋）
+function teacherMode(){return String((typeof APPROLE!=='undefined'?APPROLE:window.APPROLE)||'')==='teacher';}
+function tchBlock(){if(!teacherMode())return false;toast('老師身分不能做這件事，請洽管理者');return true;}
 // 學校自己的雲端（設定存在這台瀏覽器，school.js 讀）
 function schoolCloud(){try{return JSON.parse(localStorage.getItem(window.SCHOOL_CLOUD_KEY||'rc-school-cloud')||'null');}catch(e){return null;}}
 function parseFbConfig(t){const o={};String(t).replace(/["']?(apiKey|authDomain|projectId|storageBucket|messagingSenderId|appId|measurementId)["']?\s*:\s*["']([^"']+)["']/g,(m,k,v)=>{o[k]=v;});return o.apiKey&&o.projectId&&o.authDomain?o:null;}
-function setSchoolCloud(c,msg){if(c)localStorage.setItem(window.SCHOOL_CLOUD_KEY,JSON.stringify(c));else localStorage.removeItem(window.SCHOOL_CLOUD_KEY);
+function setSchoolCloud(c,msg){if(tchBlock())return;if(c)localStorage.setItem(window.SCHOOL_CLOUD_KEY,JSON.stringify(c));else localStorage.removeItem(window.SCHOOL_CLOUD_KEY);
   try{if(CLOUD&&CLOUD.auth)CLOUD.auth.signOut();}catch(e){}toast(msg||'已套用，重新整理中…');setTimeout(()=>location.reload(),700);}
 // 套用：一定要老師自己按，並看過專案名稱與登入網域
-function applySchoolCloud(){const raw=parseFbConfig($('fbIn').value),c=raw&&window.cleanFbConfig?window.cleanFbConfig(raw):raw;
+function applySchoolCloud(){if(tchBlock())return;const raw=parseFbConfig($('fbIn').value),c=raw&&window.cleanFbConfig?window.cleanFbConfig(raw):raw;
   if(!raw){toast('讀不出設定，請把 Firebase 給的 firebaseConfig 整段貼上（要有 apiKey、authDomain、projectId）');return;}
   if(!c){toast('這組設定的格式不對：登入網域（authDomain）必須是「專案名稱.firebaseapp.com」或「.web.app」');return;}
   const odd=c.authDomain.split('.')[0]!==c.projectId;
@@ -119,11 +132,11 @@ function applySchoolCloud(){const raw=parseFbConfig($('fbIn').value),c=raw&&wind
     (odd?'\n\n注意：登入網域和專案名稱不一樣，請先和學校的管理者確認。':'')+
     '\n\n只有學校管理者親自給你的設定才套用。套用後要用 Google 帳號登入；要不要把這台電腦的資料傳上去，登入後會再問你。'))return;
   PENDING=null;setSchoolCloud(c);}
-function schoolLink(){const c=schoolCloud();if(!c||!c.apiKey)return;const b=btoa(JSON.stringify(c)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+function schoolLink(){if(tchBlock())return;const c=schoolCloud();if(!c||!c.apiKey)return;const b=btoa(JSON.stringify(c)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   copyText(location.origin+location.pathname+'#cloud='+b,'已複製設定連結：同事點開後，在「學校自己的雲端」核對專案名稱、按「套用」，再用 Google 登入；主持人把他的信箱加進共用名單就可以了');}
 // 安全規則：把主持人信箱填進規則再複製（只有這個信箱能第一次建立共用名單）
 const ADMIN_PH='CHANGE-ME@example.com';
-function copyRules(){const u=(CLOUD&&CLOUD.user&&CLOUD.user.email)||'';
+function copyRules(){if(tchBlock())return;const u=(CLOUD&&CLOUD.user&&CLOUD.user.email)||'';
   const e=(prompt('請輸入主持人的 Gmail。\n會寫進安全規則：只有這個帳號能第一次登入建立共用名單。',u)||'').trim().toLowerCase();if(!e)return;
   if(!EMAIL_RE.test(e)){toast('信箱格式不對，例如 teacher@gmail.com');return;}
   fetch('firestore.rules',{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.text();}).then(t=>copyText(t.split(ADMIN_PH).join(e),'已複製安全規則（主持人：'+e+'），貼到 Firebase 的 Firestore「規則」分頁後按「發布」'),()=>toast('拿不到規則檔，請稍後再試'));}
@@ -147,14 +160,17 @@ function schoolCloudHtml(open){const c=schoolCloud(),cur=window.FIREBASE_CONFIG,
   (c&&c.projectId?'<button class="b" onclick="schoolLink()">複製給同事的設定連結</button>':'')+
   (c?'<button class="b" onclick="setSchoolCloud(null,\'已改回網站內建的設定\')">改回網站內建的設定</button>':'')+
   (!(c&&c.local)&&(b||c)?'<button class="b" onclick="setSchoolCloud({local:true},\'已改成單機，不連雲端\')">不使用雲端（單機）</button>':'')+'</div></details>';}
-function backupHtml(open){const pc=pcMode();return '<details class="more"'+(open?' open':'')+'><summary>備份與還原</summary><p class="note">資料會自動儲存'+(cloudState==='on'?'並同步給共用的老師':'在這台電腦的這個瀏覽器')+'。換電腦、清瀏覽器資料之前，或想留一份存檔時再下載備份檔。</p>'+
+// 公用電腦模式與清除這台電腦上的資料（老師身分也有）
+function pcHtml(){const pc=pcMode();return '<h4>公用電腦模式</h4><label class="note" style="display:block"><input type="checkbox"'+(pc?' checked':'')+' onchange="setPcMode(this.checked)"> 這是學校的公用電腦</label>'+
+  '<p class="note" style="margin-top:0">開啟後不再自動保留版本'+(PID()?'；Google 登入只在這個分頁有效，關掉分頁就登出；登出時預設清除這台電腦上的資料，資料都存上雲端後關掉分頁也會清除':'')+'。單機使用時資料仍存在這台電腦，用完請按下面的「清除」。</p>'+
+  '<div class="bar" style="margin:0"><button class="b danger" onclick="wipeAsk()">清除這台電腦上的資料</button></div>';}
+function backupHtml(open){if(teacherMode())return '<details class="more"'+(open?' open':'')+'><summary>這台電腦</summary>'+pcHtml()+'</details>';
+  const pc=pcMode();return '<details class="more"'+(open?' open':'')+'><summary>備份與還原</summary><p class="note">資料會自動儲存'+(cloudState==='on'?'並同步給共用的老師':'在這台電腦的這個瀏覽器')+'。換電腦、清瀏覽器資料之前，或想留一份存檔時再下載備份檔。</p>'+
   '<p class="note"><b>備份檔含學生姓名與特教資料</b>。一般備份檔是沒有加密的文字檔，任何人拿到都打得開；要存到隨身碟、雲端硬碟或寄出去，請用「下載加密備份檔」並設一組密碼（密碼忘了就打不開）。</p>'+
   '<p class="note">'+(pc?'公用電腦模式：這台電腦不自動保留版本。':'另外，每天第一次修改和每次匯入之前，這台電腦都會自動保留一份，可以在「名冊 › 匯入與新學期」回到之前的版本。')+'</p>'+
   '<div class="bar" style="margin:0"><button class="b" onclick="exportJson()">下載備份檔</button><button class="b" onclick="exportEnc()">下載加密備份檔</button><button class="b" onclick="$(\'imp\').click()">從備份檔還原</button>'+
   ((cloudState!=='on'||isAdmin())?'<button class="b danger" onclick="resetAll()">全部清空</button>':'')+'</div>'+
-  '<h4>公用電腦模式</h4><label class="note" style="display:block"><input type="checkbox"'+(pc?' checked':'')+' onchange="setPcMode(this.checked)"> 這是學校的公用電腦</label>'+
-  '<p class="note" style="margin-top:0">開啟後不再自動保留版本'+(PID()?'；登出時預設清除這台電腦上的資料，資料都存上雲端後關掉分頁也會清除':'')+'。單機使用時資料仍存在這台電腦，用完請按下面的「清除」。</p>'+
-  '<div class="bar" style="margin:0"><button class="b danger" onclick="wipeAsk()">清除這台電腦上的資料</button></div></details>';}
+  pcHtml()+'</details>';}
 function renderShare(){
   const st=cloudState,u=CLOUD&&CLOUD.user;let h='';
   if(st==='local')h+='<h3>資料存在這台電腦</h3><p class="lead">這一份還沒有連接雲端，資料只存在這台電腦的這個瀏覽器。要讓幾位老師共用同一份，請看下面的「學校自己的雲端」。</p>';
@@ -183,9 +199,9 @@ function renderShare(){
     else h+='<p class="note">要增減老師或改權限，請找主持人 '+esc(A.admin||'')+'。</p>';
     h+='<p class="note">兩位老師同時改到同一部分（例如都改了學生名冊）時，系統會問後存的人要保留哪一份；兩份都會先自動保留一份。改到不同部分時會自動合併。</p>';
   }
-  $('dlgBody').innerHTML=h+backupHtml(st==='local'||st==='offline'||st==='part')+schoolCloudHtml(shareOpen===2)+'<div class="bar" style="margin:16px 0 0"><span class="grow"></span><button class="b" onclick="closeDlg()">關閉</button></div>';
+  $('dlgBody').innerHTML=h+backupHtml(st==='local'||st==='offline'||st==='part')+(teacherMode()?'':schoolCloudHtml(shareOpen===2))+'<div class="bar" style="margin:16px 0 0"><span class="grow"></span><button class="b" onclick="closeDlg()">關閉</button></div>';
 }
-function openShare(x){shareOpen=x?2:true;openDlg('',()=>{shareOpen=false;});renderShare();}
+function openShare(x){if(x&&teacherMode())x=0;shareOpen=x?2:true;openDlg('',()=>{shareOpen=false;});renderShare();}
 function copyText(t,msg){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast(msg),()=>prompt('請手動複製：',t));}
 async function setMembers(emails,viewers,msg,admin){admin=admin||CLOUD.access.admin;viewers=viewers.filter(e=>emails.includes(e)&&e!==admin);
   const o={emails,viewers};if(admin!==CLOUD.access.admin)o.admin=admin;
@@ -211,12 +227,15 @@ function applyBind(){if(typeof TEACH==='undefined'||typeof setRole!=='function'|
   const cur=String((typeof APPROLE!=='undefined'?APPROLE:window.APPROLE)||'admin'),tid0=String((typeof ME_TID!=='undefined'?ME_TID:window.ME_TID)||'');
   if(cloudState!=='on'||!CLOUD||!CLOUD.user||!CLOUD.access){if(bindAuto){bindAuto=false;setRole('admin');}return;}
   const r=TEACH.roleFor(CLOUD.access,CLOUD.user.email,(typeof D!=='undefined'&&D&&D.teachers)||[]);
-  if(r.role==='teacher'){if(cur!=='teacher'||tid0!==r.tid){bindAuto=true;setRole('teacher',r.tid);}}
-  else if(bindAuto){bindAuto=false;setRole('admin');}}
+  // 綁定的老師被刪掉（r.missing）：還是老師身分，只是沒有老師 id，畫面顯示「找不到綁定的老師，請洽管理者」
+  window.ME_MISSING=r.role==='teacher'&&!!r.missing;
+  if(r.role==='teacher'){if(cur!=='teacher'||tid0!==r.tid){bindAuto=true;setRole('teacher',r.tid,{exact:true});}}
+  else{window.ME_MISSING=false;if(bindAuto){bindAuto=false;setRole('admin');}}}
 // 主持人交接：交給名單裡的另一位老師，自己變成「編輯」
 function transferAdmin(e){if(!confirm('把主持人交給 '+e+' 嗎？\n交出去之後你會變成「編輯」，共用名單和權限改由對方管理，你自己沒辦法拿回來。'))return;
   setMembers(CLOUD.access.emails||[],viewersOf().filter(x=>x!==e),'已把主持人交給 '+e,e);}
-function cloudLogin(){if(!CLOUD){toast('還在連線，請稍候');return;}CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast('登入失敗：'+(e.code||e.message)));}
+// 登入的保存方式在 cloudInit 與切換公用電腦模式時就設好了（setPersistence），這裡不再等，避免彈出視窗被瀏覽器擋
+function cloudLogin(){if(!CLOUD){toast('還在連線，請稍候');return;}if(pcMode())try{sessionStorage.setItem(TABKEY,'1');}catch(e){}CLOUD.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e=>toast('登入失敗：'+(e.code||e.message)));}
 function presBeat(gone){if(!CLOUD||!CLOUD.user||!CLOUD.access)return Promise.resolve();const u=CLOUD.user;
   return CLOUD.db.doc('rc/presence').set({[u.uid]:gone?firebase.firestore.FieldValue.delete():{email:u.email,name:String(u.displayName||'').slice(0,60),at:Date.now()}},{merge:true}).catch(()=>{});}
 function cloudStop(){if(attUnsub){attUnsub();attUnsub=null;}attWatched='';['unsub','unsubP','unsubA'].forEach(k=>{if(CLOUD[k]){CLOUD[k]();CLOUD[k]=null;}});clearInterval(presTimer);clearTimeout(cloudTimer);cloudReady=false;lastPushed='';cloudRev=0;cloudErr='';pushTry=0;CLOUD.access=null;CLOUD.presence={};CLOUD.last=null;}
@@ -228,6 +247,11 @@ async function cloudInit(){
   catch(e){setCloudUI('offline');return;}
   if(!firebase.apps||!firebase.apps.length)firebase.initializeApp(cfg);
   CLOUD={auth:firebase.auth(),db:firebase.firestore(),user:null,unsub:null,unsubP:null,unsubA:null,access:null,presence:{},last:null};
+  // 公用電腦模式：登入改成只存在這個分頁；新開的分頁（沒有這個分頁的標記）先登出，
+  // 這樣就算之前在這台電腦用一般模式登入過（存在 IndexedDB），也不會自動以那個人的身分打開
+  if(pcMode()){let tab=null;try{tab=sessionStorage.getItem(TABKEY);}catch(e){}
+    if(!tab){try{await CLOUD.auth.signOut();}catch(e){}try{sessionStorage.setItem(TABKEY,'1');}catch(e){}}}
+  await authPersist();
   CLOUD.auth.onAuthStateChanged(u=>{cloudStop();CLOUD.user=u;if(!u){setCloudUI('out');return;}setCloudUI('wait');cloudConnect();});
   window.addEventListener('pagehide',()=>{presBeat(true);});
   window.addEventListener('online',()=>{if(cloudReady&&unsynced())pushNow();});

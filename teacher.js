@@ -9,12 +9,13 @@
 /* ───── 純邏輯 ───── */
 const lc=e=>String(e||'').trim().toLowerCase();
 // 這個信箱登入後是什麼身分：主持人一律是管理者；有綁定老師的是老師；沒綁定的編輯、檢視維持原本（管理者畫面）
+// 綁定的老師已經從名冊刪掉：還是老師身分，但沒有老師 id（missing＝原本綁的 id，畫面顯示「找不到綁定的老師」），絕不變成管理者
 function roleFor(access,email,teachers){const e=lc(email);if(!access||!e)return {role:'admin',tid:''};
   if(lc(access.admin)===e)return {role:'admin',tid:''};
   const B=access.bind&&typeof access.bind==='object'?access.bind:{};let tid='';
   for(const k in B)if(lc(k)===e){tid=String(B[k]||'');break;}
   if(!tid)return {role:'admin',tid:''};
-  if(Array.isArray(teachers)&&teachers.length&&!teachers.some(t=>t.id===tid))return {role:'admin',tid:'',missing:tid};   // 綁到已刪除的老師
+  if(Array.isArray(teachers)&&teachers.length&&!teachers.some(t=>t.id===tid))return {role:'teacher',tid:'',missing:tid};   // 綁到已刪除的老師
   return {role:'teacher',tid};}
 // 綁定只留在共用名單裡、而且不是主持人的信箱；老師 id 空白的拿掉
 function cleanBind(bind,emails,admin){const out={},E=new Set((emails||[]).map(lc));
@@ -25,11 +26,21 @@ function myGroups(D,tid){return (D.groups||[]).filter(g=>g.teacher===tid&&g.on!=
 // 我的學生：cm＝我個管的；taught＝我有教、但不是我個管的
 function myStudents(D,tid){const cm=D.students.filter(s=>s.caseMgr===tid),inG=new Set(myGroups(D,tid).flatMap(g=>g.students||[]));
   return {cm,taught:D.students.filter(s=>s.caseMgr!==tid&&inG.has(s.id))};}
-// 私密欄位（個管私密備註、IEP 日期、檢討日、鑑定有效期限）：管理者，或這位學生的個管
-const PRIV=['privNote','iepDate','reviewDate','certExp'];
+// 私密欄位（個管私密備註、IEP 日期、檢討日、鑑定有效期限、家長聯絡、段考服務）：管理者，或這位學生的個管
+const PRIV=['privNote','iepDate','reviewDate','certExp','contacts','examSvc'];
 function canSeePriv(s,tid,role){return role!=='teacher'||(!!tid&&!!s&&s.caseMgr===tid);}
 // 老師看到的一位學生：不是個管的，私密欄位拿掉
 function studentView(s,tid,role){const o=Object.assign({},s);if(!canSeePriv(s,tid,role))PRIV.forEach(k=>delete o[k]);return o;}
+// 老師和這位學生的關係：cm＝個管、taught＝有教（在他的組別裡）、''＝沒關係（老師身分看不到這位學生）
+function relation(D,tid,s){if(!tid||!s)return '';if(s.caseMgr===tid)return 'cm';return myGroups(D,tid).some(g=>(g.students||[]).includes(s.id))?'taught':'';}
+// 老師身分能去的頁面（白名單）：我的頁面（me_*）、自己學生（個管＋有教）的個案頁；IEP 會議頁換成「我的 IEP」；其他一律回「今天」
+// 回傳 {p,s}（頁面、分頁）；sid＝個案頁的學生 id
+const ME_PAGES=['me_today','me_stu','me_iep','me_check','me_set'];
+function route(D,tid,p,s,sid){p=String(p||'');
+  if(ME_PAGES.includes(p))return {p,s};
+  if(p==='iep')return {p:'me_iep',s:['survey','plan','quick'].includes(s)?s:undefined};
+  if(p==='stu'&&s==='case'){const st=D&&(D.students||[]).find(x=>x.id===sid);return st&&relation(D,tid,st)?{p:'stu',s:'case'}:{p:'me_stu'};}
+  return {p:'me_today'};}
 const DUE=[['iepDate','IEP 會議'],['reviewDate','下次檢討'],['certExp','鑑定有效期限']];
 // 我個管的學生，days 天內到期（或已經過了）的日期
 function dueSoon(D,tid,today,days){const t=new Date(today+'T00:00:00'),lim=new Date(t);lim.setDate(lim.getDate()+(days==null?30:days));const out=[];
@@ -51,7 +62,7 @@ function proctorDuties(E,name){if(!E||!name)return [];const me=nn(name),out=[],s
   add(E.proctorOf,false);add(E.supportOf,true);
   return out.sort((a,b)=>a.order-b.order||a.room.localeCompare(b.room));}
 
-const TEACH={roleFor,cleanBind,setBind,myGroups,myStudents,canSeePriv,studentView,PRIV,dueSoon,iepOwed,iepUpcoming,proctorDuties,normName:nn};
+const TEACH={roleFor,cleanBind,setBind,myGroups,myStudents,canSeePriv,studentView,PRIV,relation,route,ME_PAGES,dueSoon,iepOwed,iepUpcoming,proctorDuties,normName:nn};
 if(typeof module!=='undefined'&&module.exports){module.exports=TEACH;return;}
 root.TEACH=TEACH;
 if(typeof document==='undefined'||typeof PAGES==='undefined')return;
@@ -70,7 +81,7 @@ const H=(n,t,extra)=>'<h3 class="tp-h"><i>'+n+'</i>'+esc(t)+(extra||'')+'</h3>';
 // 替代版 setRole（app.js 還沒有切換鈕）時，管理者預覽老師畫面要有路回去；綁定自動切成老師的不顯示
 const back=()=>root.setRole&&root.setRole.shim&&!(typeof bindAuto!=='undefined'&&bindAuto)&&me()?'<div class="bar"><span class="note" style="margin:0">預覽 '+esc(me().name)+'</span><button class="b sm" onclick="setRole(&quot;admin&quot;)">回到管理者</button></div>':'';
 const pg=h=>{$('page').innerHTML='<div class="tp">'+back()+h+'</div>';};
-const noMe=()=>'<div class="iepempty"><span>'+(TID()?'名冊裡找不到綁定的老師':'還沒有綁定老師')+'</span></div>';
+const noMe=()=>'<div class="iepempty"><span>'+(TID()||root.ME_MISSING?'找不到綁定的老師，請洽管理者':'還沒有綁定老師')+'</span></div>';
 const sLab=s=>s.cls+(s.seat?'-'+String(s.seat).padStart(2,'0'):'')+' '+s.name;
 const addD=(ymd0,n)=>{const d=new Date(ymd0+'T00:00:00');d.setDate(d.getDate()+n);return ymd(d);};
 const md=v=>{const d=new Date(v+'T00:00:00');return (d.getMonth()+1)+'/'+d.getDate();};
