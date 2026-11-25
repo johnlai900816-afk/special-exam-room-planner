@@ -143,11 +143,11 @@ function renderEnv(){
   let h=`<h3>教室</h3><p class="note">教室名稱可以直接改。勾「備用」的教室平常不排：同一節最多排 <b>${nMain}</b> 組（平常用的教室數）${nSp?`，真的排不下才會用到備用的 ${nSp} 間，最多 <b>${D.rooms.length}</b> 組`:''}。排課時會照這個上限，不會在同一節塞進比教室還多的課。</p>
   <div class="bar">`+D.rooms.map((r,i)=>`<span class="stu${r.spare?' dim':''}"><input type="text" class="w5" style="border:0;background:transparent" value="${esc(r.name)}" onchange="D.rooms[${i}].name=this.value;changed()"><label class="note" style="margin:0 4px" title="平常不排，排不下才用"><input type="checkbox"${r.spare?' checked':''} onchange="D.rooms[${i}].spare=this.checked;changed();render()"> 備用</label><button class="x" onclick="delRoom(${i})">✕</button></span>`).join('')+
   `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>${D.rooms.length?'':'<p class="note warn">還沒有教室：排課時不會限制同一節的組數。請至少新增一間。</p>'}${prefBox()}
-  <h3>作息</h3><p class="note">勾「外加」的時段（早自習、午休、第 8 節）只會排外加課；抽離課只排在一般節次。</p>
-  <div class="scroll"><table class="ed"><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加時段</th><th></th></tr>`;
+  <h3>作息</h3><p class="note">勾「外加」的時段（早自習、午休、第 8 節）只會排外加課；抽離課只排在一般節次。中間隔著午休的兩節（例如第 4、5 節），請在前一節勾「與下一節不相連」，連續上課和連堂才不會把它們算在一起。</p>
+  <div class="scroll"><table class="ed"><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加時段</th><th>與下一節不相連</th><th></th></tr>`;
   D.periods.forEach((p,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(p.name)}" onchange="setPer(${i},'name',this.value)"></td>
     <td><input type="time" value="${esc(p.start)}" onchange="setPer(${i},'start',this.value)"></td><td><input type="time" value="${esc(p.end)}" onchange="setPer(${i},'end',this.value)"></td>
-    <td><input type="checkbox"${p.extra?' checked':''} onchange="setPer(${i},'extra',this.checked)"></td><td class="nw"><button class="b sm" title="往上移" onclick="movePer(${i})"${i?'':' disabled'}>↑</button><button class="x" onclick="delPer(${i})">✕</button></td></tr>`;});
+    <td><input type="checkbox"${p.extra?' checked':''} onchange="setPer(${i},'extra',this.checked)"></td><td>${i<D.periods.length-1?`<input type="checkbox"${p.breakAfter?' checked':''} onchange="setPer(${i},'breakAfter',this.checked||undefined)">`:''}</td><td class="nw"><button class="b sm" title="往上移" onclick="movePer(${i})"${i?'':' disabled'}>↑</button><button class="x" onclick="delPer(${i})">✕</button></td></tr>`;});
   h+=`</table></div><div class="bar"><button class="b sm" onclick="D.periods.push({id:uid('p'),name:'新節次',start:'16:05',end:'16:50',extra:true});changed();render()">新增節次</button></div>
   <h3>排課規則</h3><p class="note">每一條都可以依學校的做法開關或改數字，改完回排課頁就會照新的規則檢查衝堂。</p>
   <div class="rules">${[['regClash','同一位任課老師，同一節不能被兩個班同時鎖課（也包含資源班老師自己兼原班任課）',true],['classClash','同一個班，同一節不能被要求上兩科',true],['roomCheck','同一節的組數不能超過教室數，指定的教室不能重複',true]].map(([k,t])=>`<label><input type="checkbox"${D.settings[k]!==false?' checked':''} onchange="D.settings.${k}=this.checked;changed()"> ${t}</label>`).join('')}
@@ -531,7 +531,7 @@ function renderOut(){
     // 特教鎖課整理：每班各科鎖幾節、國文有沒有連 2 節（同一天相鄰兩節）
     const CS=['國語文','英語文','數學','理化'],cnt={};
     rows.forEach(r=>{const o=cnt[r.cls]=cnt[r.cls]||{n:{},g:[]},sj=LOCKN[r.sj]||r.sj;o.n[sj]=(o.n[sj]||0)+1;if(sj==='國語文')o.g.push(r.s);});
-    const dbl=g=>g.some(s=>g.includes(s+1)&&Math.floor(s/M.NP)===Math.floor((s+1)/M.NP)&&pn(s+1)===pn(s)+1)?1:0;
+    const dbl=g=>g.some(s=>g.includes(s+1)&&Math.floor(s/M.NP)===Math.floor((s+1)/M.NP)&&pn(s+1)===pn(s)+1&&!M.brk[s%M.NP])?1:0;   // 隔著午休的不算連 2
     b+=`<div class="pg"><h2>${T}｜特教鎖課整理</h2><table class="out"><tr><th>班級名稱</th><th>國語文</th><th>英語文</th><th>數學</th><th>國文連2</th><th>理化</th></tr>`+
       Object.keys(cnt).sort().map(c=>{const o=cnt[c];return `<tr><td class="c">${esc(c)}</td>${CS.slice(0,3).map(s=>`<td class="c">${o.n[s]||0}</td>`).join('')}<td class="c">${dbl(o.g)}</td><td class="c">${o.n['理化']||0}</td></tr>`;}).join('')+
       `</table><p class="note">欄位和「特教鎖課需求」的特教鎖課整理相同。國文連2 是 1 表示這一班有鎖到同一天相鄰的兩節國文。</p></div>`;
