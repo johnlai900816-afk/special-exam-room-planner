@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { OLD_APP } from "@/components/Planned";
 import { Brand, Button, Card, Note } from "@/components/ui";
-import { useNx } from "@/lib/nx/session";
+import { callNx, useNx } from "@/lib/nx/session";
 import { applyFontSize, applyTheme } from "@/lib/prefs";
 
 function GoogleMark() {
@@ -26,6 +26,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [bsSid, setBsSid] = useState("");
+  const [bsName, setBsName] = useState("");
 
   useEffect(() => {
     applyTheme();
@@ -116,6 +118,31 @@ export default function LoginPage() {
                   再試一次
                 </Button>
               </div>
+              <details className="rounded-xl border border-line p-3 text-sm">
+                <summary className="cursor-pointer text-ink2">第一次使用：建立學校</summary>
+                <div className="mt-3 space-y-2">
+                  <input className="h-10 w-full rounded-[10px] border border-line2 bg-card px-3" value={bsName} onChange={(e) => setBsName(e.target.value)} placeholder="學校名稱" aria-label="學校名稱" />
+                  <input className="h-10 w-full rounded-[10px] border border-line2 bg-card px-3" value={bsSid} onChange={(e) => setBsSid(e.target.value.trim().toLowerCase())} placeholder="學校代碼（英文）" aria-label="學校代碼" />
+                  <Button
+                    className="w-full"
+                    disabled={busy || !/^[a-z0-9][a-z0-9_-]{1,39}$/.test(bsSid)}
+                    onClick={async () => {
+                      setBusy(true);
+                      setMsg("");
+                      try {
+                        await callNx("nxBootstrap", { sid: bsSid, name: bsName || bsSid });
+                        x.refresh();
+                      } catch (e) {
+                        setMsg((e as Error).message || "建立失敗");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    建立並成為管理者
+                  </Button>
+                </div>
+              </details>
               {out}
             </div>
           ) : x.phase === "missingTeacher" ? (
