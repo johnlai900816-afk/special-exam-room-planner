@@ -322,13 +322,18 @@ function renderOff(){
     <button class="b sm" onclick="clearOff()">清空</button>${T.tea?`<input type="text" style="flex:1;min-width:160px" placeholder="備註，例：兼課只有週一、二到校" value="${esc(T.tea.note)}" onchange="offTarget().tea.note=this.value;save()">`:T.set?`<input type="text" style="flex:1;min-width:160px" placeholder="備註" value="${esc(T.set.note||'')}" onchange="offTarget().set.note=this.value;save()">`:''}</div></div></div>`;
   $('page').innerHTML=h;
 }
+/* 班級不排課怎麼帶入：預設全部鎖定（那一班的學生這些時段不能被抽離、也不能排課） */
+function hardPick(p){return `<div class="note" style="margin:6px 0"><b>班級不排課</b>的時段要怎麼處理？</div>
+  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="all" checked onchange="$('${p}HK').disabled=true"> 全部鎖定：這些時段那一班的學生不能被抽離，系統不會排課進去</label>
+  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="kw" onchange="$('${p}HK').disabled=false"> 只有原因含這些字的才鎖定，其餘只是不能鎖課（不用鎖課的課照樣可排）
+    <input type="text" id="${p}HK" class="w8" value="社團" disabled></label>`;}
+function hardVal(p){const r=document.querySelector('input[name="'+p+'HM"]:checked');return !r||r.value==='all'?'*':($(p+'HK').value||'');}
 function pasteOff(){openDlg(`<h3>貼上不排課表</h3><p class="note">從 Excel 複製這幾欄貼上：<b>名稱、起始星期、結束星期、首節、末節、（原因）</b>。名稱是三位數班級就當成班級，其他當成老師姓名。原因只寫在每一段的第一列也可以。</p>
-  <p class="note">班級的時段會當成「<b>不能鎖課</b>」：需要鎖課的抽離課盡量避開，不用鎖課的課照樣可以排。只有原因含下面這些字的，才當成學生<b>不能被抽離</b>（寫 * 表示全部都是）。</p>
-  <div class="bar"><span class="note" style="margin:0">不能被抽離的原因</span><input type="text" id="poHard" style="flex:1;min-width:0" value="社團"></div>
+  ${hardPick('po')}
   <label class="note"><input type="checkbox" id="poAdd"> 名冊裡沒有的老師也新增進來（不勾就略過，只帶入名冊裡有的老師）</label>
   <textarea id="pasteBox" placeholder="701&#9;2&#9;2&#9;7&#9;7&#9;社團時間&#10;王小華&#9;5&#9;5&#9;3&#9;3&#9;導師會報"></textarea>
   <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteOffOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function pasteOffOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上不排課表之前');const r=importOff(D,txt,{hard:$('poHard').value,addTeachers:$('poAdd').checked});
+function pasteOffOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上不排課表之前');const r=importOff(D,txt,{hard:hardVal('po'),addTeachers:$('poAdd').checked});
   if(!r.cls&&!r.tea){toast(r.skipT.length?'這些老師都不在名冊裡，沒有帶入。可以勾選「名冊裡沒有的老師也新增」':'沒有讀到資料，請確認是從 Excel 複製、而且有星期和節次');return;}
   changed();closeDlg();render();toast('帶入班級 '+r.cls+' 列、老師 '+r.tea+' 列，共 '+r.cells+' 格'+(r.newT?'；新增 '+r.newT+' 位老師':'')+(r.skipT.length?'；略過 '+r.skipT.length+' 位不在名冊的老師':'')+(r.bad?'；'+r.bad+' 列看不懂':''));offWarn();}
 function dayKeys(d){return D.periods.map(p=>d+'-'+p.id);}
@@ -594,7 +599,7 @@ function xlImport(){const on=XL.filter(x=>x.on);if(!on.length){toast('請先勾�
     if(t==='stu'){const r=importStudents(D,x.tsv);out.push(nm+'：新增 '+r.add+' 位學生、更新 '+r.upd+' 位'+(r.cm?'，個管老師 '+r.cm+' 位':'')+(r.noCM.length?'；找不到的個管老師：'+r.noCM.join('、'):''));}
     if(t==='tl'){const r=importTeacherList(D,x.tsv);out.push(nm+'：'+r.classes+' 個班、'+r.set+' 格任課老師'+(r.changed?'（其中 '+r.changed+' 格換了老師）':'')+(r.newT.length?'，新增 '+r.newT.length+' 位老師':''));}
     if(t==='course'){const r=importCourseTable(D,x.tsv);out.push(nm+'：新增 '+r.added+' 門課、更新 '+r.updated+' 門，放進 '+r.members+' 人次'+(r.hours?'，基本鐘點 '+r.hours+' 位':'')+(r.miss.length?'；名冊找不到的學生：'+[...new Set(r.miss)].join('、'):''));}
-    if(t==='off'){const r=importOff(D,x.tsv,{hard:$('xlHard')?$('xlHard').value:'社團',addTeachers:$('xlAdd')&&$('xlAdd').checked});out.push(nm+'：班級 '+r.cls+' 列、老師 '+r.tea+' 列，新增 '+r.cells+' 格（已經有的不會重複加）'+(r.skipT.length?'；不在名冊、略過的老師 '+r.skipT.length+' 位':''));}}));
+    if(t==='off'){const r=importOff(D,x.tsv,{hard:hardVal('xl'),addTeachers:$('xlAdd')&&$('xlAdd').checked});out.push(nm+'：班級 '+r.cls+' 列、老師 '+r.tea+' 列，新增 '+r.cells+' 格（已經有的不會重複加）'+(r.skipT.length?'；不在名冊、略過的老師 '+r.skipT.length+' 位':''));}}));
   D=normalize(D);XL=[];changed();render();
   openDlg(`<h3>匯入完成</h3><ul class="plain">${out.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul><p class="note">如果匯錯了，到「名冊 › 匯入與新學期」最下面的「自動保留的版本」回到匯入之前。</p><div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);offWarn();}
 
@@ -638,7 +643,7 @@ function renderData(){
   <div class="bar"><input type="file" id="xlsIn" accept=".xlsx,.xls,.xlsm,.csv,.ods" multiple style="display:none" onchange="readXls(this)"><button class="b pri" onclick="$('xlsIn').click()">選擇 Excel 檔</button></div>`;
   if(XL.length)h+=`<div class="xlbox"><table class="ed"><tr><th></th><th>檔案</th><th>工作表</th><th>認成</th><th>列數</th></tr>${XL.map((x,i)=>`<tr><td><input type="checkbox"${x.on?' checked':''} onchange="XL[${i}].on=this.checked"></td><td class="dim">${esc(x.file)}</td><td>${esc(x.sheet)}</td><td><b>${XLT[x.type]}</b></td><td class="dim">${x.n}</td></tr>`).join('')}</table>
     ${XL.skip?`<p class="note">另外有 ${XL.skip} 張工作表看不出是哪一種，已略過。</p>`:''}
-    ${XL.some(x=>x.type==='off')?`<div class="bar"><span class="note" style="margin:0">班級不排課裡，原因含這些字的才算學生<b>不能被抽離</b>，其餘只是不能鎖課</span><input type="text" id="xlHard" class="w8" value="社團"></div><label class="note"><input type="checkbox" id="xlAdd"> 教師不排課裡名冊沒有的老師也新增（不勾就只帶入名冊裡有的老師）</label>`:''}
+    ${XL.some(x=>x.type==='off')?`${hardPick('xl')}<label class="note"><input type="checkbox" id="xlAdd"> 教師不排課裡名冊沒有的老師也新增（不勾就只帶入名冊裡有的老師）</label>`:''}
     <div class="bar"><button class="b pri" onclick="xlImport()">匯入勾選的工作表</button><button class="b" onclick="XL=[];render()">取消</button></div></div>`;
   h+=`<h3>資料清單</h3><div class="scroll"><table class="ed chklist"><tr><th>資料</th><th>目前</th><th>學校的哪一份表</th><th></th></tr>${rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="dim">${r[2]}</td><td class="nw">${r[3]}</td></tr>`).join('')}</table></div>
   <h3>開始新學期</h3><p class="note">勾選要清掉的部分，沒勾的會留著。學生、老師、教室、作息、個管老師、年級共同時段都會保留。</p>
