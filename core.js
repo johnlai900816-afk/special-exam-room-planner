@@ -1055,4 +1055,129 @@ function contactDigest(D,sid,since){
 return {weeklySummary,weeklyText,handoverBase,handoverCheck,teacherLoad,roomUsage,freeRooms,lockList,lockDiff,lockPack,lockUnpack,lockLogAdd,contactDigest,
   CONTACT_HOW,addDays,weekStartOf,daysBetween};
 })());
+/* ═════ 全校課表：整張格子（星期 × 節次 → 科目＋老師）。tt.js 讀 PDF 後用這裡檢查、存檔；別的功能用這裡查詢（只算，不碰畫面） ═════
+   D.tt[班級]={
+     subj:{科目:[[老師,節數,待確認]]},  統計（舊格式；段考、更新任課老師用）。有格子時由格子＋下方統計推出
+     src:'檔名 第 n 頁',
+     grid:[5][NR]   一～五 × 一般節次（D.periods 裡不是 extra 的，照順序），每格 {s:科目,t:老師} 或 null
+     pids:['1',…]   grid 每一欄是哪一個節次 id（讀入當時的作息；之後改作息也查得到）
+     gridExtra:{節次id或標籤:[5 格]}  早自習、第8節…：對得到 extra 節次就用它的 id，對不到就用標籤（例如 '第8節'）
+     sum:[[科目,老師,節數]]  課表下方的統計（照抄，用來核對格子）
+     unsure:['星期|節次']    AI 自己說沒把握的格子（改過那一格就拿掉）
+     head:'導師', conf:0～1（AI 的把握）, flags:[{k,d,p,s,t,m}] 待核對的地方, ok:1（老師全部接受過）
+   }
+   flags.k：cls 班級編號不對／name 名單上沒有這位老師／unsure AI 沒把握／count 格子和統計的節數不同／dup 同一格讀到兩種／conf 整頁把握不高
+   時段鍵＝'星期-節次id'，星期 0～4（和 D.assign、offBy 相同）。
+   給別的功能用的查詢：
+     ttTeacherBusy(D)                → {老師姓名:Set(時段鍵)}  普通班老師在原班上課的時段（IEP 選時段、標忙碌）
+     ttCellAt(D,班級,時段鍵)          → {s,t} 或 null
+     ttClassSubjectAt(D,班級,時段鍵)  → 科目 或 null
+     ttStudentMissed(D,學生id,時段鍵) → 學生這一節被抽出來時，原班正在上的科目 或 null（導師、鎖課輸出）
+   讀入用：ttPeriodId、ttSubjNorm、ttGridCheck（整理 AI 的回覆）、ttGridFlags、ttGridStore、ttGridRecheck、ttRename、ttNameList、ttHintNames */
+Object.assign(CORE,(function(){
+const ZH={'〇':0,'零':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+function zhNum(s){s=String(s);if(/^\d+$/.test(s))return +s;if(s.length===1&&ZH[s]!=null)return ZH[s];
+  const m=s.match(/^([一二三四五六七八九]?)十([一二三四五六七八九]?)$/);return m?(m[1]?ZH[m[1]]:1)*10+(m[2]?ZH[m[2]]:0):NaN;}
+// 節次的寫法統一：第一節／第1節／1／一 → 第1節；其他（早自習、午休）去空白照用
+function ttLabelNorm(x){x=String(x==null?'':x).replace(/\s+/g,'');const m=x.match(/^第?([0-9一二三四五六七八九十]+)節?$/);if(m){const n=zhNum(m[1]);if(n>0)return '第'+n+'節';}return x;}
+// 節次標籤 → D.periods 的 id；對不到回 ''
+function ttPeriodId(D,label){const L=ttLabelNorm(label);if(!L)return '';const P=D.periods||[];
+  let p=P.find(x=>ttLabelNorm(x.name)===L);if(p)return String(p.id);
+  for(const w of ['早','午','晚'])if(L.includes(w)){p=P.find(x=>x.extra&&String(x.name).includes(w))||P.find(x=>String(x.name).includes(w));return p?String(p.id):'';}
+  const m=L.match(/^第(\d+)節$/);
+  if(m){const n=+m[1],R=P.filter(x=>!x.extra);if(n<=R.length)return String(R[n-1].id);p=P.find(x=>x.extra&&String(x.id)===String(n));return p?String(p.id):'';}
+  p=P.find(x=>String(x.id)===String(label).trim());return p?String(p.id):'';}
+const SUBJ_ALIAS={'國文':'國語文','國語':'國語文','英文':'英語文','英語':'英語文','公民':'公民與社會','健教':'健康教育','視藝':'視覺藝術','美術':'視覺藝術','表藝':'表演藝術','生科':'生活科技','資訊':'資訊科技','資科':'資訊科技'};
+function ttSubjNorm(s){s=String(s==null?'':s).replace(/\s+/g,'');return SUBJ_ALIAS[s]||s;}
+// 老師姓名：去空白、去「老師」這類稱呼；比對時再去括號
+const teaClean=n=>String(n==null?'':n).replace(/\s+/g,'').replace(/(老師|教師)$/,'');
+const xb=n=>String(n||'').replace(/（[^）]*）|\([^)]*\)/g,'').trim();
+const teaKey=n=>normName(xb(n));
+// 給 AI 的名單、判斷「名單上有沒有」：名冊老師、不排課名單、讀過且確定的課表老師、導師、老師按過「保留」的名字
+function ttHintNames(D){const s=new Set(ttKnown(D));D.teachers.forEach(t=>{const b=xb(t.name);if(b)s.add(b);});
+  Object.values(D.classHead||{}).forEach(n=>{n=teaClean(n);if(n)s.add(n);});(D.ttOk||[]).forEach(n=>{if(n)s.add(String(n));});return s;}
+function eachCell(o,f){const P=o.pids||[];(o.grid||[]).forEach((row,d)=>(row||[]).forEach((c,i)=>{if(c&&P[i]!=null)f(d,String(P[i]),c,true);}));
+  const X=o.gridExtra||{};Object.keys(X).forEach(k=>(X[k]||[]).forEach((c,d)=>{if(c)f(d,k,c,false);}));}
+function cellRef(o,d,p){const i=(o.pids||[]).indexOf(String(p));if(i>=0)return ((o.grid||[])[d]||[])[i]||null;const x=(o.gridExtra||{})[p];return x&&x[d]||null;}
+const hasGrid=o=>!!o&&(o.grid||[]).some(r=>(r||[]).some(Boolean))||!!o&&Object.values(o.gridExtra||{}).some(r=>(r||[]).some(Boolean));
+// 和名單最像的一位（只錯一個字以內、而且明顯比第二像的近），給「一次改名字」當預設
+function ttNear(name,known){const s=cjk(name);if(s.length<2)return '';const a=[];
+  (known||[]).forEach(k=>{const kk=cjk(k);if(kk.length>=2)a.push({k,d:ttDist(s,kk)});});a.sort((x,y)=>x.d-y.d);
+  return a[0]&&a[0].d<=1&&(a.length<2||a[1].d-a[0].d>=0.4)?a[0].k:'';}
+
+// 待核對的地方。o 是 D.tt[班級] 的格式；known 是名單（Set）。老師按過「接受」（o.ok）就不再列
+function ttGridFlags(D,cls,o,known){const F=[];if(o.ok)return F;
+  const K=new Set([...(known||[])].map(teaKey));
+  if(!/^\d{3,4}$/.test(String(cls||'')))F.push({k:'cls',m:'班級編號看不清楚'});
+  eachCell(o,(d,p,c)=>{if(c.t&&!K.has(teaKey(c.t)))F.push({k:'name',d,p,t:c.t,s:c.s,m:'名單上沒有「'+c.t+'」'});});
+  (o.unsure||[]).forEach(k=>{const [d,p]=String(k).split('|');if(cellRef(o,+d,p)&&!F.some(f=>f.k==='name'&&f.d===+d&&f.p===p))F.push({k:'unsure',d:+d,p,m:'AI 不確定'});});
+  (o.dups||[]).forEach(k=>{const [d,p]=String(k).split('|');F.push({k:'dup',d:+d,p,m:'這一格讀到兩種'});});
+  // 格子的節數和下方統計對不對得上：統計可能只算一般節次，也可能連早自習、第8節一起算，兩種都算對
+  if((o.sum||[]).length&&hasGrid(o)){
+    const all={},reg={},sum={},key=(s,t)=>ttSubjNorm(s)+'|'+teaKey(t),name={};
+    eachCell(o,(d,p,c,r)=>{const k=key(c.s,c.t);name[k]=name[k]||[c.s,c.t];all[k]=(all[k]||0)+1;if(r)reg[k]=(reg[k]||0)+1;});
+    o.sum.forEach(x=>{const k=key(x[0],x[1]);name[k]=name[k]||[x[0],x[1]];sum[k]=(sum[k]||0)+(+x[2]||0);});
+    Object.keys(name).forEach(k=>{const a=all[k]||0,b=reg[k]||0,n=sum[k]||0;if(n===a||n===b)return;
+      const [s,t]=name[k];F.push({k:'count',s:ttSubjNorm(s),t:t||'',m:ttSubjNorm(s)+(t?' '+t:'')+'：格子 '+(b===a?a:b+'～'+a)+' 節，統計 '+n+' 節'});});}
+  if(o.conf!=null&&o.conf<0.6)F.push({k:'conf',m:'AI 對這一頁的把握不高（'+Math.round(o.conf*100)+'%）'});
+  return F;}
+// 統計（舊格式）：有格子就照格子算科目和老師，節數用下方統計的（統計沒有這一組才用格子數）；沒有格子就照統計。名單上沒有的老師標成待確認
+function ttSubjDerive(o,flags){const bad=new Set((flags||[]).filter(f=>f.k==='name').map(f=>f.t)),cnt={},ord=[],K=(s,t)=>ttSubjNorm(s)+'\u0001'+teaClean(t);
+  eachCell(o,(d,p,c)=>{if(!c.s||!c.t)return;const k=K(c.s,c.t);if(cnt[k]==null){cnt[k]=0;ord.push(k);}cnt[k]++;});
+  const sum={};(o.sum||[]).forEach(x=>{const k=K(x[0],x[1]);if(sum[k]==null)sum[k]=0;sum[k]+=+x[2]||0;});
+  if(!ord.length)Object.keys(sum).forEach(k=>ord.push(k));
+  const subj={};ord.forEach(k=>{const [s,t]=k.split('\u0001');if(!s||!t)return;(subj[s]=subj[s]||[]).push([t,sum[k]!=null?sum[k]:cnt[k]||0,bad.has(t)?1:0]);});
+  Object.values(subj).forEach(a=>a.sort((p,q)=>q[1]-p[1]));return subj;}
+
+// AI 的回覆 → D.tt 的格式（還沒存）。ans={class,homeroom,grid:[{day,period,subject,teacher,unsure}],summary:[{subject,teacher,periods}],confidence,notes}
+function ttGridCheck(D,ans){ans=ans&&typeof ans==='object'?ans:{};
+  const R=(D.periods||[]).filter(p=>!p.extra),pids=R.map(p=>String(p.id));
+  const grid=[0,1,2,3,4].map(()=>pids.map(()=>null)),gx={},unsure=[],dups=[],skipped=[];
+  const day=v=>{const n=typeof v==='number'?v:zhNum(String(v==null?'':v).replace(/^(星期|週|周)/,''));return n>=1&&n<=5?n-1:-1;};
+  (Array.isArray(ans.grid)?ans.grid:[]).forEach(g=>{if(!g||typeof g!=='object')return;const d=day(g.day);
+    const s=ttSubjNorm(g.subject),t=teaClean(g.teacher);if(!s&&!t)return;if(d<0){skipped.push(String(g.period||''));return;}
+    const pid=ttPeriodId(D,g.period),i=pids.indexOf(pid),key=i>=0?pid:(pid||ttLabelNorm(g.period));if(!key){skipped.push(String(g.period||''));return;}
+    let row,j;if(i>=0){row=grid[d];j=i;}else{row=gx[key]=gx[key]||[null,null,null,null,null];j=d;}
+    const old=row[j];if(old&&(old.s!==s||old.t!==t))dups.push(d+'|'+key);row[j]={s,t};
+    if(g.unsure===true)unsure.push(d+'|'+key);});
+  const sum=(Array.isArray(ans.summary)?ans.summary:[]).filter(x=>x&&x.subject).map(x=>[ttSubjNorm(x.subject),teaClean(x.teacher),Math.max(0,parseInt(x.periods,10)||0)]);
+  const conf=typeof ans.confidence==='number'&&isFinite(ans.confidence)?Math.max(0,Math.min(1,ans.confidence)):null;
+  return {cls:ttClassNo(ans.class),head:teaClean(ans.homeroom),grid,pids,gridExtra:gx,sum,unsure:[...new Set(unsure)],dups:[...new Set(dups)],conf,notes:String(ans.notes||'').slice(0,300),skipped};}
+// 存進 D.tt[cls]；導師還沒填的順便填上。opt={src,known}
+function ttGridStore(D,cls,e,opt){opt=opt||{};D.tt=D.tt||{};cls=String(cls);
+  const o={grid:e.grid,pids:e.pids,gridExtra:e.gridExtra||{},sum:e.sum||[],unsure:e.unsure||[],dups:e.dups||[],head:e.head||'',conf:e.conf==null?null:e.conf,src:opt.src||e.src||''};
+  if(e.notes)o.notes=e.notes;
+  D.tt[cls]=o;ttGridRecheck(D,cls,opt.known);
+  if(o.head&&/^\d{3,4}$/.test(cls)){D.classHead=D.classHead||{};if(!D.classHead[cls])D.classHead[cls]=o.head;}
+  return o;}
+// 改過格子之後重算待核對和統計
+function ttGridRecheck(D,cls,known){const o=D.tt&&D.tt[cls];if(!o||!o.grid)return null;
+  o.flags=ttGridFlags(D,cls,o,known||ttHintNames(D));o.subj=ttSubjDerive(o,o.flags);return o;}
+// 一次改一個名字：所有班（或 opt.cls 那一班）的格子、統計、導師都換掉，再重算待核對。回傳改了幾格
+function ttRename(D,from,to,opt){opt=opt||{};from=teaClean(from);to=teaClean(to);if(!from||!to||from===to)return 0;let n=0;const hit=[];
+  Object.keys(D.tt||{}).forEach(c=>{if(opt.cls!=null&&String(opt.cls)!==c)return;const o=D.tt[c];if(!o)return;let m=0;
+    if(!o.grid){Object.values(o.subj||{}).forEach(a=>a.forEach(x=>{if(x[0]===from){x[0]=to;x[2]=0;n++;}}));return;}   // 離線辨識讀的（只有統計）
+    let any=false;eachCell(o,(d,p,x)=>{if(x.t===from){x.t=to;m++;}});(o.sum||[]).forEach(x=>{if(x[1]===from){x[1]=to;any=true;}});if(o.head===from){o.head=to;any=true;}
+    n+=m;if(m||any)hit.push(c);});
+  const K=opt.known||ttHintNames(D);hit.forEach(c=>ttGridRecheck(D,c,K));
+  return n;}
+// 名單上沒有的名字，跨班整理：[{t,n 格數,cls:[班級],sug 最像的已知名字}]，出現越多的排越前面
+function ttNameList(D,known){known=known||ttHintNames(D);const by={};
+  Object.keys(D.tt||{}).sort().forEach(c=>{((D.tt[c]||{}).flags||[]).forEach(f=>{if(f.k!=='name')return;const x=by[f.t]=by[f.t]||{t:f.t,n:0,cls:[]};x.n++;if(!x.cls.includes(c))x.cls.push(c);});});
+  return Object.values(by).map(x=>Object.assign(x,{sug:ttNear(x.t,known)})).sort((a,b)=>b.n-a.n||a.t.localeCompare(b.t));}
+
+/* ── 查詢 ── */
+function splitKey(k){const m=String(k==null?'':k).match(/^(\d)-(.+)$/);return m?[+m[1],m[2]]:[-1,''];}
+function ttCellAt(D,cls,key){const o=D.tt&&D.tt[String(cls)];if(!o||!o.grid)return null;const [d,p]=splitKey(key);if(d<0||d>4)return null;
+  const c=cellRef(o,d,p);return c&&(c.s||c.t)?{s:c.s||'',t:c.t||''}:null;}
+function ttClassSubjectAt(D,cls,key){const c=ttCellAt(D,cls,key);return c&&c.s?c.s:null;}
+function ttStudentMissed(D,sid,key){const s=(D.students||[]).find(x=>x.id===sid);return s?ttClassSubjectAt(D,s.cls,key):null;}
+function ttTeacherBusy(D){const out={},P=new Set((D.periods||[]).map(p=>String(p.id)));
+  Object.keys(D.tt||{}).forEach(c=>{const o=D.tt[c];if(!o||!o.grid)return;eachCell(o,(d,p,x)=>{if(!x.t||!P.has(p))return;(out[x.t]=out[x.t]||new Set()).add(d+'-'+p);});});
+  return out;}
+
+return {ttLabelNorm,ttPeriodId,ttSubjNorm,ttHintNames,ttGridFlags,ttGridCheck,ttGridStore,ttGridRecheck,ttRename,ttNameList,ttNear,
+  ttCellAt,ttClassSubjectAt,ttStudentMissed,ttTeacherBusy};
+})());
+/* ═════ 全校課表（整張格子）結束 ═════ */
 if(typeof module!=='undefined')module.exports=CORE;
