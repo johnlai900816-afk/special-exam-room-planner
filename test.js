@@ -263,5 +263,20 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(M.mainR===1&&M.roomOrder[0]===0,'勾備用的教室排在最後，平常只算沒勾的');
 }
 
+// 16. 個管分配建議
+{
+  console.log('\n16. 個管分配建議');
+  const D=C.defaultData(),res=D.teachers.filter(t=>t.role==='資源班');
+  let R=C.suggestCaseMgr(D);ok(R.list.length===D.students.length&&!R.list.some(x=>x.change),'已經平均又有教到的分配，不會亂改');
+  D.students.forEach(s=>{s.caseMgr='';});R=C.suggestCaseMgr(D);
+  const n=R.summary.map(s=>s.n);ok(Math.max(...n)-Math.min(...n)<=1,'沒有個管的學生平均分給每位老師（'+n.join('、')+'）');
+  ok(R.list.every(x=>x.to),'每位學生都有建議的個管');
+  res[0].cmCap=2;R=C.suggestCaseMgr(D);ok(R.summary.find(s=>s.id===res[0].id).n<=2,'設了上限的老師不超過上限');
+  res[1].noCM=true;R=C.suggestCaseMgr(D);ok(!R.list.some(x=>x.to===res[1].id),'勾「不當個管」的老師不會被分到');
+  const S=D.students.find(s=>D.groups.some(g=>g.teacher===res[2].id&&g.students.includes(s.id)));
+  delete res[0].cmCap;delete res[1].noCM;D.students.forEach(s=>{s.caseMgr='';});R=C.suggestCaseMgr(D);
+  ok(!S||R.list.filter(x=>x.why.some(w=>/有教到/.test(w))).length>=R.list.length*0.7,'大多數學生分給有教到他的老師');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);
