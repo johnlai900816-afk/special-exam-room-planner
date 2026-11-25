@@ -4,6 +4,7 @@ const KEY='resource-class-v1',EXKEY='special-exam-room-v1',NKEY='exam-notice-v1'
 let D,M,ST,ROOM,undoStack=[],page='home',sub='',offSel='*',view='',outMode='teacher',selL=-1,dlgDone=null;
 const lastSub={};
 const $=id=>document.getElementById(id);
+const EXAM_V='18';   // 段考頁的版本：每次改 exam.html 都要加一，不然瀏覽器會用舊的
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // 放進 onclick="f(…)" 裡的資料：先轉成 JSON 字串，再轉成 HTML 屬性可用的字元（瀏覽器會先還原 &#39; 等字元才執行）
 const jsArg=v=>esc(JSON.stringify(v==null?'':v));
@@ -68,7 +69,7 @@ function render(){
   const gate=typeof cloudGateHtml==='function'?cloudGateHtml():'';   // 用過雲端的電腦登出時不顯示學生資料
   if(gate){$('page').hidden=false;$('examFrame').hidden=true;$('page').innerHTML=gate;return;}
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
-  if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed';return;}
+  if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed&ver='+EXAM_V;return;}
   if(P.render){P.render();return;}   // 外掛頁（例：IEP 會議）自己畫
   syncST();   // 排課頁有試排草稿時看的是草稿，其他頁是正式課表
   ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/tt':renderTT,'roster/data':renderData,'roster/backup':renderBackup,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
@@ -281,6 +282,7 @@ function grpCard(g,i,byId,grs){const c=M.G[i];
       <span>老師</span><select onchange="setGrp(${i},'teacher',this.value)">${tOpts(g.teacher,'res')}</select>
       <span>年級</span><select onchange="setGrp(${i},'grade',this.value)"><option value="">不限</option>${grs.map(x=>`<option value="${x}"${String(x)===g.grade?' selected':''}>${GRADE[x]}</option>`).join('')}</select>
       <span>型態</span><select onchange="setGrp(${i},'mode',this.value)">${MODES.map(m=>`<option${m===g.mode?' selected':''}>${m}</option>`).join('')}</select>
+      <span>固定時段</span><span>${(g.fixed||[]).length?(g.fixed||[]).map(k=>{const s=M.key2s(k);return s>=0?'<span class="tagv">'+esc(M.sn(s))+'</span>':'';}).join(''):'<span class="dim">沒有</span>'} <button class="b sm" onclick="fixOpen(${i})">設定</button></span>
       <span>教室</span><select onchange="setGrp(${i},'room',this.value)"><option value="">自動安排</option>${D.rooms.map(r=>`<option value="${esc(r.id)}"${r.id===g.room?' selected':''}>${esc(r.name)}</option>`).join('')}</select></div>
     <div class="sec">學生（${g.students.length} 人）</div><div>`+
       g.students.map(id=>byId[id]).filter(Boolean).sort(sortStu).map(s=>`<span class="stu">${esc(stuLabel(s))}<button class="x" title="從這門課拿掉" aria-label="從這門課拿掉 ${esc(s.name)}" data-id="${esc(s.id)}" onclick="togGS(${i},this.dataset.id);render()">✕</button></span>`).join('')+
@@ -419,16 +421,17 @@ function renderOff(){
     <button class="b sm" onclick="clearOff()">清空</button>${T.tea?`<input type="text" style="flex:1;min-width:160px" placeholder="備註，例：兼課只有週一、二到校" value="${esc(T.tea.note)}" onchange="offTarget().tea.note=this.value;save()">`:T.set?`<input type="text" style="flex:1;min-width:160px" placeholder="備註" value="${esc(T.set.note||'')}" onchange="offTarget().set.note=this.value;save()">`:''}</div></div></div>`;
   $('page').innerHTML=h;
 }
-/* 班級不排課怎麼帶入：預設全部鎖定（那一班的學生這些時段不能被抽離、也不能排課） */
-function hardPick(p){return `<div class="note" style="margin:6px 0"><b>班級不排課</b>的時段要怎麼處理？</div>
-  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="all" checked onchange="fillReasons('${p}')"> 全部鎖定：這些時段那一班的學生不能被抽離，系統不會排課進去</label>
-  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="kw" onchange="fillReasons('${p}')"> 只鎖定勾選的原因，其餘只是不能鎖課（不用鎖課的課照樣可排）</label>
+/* 班級不排課怎麼帶入：預設「不能排國英數」（要鎖課的抽離課不能排，社會技巧這類不鎖課的課照樣可以排，也可以固定在這些時段）；
+   勾選的原因（例：社團、外出）才完全不能排，學生那一節不能離開原班 */
+function hardPick(p){setTimeout(()=>fillReasons(p));return `<div class="note" style="margin:6px 0"><b>班級不排課</b>的時段要怎麼處理？</div>
+  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="kw" checked onchange="fillReasons('${p}')"> 不能排國英數（要鎖課的抽離課）；社會技巧這類不鎖課的課可以排。下面勾選的原因才完全不能排</label>
+  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="all" onchange="fillReasons('${p}')"> 全部完全不能排：這些時段那一班的學生不能被抽離，任何課都不排</label>
   <div id="${p}HR" class="note" style="margin:2px 0 6px 22px"></div>`;}
 // 從表裡找出班級不排課出現過的原因（原因只寫在每段第一列，往下沿用）
 function offReasons(text){const set=new Set();let why='';String(text||'').split(/\r?\n/).forEach(l=>{const c=l.split('\t').map(x=>x.trim());if(c[5])why=c[5];if(/^\d{3,4}(\.0)?$/.test(c[0])&&why)set.add(why);});return [...set];}
 function fillReasons(p){const box=$(p+'HR');if(!box)return;const r=document.querySelector('input[name="'+p+'HM"]:checked');if(!r||r.value==='all'){box.innerHTML='';return;}
   const src=p==='xl'?XL.filter(x=>x.type==='off'&&x.on).map(x=>x.tsv).join('\n'):($('pasteBox')?$('pasteBox').value:''),list=offReasons(src);
-  box.innerHTML=list.length?list.map(w=>`<label style="margin-right:12px;white-space:nowrap"><input type="checkbox" class="${p}HW" value="${esc(w)}"${/社團/.test(w)?' checked':''}> ${esc(w)}</label>`).join('')+'<br>沒有寫原因的列只算不能鎖課。':'表裡的班級不排課沒有寫原因，先貼上表格就會列出來。';}
+  box.innerHTML=list.length?list.map(w=>`<label style="margin-right:12px;white-space:nowrap"><input type="checkbox" class="${p}HW" value="${esc(w)}"> ${esc(w)}</label>`).join('')+'<br>勾選的原因完全不能排；沒勾的只是不能排國英數。':'表裡的班級不排課沒有寫原因，先貼上表格就會列出來。';}
 function hardVal(p){const r=document.querySelector('input[name="'+p+'HM"]:checked');if(!r||r.value==='all')return '*';return [...document.querySelectorAll('input.'+p+'HW:checked')].map(x=>x.value);}
 function pasteOff(){openDlg(`<h3>貼上不排課表</h3><p class="note">從 Excel 複製這幾欄貼上：<b>名稱、起始星期、結束星期、首節、末節、（原因）</b>。名稱是三位數班級就當成班級，其他當成老師姓名。原因只寫在每一段的第一列也可以。</p>
   ${hardPick('po')}
@@ -877,7 +880,7 @@ function renderBackup(){
 }
 
 /* ───── 備份與還原（名冊、排課、段考考場、通知單一起） ───── */
-function reloadExam(){const f=$('examFrame');if(f.getAttribute('src'))f.src='exam.html?embed';}
+function reloadExam(){const f=$('examFrame');if(f.getAttribute('src'))f.src='exam.html?embed&ver='+EXAM_V;}
 function backupObj(){const o=Object.assign({},D),g=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
   o._exam=g(EXKEY);o._notice=g(NKEY);o._att=ATT;return o;}
 function download(name,text){try{localStorage.setItem(LBKEY,String(Date.now()));}catch(e){}
@@ -1734,7 +1737,18 @@ function cellInfo(l,s,before){const ok=canPlace(M,ST.slot,l,s),o=ST.slot[l];
 })();
 /* ═════ 排課引擎的畫面到這裡 ═════ */
 
+/* ───── 課程的固定時段：例如社會技巧固定在週五第 1 節。排課時這幾節直接放在那裡、固定不動 ───── */
+function fixOpen(i){const g=D.groups[i],cur=new Set(g.fixed||[]),reg=D.periods.filter(p=>g.mode==='外加'?p.extra:!p.extra);
+  openDlg(`<h3>固定時段：${esc(g.name)}</h3><p class="note">勾選這門課一定要排的時段（最多 ${g.per} 節）。排課時會直接放在那裡並固定，重排也不會動；剩下的節數照常自動排。班級不排課只擋國英數這類要鎖課的課，所以社會技巧可以固定在導師時間這類時段。</p>
+  <div class="scroll"><table class="ed"><tr><th></th>${DAYS.map(d=>'<th>週'+d+'</th>').join('')}</tr>${reg.map(p=>'<tr><td>'+esc(p.name)+'</td>'+DAYS.map((d,di)=>{const k=di+'-'+p.id;return '<td class="c"><input type="checkbox" class="fixChk" value="'+esc(k)+'"'+(cur.has(k)?' checked':'')+' aria-label="週'+d+esc(p.name)+'"></td>';}).join('')+'</tr>').join('')}</table></div>
+  <div class="bar" style="margin:10px 0 0"><button class="b pri" onclick="fixOk(${i})">儲存</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+function fixOk(i){const g=D.groups[i],ks=[...document.querySelectorAll('.fixChk:checked')].map(c=>c.value);
+  if(ks.length>g.per){toast('這門課每週只有 '+g.per+' 節，最多勾 '+g.per+' 個時段');return;}
+  pushUndo();if(ks.length)g.fixed=ks;else delete g.fixed;
+  const a=D.assign&&D.assign[g.id];if(a)a.forEach(e=>{if(e&&!ks.includes(e.s))e.pin=false;});   // 原本固定在別處的放開，讓系統重新安排
+  closeDlg();changed();rebuild();render();toast(ks.length?'已設定 '+ks.length+' 個固定時段':'已取消固定時段');}
+
 /* ───── 啟動 ───── */
-D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();snapInit();
+D=normalize(load()||emptyData());if(D.settings.kSplitNote){delete D.settings.kSplitNote;setTimeout(()=>{localSave();toast('班級不排課改成「不能排國英數」：社會技巧這類不鎖課的課可以排進這些時段，也可以在「老師開課」設定固定時段。',{ms:9000});},1500);}rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();snapInit();
 (function(){const a=location.hash.slice(1).split('/');go(a[0]||'home',a[1]);})();
 cloudInit();

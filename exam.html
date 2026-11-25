@@ -703,7 +703,7 @@ function save(){if(VIEWK)return;if(isRO()){clearTimeout(save.h);save.h=setTimeou
 function openNotice(){showTab('notice');}
 function sizeNotice(){const f=$('noticeFrame');f.style.height=Math.max(400,window.innerHeight-f.getBoundingClientRect().top)+'px';}
 function showNotice(){const f=$('noticeFrame');try{D.assign=fromState(M,ST);}catch(e){}localSave();
-  if(!f.getAttribute('src'))f.src='notice.html';else{try{f.contentWindow.autoSync&&f.contentWindow.autoSync();}catch(e){}}
+  if(!f.getAttribute('src'))f.src='notice.html?ver='+NOTICE_V;else{try{f.contentWindow.autoSync&&f.contentWindow.autoSync();}catch(e){}}
   sizeNotice();}
 window.addEventListener('resize',()=>{if(curTab==='notice')sizeNotice();});
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',2200);}
@@ -1422,20 +1422,24 @@ function handHtml(){evaluate(M,ST);const G=ttSnap(rosterRead())||D.ttCopy||null;
     // 只列真的有考這一科的年級；看不出年級的另外列在下面
     const GR=[...new Set(E.map(e=>e.g))].filter(g=>g>=7&&g<=9).sort(),oth=E.filter(e=>!(e.g>=7&&e.g<=9)).sort(sortS);
     const cnt=GR.map(g=>E.filter(e=>e.g===g).length),tot=E.length;
+    // 預設和學校原本的紙本一模一樣；節次試場、簽名欄要勾選才加
+    const HO=(D.settings&&D.settings.hand)||{};
     const item=e=>{const t=graderOf(G,e.s.cls,sj);if(!t)miss++;
       return '<div class="it"><span class="nm">'+who(e.s)+'</span>□已交□未到</div>'+
-        '<div class="rv">'+esc(e.T.date+' '+(e.T.ref.period||fmt(e.T.st)))+'・'+esc(e.R.name)+(e.T.makeup?'<b>（補）</b>':'')+'</div><div class="rv">批閱教師：'+(t?esc(t):'<span class="bl"></span>')+'</div>';};
+        (HO.info?'<div class="rv">'+esc(e.T.date+' '+(e.T.ref.period||fmt(e.T.st)))+'・'+esc(e.R.name)+(e.T.makeup?'<b>（補）</b>':'')+'</div>':'')+'<div class="rv">批閱教師：'+(t?esc(t):'<span class="bl"></span>')+'</div>';};
     h+='<div class="pg hs"><div class="hst"><span>特教組特殊考場學生交卷名單 - '+esc(sj)+'</span></div>'+
       '<div class="hsc">'+GR.map((g,i)=>g+'年級：<b>'+cnt[i]+'</b>名').join('、')+(oth.length?(GR.length?'、':'')+'其他：<b>'+oth.length+'</b>名':'')+'，總計：<b>'+tot+'</b>名</div>'+
-      '<div class="hsf">考試日期：<span class="bl"></span>　節次：<span class="bl"></span>　監考老師簽名：<span class="bl w"></span>　送交時間：<span class="bl"></span></div>'+
+      (HO.sign?'<div class="hsf">考試日期：<span class="bl"></span>　節次：<span class="bl"></span>　監考老師簽名：<span class="bl w"></span>　送交時間：<span class="bl"></span></div>':'')+
       (GR.length?'<table><tr>'+GR.map(g=>'<td>'+E.filter(e=>e.g===g).sort(sortS).map(item).join('')+'</td>').join('')+'</tr></table>':'')+
       (oth.length?'<table class="oth"><tr><td><div class="rv"><b>其他（班級看不出年級）</b></div>'+oth.map(item).join('')+'</td></tr></table>':'')+
       '</div>';});
   // 用 <style> 直接指定直式，不只靠具名頁面（有些瀏覽器不支援 @page 名稱，會印成橫式）
-  const note='<style>@page{size:A4 portrait;margin:10mm}</style><div class="noprint hsn">每一科一張（A4 直式），每位學生寫上考試的節次與試場，「（補）」＝補考節。批閱教師取自名冊「全校課表」：作文、國文找國語文老師，英文找英語文老師，社會找歷史、地理、公民老師，自然找生物、理化、地科老師；沒有課表時改用各班任課老師。'+(miss?'<b>有 '+miss+' 格找不到批閱教師，留白讓學校手寫；可以到名冊的「全校課表」讀入課表。</b>':'')+
+  const HO2=(D.settings&&D.settings.hand)||{},opt=(k,t)=>'<label style="margin-right:14px;white-space:nowrap"><input type="checkbox" data-ho="'+k+'"'+(HO2[k]?' checked':'')+' onchange="setHand(this.dataset.ho,this.checked)"> '+t+'</label>';
+  const note='<style>@page{size:A4 portrait;margin:10mm}</style><div class="noprint hsn"><div style="margin-bottom:6px">'+opt('info','每位學生加註考試節次與試場（「（補）」＝補考節）')+opt('sign','加上考試日期、監考老師簽名、送交時間欄')+'</div>每一科一張（A4 直式），格式和學校原本的交卷名單相同。批閱教師取自名冊「全校課表」：作文、國文找國語文老師，英文找英語文老師，社會找歷史、地理、公民老師，自然找生物、理化、地科老師；沒有課表時改用各班任課老師。'+(miss?'<b>有 '+miss+' 格找不到批閱教師，留白讓學校手寫；可以到名冊的「全校課表」讀入課表。</b>':'')+
     (un.length?'<div class="err">'+ic('alert')+' 下面這些還沒排進教室，沒有印在名單上：'+esc([...new Set(un)].join('、'))+'。請先到「排考場」排好。</div>':'')+'</div>';
   return h?note+h:'<p class="note">還沒有學生要到特殊考場考試。</p>'+(un.length?note:'');}
 
+function setHand(k,v){D.settings=D.settings||{};const h=D.settings.hand=Object.assign({},D.settings.hand);if(v)h[k]=1;else delete h[k];commit();renderOut();}
 /* ---------- 輸出 ---------- */
 function showOut(m){outMode=m;$('ov1').classList.toggle('pri',m==='svc');$('ov2').classList.toggle('pri',m==='itin');$('ov3').classList.toggle('pri',m==='proc');$('ov4').classList.toggle('pri',m==='hand');renderOut();}
 function renderOut(){$('outArea').innerHTML=outMode==='hand'?handHtml():outMode==='svc'?svcHtml():outMode==='proc'?'<div class="pg"><h2>'+esc(D.title)+'｜監考分配表</h2>'+procMatrix('out')+'</div>':itinHtml();}
@@ -1512,6 +1516,7 @@ function downloadDoc(){
   const body=pgs.length?pgs.map((p,i)=>(i?'<br clear="all" style="page-break-before:always">':'')+'<div class="'+(p.classList.contains('hs')?'S2 pg hs':'S1')+'">'+p.innerHTML+'</div>').join(''):box.innerHTML;
   dl((D.title||'段考服務表')+(outMode==='itin'?'_學生動線':outMode==='proc'?'_監考分配':outMode==='hand'?'_交卷名單':'')+'.doc','﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>'+css+hsCss+'</style></head><body>'+body+'</body></html>','application/msword');
 }
+const NOTICE_V='18';   // 通知單頁的版本：改 notice.html 要加一
 const NKEY='exam-notice-v1'; // 學生通知單（notice.html）自己補的資料：全名、注意事項、導師…
 function exportJson(){const o=Object.assign({},D);try{o._notice=JSON.parse(localStorage.getItem(NKEY));}catch(e){}
   const t=new Date();dl('特殊試場_設定檔備份_'+(D.title||'')+'_'+(t.getMonth()+1)+'-'+t.getDate()+'.json',JSON.stringify(o,null,1),'application/json');toast('已下載備份檔');}

@@ -532,5 +532,20 @@ const synth=(seed,K,OFF)=>{K=K||3;OFF=OFF||3;const r=rng(seed),ri=n=>Math.floor(
   const R2=C.solve(M,C.toState(M,D),{seed:1});ok([...R2.slot].join()===[...R.slot].join(),'同一個亂數種子排出一樣的結果');
 }
 
+// 29. 班級不排課只擋國英數（要鎖課的抽離課）；不鎖課的課可以排，也可以固定在那裡
+{
+  console.log('\n29. 班級不排課與固定時段');
+  const D=C.defaultData(),p1=D.periods.find(p=>!p.extra).id,key='4-'+p1;
+  const g=D.groups.find(x=>x.mode==='抽離'&&x.students.length),cls=String(D.students.find(s=>g.students.includes(s.id)).cls);
+  D.offBy['k:'+cls]=[key];
+  let M=C.compile(D);const gi=M.G.findIndex(x=>x.ref===g),s=M.key2s(key);
+  ok(C.why(M,gi,s).some(r=>/不能排國英數/.test(r)),'要鎖課的抽離課不能排在班級不排課的時段');
+  g.mode='不鎖課';M=C.compile(D);
+  ok(!C.why(M,gi,s).some(r=>/不能排國英數/.test(r)),'改成不鎖課的課就可以排在那一節');
+  g.fixed=[key];M=C.compile(D);const S=C.toState(M,D),l=M.L.findIndex(x=>x.g===gi&&x.k===0);
+  ok(S.slot[l]===s&&S.pin[l]===1,'固定時段：第一節直接放在週五第 1 節並固定');
+  const R=C.solve(M,S,{seed:3});ok(R.slot[l]===s,'一鍵排課不會移動固定時段的課');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

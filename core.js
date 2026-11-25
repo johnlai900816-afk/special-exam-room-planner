@@ -66,7 +66,7 @@ function defaultData(){
     offBy:{'g:7':['4-6'],'g:8':['4-6'],'g:9':['3-6']},
     sets:[{id:'x1',name:'技藝班',students:[g9[3].id,g9[6].id],off:['1-5','1-6','1-7'],note:'週二下午到合作學校上課'}],
     assign:{},
-    settings:{regClash:true,seed:1,noteSplit:1}
+    settings:{regClash:true,seed:1,noteSplit:1,kSplit:1}
   };
 }
 
@@ -86,6 +86,8 @@ function normalize(D){
   if(D.sched!=null&&(typeof D.sched!=='object'||Array.isArray(D.sched)))delete D.sched;   // 試排草稿與確定的版本（沒用過就不存）
   D.students.forEach(s=>{if(!Array.isArray(s.needs))s.needs=[];});
   // 備註拆成「公開提醒」（note，簽到時給學生看）和「個管私密備註」（privNote）。舊資料的備註不知道能不能給學生看，一律先搬到私密
+  // 舊資料：班級不排課以前用「完全鎖定」帶入，改成「不能排國英數」——社會技巧這類不鎖課的課可以排進導師時間等時段（只轉一次）
+  if(!D.settings.kSplit){Object.keys(D.offBy).forEach(k=>{if(k.slice(0,2)!=='c:')return;const kk='k:'+k.slice(2);D.offBy[kk]=[...new Set((D.offBy[kk]||[]).concat(D.offBy[k]))];delete D.offBy[k];});D.settings.kSplit=1;D.settings.kSplitNote=1;}
   if(!D.settings.noteSplit){D.students.forEach(s=>{if(s.note&&!s.privNote){s.privNote=s.note;s.note='';}});D.settings.noteSplit=1;}
   D.groups.forEach(g=>{if(!Array.isArray(g.students))g.students=[];g.per=Math.max(0,Math.min(15,+g.per||0));if(!g.mode)g.mode='抽離';if(g.on==null)g.on=true;g.grade=g.grade?String(g.grade):'';});
   if(D.title==null)D.title='';
@@ -189,9 +191,10 @@ function why(M,gi,s){
   if(M.blocked[s])r.push('全校共同不排');
   g.soff.forEach(o=>{if(o.arr[s])r.push(o.label+'不排課');});
   if(g.t>=0&&M.off[g.t][s])r.push(M.T[g.t].name+'不排課');
-  if(!M.flex){const seen={};     // 彈性鎖課時這兩項不是硬性的：鎖不到就改鎖別科或不鎖
-    g.locks.forEach(k=>{if(k.t>=0&&!seen[k.t]&&M.off[k.t][s]){seen[k.t]=1;r.push(M.T[k.t].name+'不排課');}
-      if(M.klay[k.c]&&M.klay[k.c][s])r.push(k.cls+' 這一節不能鎖課');});}
+  // 班級不排課（不能鎖課）的時段：要鎖課的抽離課（國英數）不能排；不鎖課、外加的課（例：社會技巧）可以排
+  if(g.need){const bk=g.locks.filter(k=>M.klay[k.c]&&M.klay[k.c][s]).map(k=>k.cls);if(bk.length)r.push(bk.join('、')+' 這一節不能排國英數');}
+  if(!M.flex){const seen={};     // 彈性鎖課時原班老師不排課不是硬性的：鎖不到就改鎖別科
+    g.locks.forEach(k=>{if(k.t>=0&&!seen[k.t]&&M.off[k.t][s]){seen[k.t]=1;r.push(M.T[k.t].name+'不排課');}});}
   return r;
 }
 
@@ -293,6 +296,7 @@ function toState(M,D){
   M.L.forEach((x,l)=>{const a=D.assign&&D.assign[M.G[x.g].ref.id],e=a&&a[x.k];if(!e)return;
     if(e.r){const r=D.rooms.findIndex(o=>o.id===e.r);if(r>=0)S.rfix[l]=r;}
     if(!e.s)return;const s=M.key2s(e.s);if(s>=0){S.slot[l]=s;S.pin[l]=e.pin?1:0;}});
+  M.L.forEach((x,l)=>{const f=M.G[x.g].ref.fixed;if(!Array.isArray(f)||x.k>=f.length)return;const s=M.key2s(f[x.k]);if(s>=0){S.slot[l]=s;S.pin[l]=1;}});   // 固定時段
   return S;
 }
 function fromState(M,S){const a={};M.L.forEach((x,l)=>{const id=M.G[x.g].ref.id,e={s:S.slot[l]>=0?M.s2key(S.slot[l]):'',pin:!!S.pin[l]};if(S.rfix&&S.rfix[l]>=0&&M.D.rooms[S.rfix[l]])e.r=M.D.rooms[S.rfix[l]].id;(a[id]=a[id]||[])[x.k]=e;});return a;}
