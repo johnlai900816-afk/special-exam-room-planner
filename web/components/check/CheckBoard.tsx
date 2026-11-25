@@ -134,10 +134,8 @@ export function CheckBoard({ board, D, att, students, mark: write, ro, tid, pid0
   const tName = (id: string) => D.teachers.find((t) => t.id === id)?.name || "";
 
   const stu = (sid: string) => students[NX.encId(sid)];
-  const say = (tone: "ok" | "warn", text: string) => {
-    setFlash({ tone, text });
-    toast(text);
-  };
+  // 管理者端（掃卡）：結果寫在上面一列（舊版 flash）；老師端：toast
+  const say = (tone: "ok" | "warn", text: string) => (admin ? setFlash({ tone, text }) : toast(text));
   const mark = (ses: Ses) => async (sid: string, r: Rec | null) => {
     try {
       await write(ses.date, ses.gid, ses.p.id, sid, r);

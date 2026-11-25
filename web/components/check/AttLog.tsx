@@ -93,7 +93,7 @@ export function AttLog() {
                   {rows.map((s) => {
                     const o = by[s.id];
                     return (
-                      <tr key={s.id} className="cursor-pointer hover:bg-hover" onClick={() => setOpen(s.id)}>
+                      <tr key={s.id} className="cursor-pointer" onClick={() => setOpen(s.id)}>
                         <td className="c">{s.cls}</td>
                         <td className="c">{s.seat}</td>
                         <td>

@@ -439,7 +439,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 設定 › 學校資料 | `/admin/settings/school/?step=` | ① 匯入 Excel（SheetJS CDN、認工作表、試跑看差異、一批寫入）② 全校課表（唯讀，`classes.ttJson`）③ 老師與任課（含減授、超鐘點上限、`classes.subj`）④ 不排課時段（全校、年級、群組、班級、不能鎖課、學生、老師）⑤ 教室與作息 ⑥ 排課規則 ⑦ 學年交接 |
 | 設定 › 帳號與共用 | `/admin/settings/accounts/` | 成員（角色、綁定老師、停用）、邀請、舊名單轉邀請（先看清單）、搬移狀態與 `nxMigrateLegacy`（先試算） |
 | 設定 › 資料與備份 | `/admin/settings/data/` | 下載備份（讀得到的全部 records）、加密備份（和舊版同一個 AES-GCM 格式）、從備份還原（新版或舊版備份；先檢查、看差異）、版本、開始新學期 |
-| 段考、IEP 會議、點名、統計 | `/admin/exam/` 等 | 「這一頁請先用舊版」＋舊版對應的 hash（phase 3b） |
+| 段考 | `/admin/exam/` | 「這一頁請先用舊版」＋舊版對應的 hash（點名、統計、IEP 會議在 phase 3c 搬過來，見 §9c） |
 
 - **寫入**：一律 `lib/nx/apply.ts`：在 `toCoreD(records)` 的副本上跑舊的純函式 → `splitD` 前後比對 → `Repo.batch` 寫有變的文件（每份帶 rev）。私密欄位直接 `patch("privates")`。
 - **以老師身分看**：側欄底部（手機在「更多」）。登入時是唯讀預覽：用管理者讀到的資料做一份記憶體版 Repo，權限照規則過濾（`access.visible`），老師頁原封不動；範例資料時直接切到那位老師。
@@ -458,7 +458,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 
 **測試**：`npm test`（`apply.test.ts` 比對與一批寫入、`import.test.ts` 匯入、`admin.test.ts` 待辦／篩選／個管／新學期／備份、`nx-admin.test.ts`）、`npm run test:rules`、`npm run test:e2e`（`e2e-admin.test.ts`：管理者登入、匯入範例表、分配個管，兩位老師登入只讀得到自己的學生；檔案改成一個一個跑）。
 
-**Phase 3b 之後還沒做**：段考、IEP 會議（管理者）、點名（管理者、紀錄、導師週報）、統計；全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。
+**還沒做**：段考；全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。（IEP 會議、點名、統計在 phase 3c，見 §9c）
 
 ---
 
@@ -478,3 +478,35 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 - **過渡期**：`schools/{sid}.mode=='legacy'` 且 `native` 沒有 `'sched'` 時排課頁只讀（頂端提示＋到舊版的連結）；`AdminSide.canWrite('sched')`。
 - **和舊版不同的地方**：用文字調整時，有草稿就移草稿裡的課（舊版會移正式課表）；AI 的排法一律放進試排（舊版沒有草稿功能時可以直接套用）；停止求解時保留的是那一刻最好的排法，不做後面的編組與原班鎖課微調。
 - **測試**：`test/sched.test.ts`（舊版 app.js 原文放沙盒：同一個種子，試排／重排／全部重排／只排一個年級／先編組／彈性鎖課的草稿一模一樣；確定、拿回、拖曳、復原一樣；記憶體版 Repo 的草稿→確定→版本→鎖課紀錄→老師看到）、`test/sched-out.test.ts`（10 種輸出＋彈性鎖課逐字比對、out.css 每一行都在 app.css）、`test/e2e-sched.test.ts`（模擬器：管理者試排、拖、確定，老師登入看到新課表、讀不到草稿與版本）。
+
+---
+
+## 9c. Phase 3c：點名、統計、IEP 會議（管理者）
+
+| 頁面 | 網址 | 做什麼（對照舊版） |
+|---|---|---|
+| 點名 | `/admin/checkin/`（舊網址 `/admin/check/` 轉過來） | checkin.js renderCheckin：全部老師的課、現在這一節、任何一天補登；點名字簽到（寬限算遲到）、再點簽退、「⋯」請假缺席備註、全部簽到／簽退；掃卡或打姓名／班級座號（ciScan）、鏡頭掃碼（同一個 html5-qrcode 2.3.8，cdnjs＋SRI）；遲到寬限（`settings.grace`）。畫面和老師端共用 `components/check/CheckBoard.tsx` |
+| 紀錄 | `?tab=log` | renderAttLog＋attStats：今天／本週／本月／全部／自訂、組別；每位學生的應到、實到、遲到、請假、缺席、出席率，點學生看明細；每組合計（新）；表格在 `#outArea`，可以複製、印出 |
+| 導師週報 | `?tab=weekly&w=週一` | extras.js weeklyPage：core.weeklySummary／weeklyText；每班一份草稿、複製、用 AI 潤飾（學生、導師換代號＋ai.js finalize 去識別化 → 先看全文 → 送出 → 換回名字）、已發送 |
+| 學生卡 | `?tab=cards` | renderCards：全部／一班／一門課；紙的 HTML 和舊版逐字相同、QR 一樣（qrcodejs 1.0.0，96×96，容錯 M，`RC:學生 id`）；樣式 `components/check/cards.css` 從 app.css 逐字複製 |
+| 老師工作量 | `/admin/stats/` | loadPage：基本、減授、應授、已排、每週超鐘點、外加、課、個管、監考、IEP；排序；「外加課算進超鐘點」（`settings.otCountExtra`）；每月超鐘點的紙（overtimeMonth）和舊版逐字相同，樣式 `components/stats/otm.css` 從 extras.js 逐字複製 |
+| 教室使用 | `?tab=rooms` | roomsPage：找空教室、使用率、沒分到教室、每間教室一週 |
+| 鎖課異動 | `?tab=locklog` | locklogPage：時間軸、明細、匯出這次異動（Tab 分隔）、標記為已交教務處、記錄目前的鎖課（`recordLocksD`） |
+| IEP 會議 | `/admin/iep/?tab=survey|quick|cfg&r=` | iep.js 的管理者模式（SC=''）：全部的調查、任何學生（個管篩選、沒有個管）、承辦可以寫（預設「特教組」）、直接開會、會議設定（必要身分、原班任課老師、每場都邀請、導師、排時段的科目提示 `iepAvoidSubj`／`iepPreferSubj`） |
+
+- **點名的資料**：一節一份 `attendance/{日期_課程@節次}`。`lib/nx/checkin.ts attStats` 直接讀這些文件（舊版 attStats 讀 `rc/att-日期`）：`roster`＝舊 `_roster`、`info`＝舊 `_info`；沒有任何學生紀錄的文件當作沒點名（舊版會把那一節刪掉）。`Repo.mark` 第一次建立時記下 `roster` 與 `info: {g, p}`（舊版 attSet 也是）；老師端的出缺席摘要（`attSummary`）也跳過空的文件。
+- **導師週報的已發送**：舊 `D.weekly[週一]`，照 `nx-split.js` 放在 `staff/legacy`（未知欄位）；寫入 `planOnD` → `applyOps`。
+- **鎖課紀錄的標記**：`lockLog/L000…` 的 json 加 `sentAt`（`planOnD(records, fn, SCHED_COLS)`）。
+- **IEP 的共用**：`components/iep/useIep.ts` 的 `IepSourceProvider`：管理者頁面把資料來源換成管理者的 Repo、`tid=''`；`Surveys`（選調查、建立、刪除、讀回填空堂、建立後發布）、`RoundPage`、`Create`、`Quick` 老師端與管理者端同一份。發布、結束調查照舊走 `nxIepPublish`／`nxIepClose`（`nx-iep-core.mayTouch` 原本就讓管理者／編輯通過，不用改 Functions）。管理者開的調查 `readers`＝學生的個管（管理者不在 readers，規則讓管理者讀寫全部）。會議設定寫 `staff/iep`（cfg）、`classes/{班}.head`、學期 `settings`。
+- **今天的待辦**：加上「這一節還沒簽到」→ `/admin/checkin/`、週一「上週導師週報還沒發」→ `?tab=weekly&w=`、「IEP 回覆 n/m」→ `/admin/iep/?r=`；全部連到新版（沒有舊版的連結了）。個案頁的「IEP 會議」也連到 `/admin/iep/`。
+- **過渡期**：`AdminSide.canWrite('checkin')`（native 有 `'checkin'` 或 `'attendance'`）、`canWrite('iep')`、`canWrite('staff')`（週報已發送、會議設定）、`canWrite('term')`（寬限、外加課算超鐘點、科目提示）、`canWrite('sched'|'lockLog')`（鎖課紀錄）；不能寫時頂端提示＋到舊版的連結，按鈕不出現或停用。
+- **和舊版不同的地方**：
+  - 點名的掃卡結果只寫在上方一列；老師端沒有掃卡（和 phase 2 一樣）。
+  - 紀錄多了每組合計；舊版只有每位學生。
+  - 每月超鐘點：舊版月份選單的檢查寫錯（`/^d{4}-d{2}$/` 少了反斜線），換月份沒有作用、永遠是這個月；新版可以選月份。紙的內容逐字相同。
+  - 老師工作量的監考：舊版讀這台電腦的段考資料（localStorage），新版把每一份 `exam/{eid}` 的監考對照合起來。
+  - 用 AI 潤飾：還沒接上 Gemini 時直接在這裡設定（舊版沒接上就不出現按鈕）。
+  - 會議設定多了排時段的科目提示（舊版只能直接改資料）。
+- **規則**：不用改。管理者／編輯原本就能寫 attendance、iep、iepInvite、staff、lockLog；老師只能讀寫 `teacherId` 是自己的點名。`test/rules.test.ts`「點名、統計、IEP 會議（phase 3c）」加了這些情況的測試（管理者點任何一門課、那門課的老師接著改、別的老師讀寫不到、id 與 info 形狀、週報已發送、鎖課標記、會議設定、管理者開調查與填空堂）。
+- **測試**：`test/checkin.test.ts`（舊版 checkin.js 原文放沙盒：attStats 在 4 個期間 × 5 個組別逐項相同、logSpan、學生卡逐字相同；導師週報＝core.weeklySummary、AI 去識別化；今天的待辦；Repo.mark 的 roster／info 與老師可見範圍）、`test/stats.test.ts`（舊版 extras.js loadPage 放沙盒：每月超鐘點的紙在 4 種情況逐字相同、工作量的數字、教室、鎖課紀錄、otm.css／cards.css 每一行都從舊版複製）、`test/iep-admin.test.ts`（管理者範圍、管理者開的調查老師收得到、會議設定寫到哪裡）、`test/e2e-checkin.test.ts`（模擬器：管理者點名 → 那門課的老師看到、接著改 → 別的老師讀不到、寫不進去）。
+
