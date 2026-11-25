@@ -1040,8 +1040,8 @@ function renderBackup(){
 }
 /* ───── 設定 › 帳號與共用：cloud.js 的 renderShare 直接畫在頁面裡 ───── */
 function renderAccount(){$('page').innerHTML='<section class="card share" id="shareHost"></section>';shareEmbed=true;if(!shareOpen)shareOpen=true;try{renderShare();}catch(e){$('shareHost').innerHTML=emptyBox('共用設定讀不出來。');}}
-// 原本開對話框的「共用」按鈕（側欄、待辦）都改到這一頁
-if(typeof openShare==='function')openShare=function(x){shareOpen=x?2:true;if(page==='set'&&sub==='account')renderAccount();else go('set','account');};
+// 原本開對話框的「共用」按鈕（側欄、待辦）都改到這一頁。老師身分去不了設定頁：維持對話框（只有登出、公用電腦模式、清除這台電腦）
+if(typeof openShare==='function'){const dlgShare=openShare;openShare=function(x){if(APPROLE==='teacher'){shareEmbed=false;return dlgShare(x);}shareOpen=x?2:true;if(page==='set'&&sub==='account')renderAccount();else go('set','account');};}
 /* ───── 設定 › AI：gmSettings 畫在頁面裡 ───── */
 function renderAI(){$('page').innerHTML='<section class="card" id="aiHost"></section>';gmSettings();}
 /* ───── 備份與還原（名冊、排課、段考考場、通知單一起） ───── */
