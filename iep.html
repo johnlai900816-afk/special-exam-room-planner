@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<title>IEP 會議時間調查</title>
+<style>
+/* 給老師、家長用手機打開的公開頁：不用登入，字大、按鈕大 */
+:root{--bg:#f6f2ea;--card:#fffdf8;--line:#e6dfd2;--ink:#2a2620;--mute:#857b6c;--acc:#2f6a5b;--acc-l:#e3efe9;--bad:#a8321f;--serif:"Noto Serif TC","Source Han Serif TC","PMingLiU",serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Microsoft JhengHei","PingFang TC",sans-serif;padding-bottom:120px}
+main{max-width:640px;margin:0 auto;padding:18px 14px}
+h1{font-family:var(--serif);font-size:21px;margin:0 0 4px;letter-spacing:.04em}
+.sub{color:var(--mute);font-size:14px;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px}
+.card h2{font-family:var(--serif);font-size:17px;margin:0 0 8px}
+ul.stu{margin:0;padding-left:1.2em}ul.stu li{margin:2px 0}
+.day h2{display:flex;justify-content:space-between;align-items:center}
+.day h2 button{font:inherit;font-size:13.5px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:5px 10px;color:var(--ink)}
+.cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.cell{min-height:64px;border:1.5px solid var(--line);background:#fff;border-radius:12px;font:inherit;color:var(--ink);padding:6px 4px;text-align:center;cursor:pointer;line-height:1.3}
+.cell b{display:block;font-size:16px}.cell small{display:block;font-size:12px;color:var(--mute)}
+.cell.busy{background:repeating-linear-gradient(135deg,#f1ede5 0 6px,#e8e2d6 6px 8px)}
+.cell.busy em{display:block;font-style:normal;font-size:12px;color:var(--bad)}
+.cell.on{background:var(--acc);border-color:var(--acc);color:#fff}.cell.on small,.cell.on em{color:#e8f3ee}
+.cell.on::after{content:"有空";display:block;font-size:12px;font-weight:bold}
+textarea{width:100%;min-height:70px;font:inherit;border:1px solid var(--line);border-radius:10px;padding:8px}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
+.bar div{max-width:640px;margin:0 auto;display:flex;gap:10px;align-items:center}
+.bar span{flex:1;font-size:14px;color:var(--mute)}
+.bar button{font:inherit;font-size:17px;font-weight:bold;background:var(--acc);color:#fff;border:0;border-radius:12px;padding:12px 26px}
+.bar button:disabled{opacity:.5}
+.msg{padding:14px;border-radius:12px;background:var(--acc-l);margin:0 0 14px}
+.msg.bad{background:#fbe9e4;color:var(--bad)}
+.note{font-size:13.5px;color:var(--mute)}
+.lg{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--mute);margin:0 0 10px}
+.lg i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:4px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<main id="app"><p class="sub">載入中…</p></main>
+<div class="bar" id="bar" hidden><div><span id="cnt"></span><button id="send" type="button">送出</button></div></div>
+<script src="firebase-config.js"></script>
+<script src="iep.js?v=17"></script>
+<script>
+'use strict';
+// 所有畫面文字都經過 esc；不用 inline onclick，事件一律用 addEventListener
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const K=new URLSearchParams(location.search).get('k')||'';
+let DOC=null,FREE=new Set(),FN=null,dirty=false;
+function fail(m){$('app').innerHTML='<div class="msg bad">'+esc(m)+'</div>';$('bar').hidden=true;}
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error(src));document.head.appendChild(s);});}
+async function start(){
+  const cfg=window.FIREBASE_CONFIG;
+  if(!IEP.TOKEN_RE.test(K)){fail('這個連結不完整。請重新掃描 QR Code，或請個管老師再傳一次連結。');return;}
+  if(!cfg||!cfg.projectId){fail('這個網站目前沒有開啟線上調查。請直接回覆個管老師。');return;}
+  // 只經過 Cloud Functions 讀寫，這一頁完全不直接碰資料庫
+  try{const B='https://www.gstatic.com/firebasejs/10.14.1/firebase-';await loadScript(B+'app-compat.js');await loadScript(B+'functions-compat.js');
+    if(window.FIREBASE_APPCHECK_KEY)await loadScript(B+'app-check-compat.js');}
+  catch(e){fail('網路連不上，請稍後再試。');return;}
+  firebase.initializeApp(cfg);
+  // App Check（設了金鑰才啟用；Function 端設 IEP_APPCHECK=enforce 後就一定要有）
+  if(window.FIREBASE_APPCHECK_KEY)try{firebase.appCheck().activate(window.FIREBASE_APPCHECK_KEY,true);}catch(e){}
+  const fns=firebase.app().functions('asia-east1');FN={get:fns.httpsCallable('iepGetSurvey'),send:fns.httpsCallable('iepSubmit')};
+  await reload();
+}
+async function reload(){try{const x=(await FN.get({k:K})).data,p=x.resp||{};DOC=Object.assign(x,{free:p.free||[],note:p.note||'',at:p.at||0,n:p.n||0});FREE=IEP.webInit(DOC);draw();}
+  catch(e){fail(errMsg(e));}}
+// 錯誤：伺服器給的是固定的中文說明，直接顯示；其他一律說網路問題
+function errMsg(e){const c=String(e&&e.code||'').replace('functions/','');return ['not-found','resource-exhausted','failed-precondition','invalid-argument'].includes(c)&&e.message?e.message:'網路連不上或系統忙碌，請稍後再試。';}
+function closed(){return DOC.exp&&Date.now()>DOC.exp;}
+function locked(){return closed()||(DOC.once===1&&(DOC.n||0)>0);}
+function draw(){const d=DOC,G=IEP.webGrid(d,FREE),ro=locked();
+  let h='<h1>'+esc(d.kind||'IEP 會議')+'時間調查</h1><p class="sub">'+esc(d.title)+(d.round?'｜'+esc(d.round):'')+'</p>';
+  if(d.at)h+='<div class="msg">已收到您 '+esc(new Date(d.at).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))+' 送出的回覆。'+(ro?'':'期限前都可以再修改，改完再按一次「送出」。')+'</div>';
+  if(closed())h+='<div class="msg bad">已經過了回覆期限，只能查看。如果時間有變動，請直接聯絡個管老師。</div>';
+  else if(ro)h+='<div class="msg">這個連結只能送出一次，已經送出了。如果要改，請聯絡個管老師。</div>';
+  h+='<div class="card"><h2>'+esc(d.name)+' 您好</h2><p style="margin:0 0 6px">想請您'+(d.stu.some(x=>x.q)?'出席':'參加')+'下列學生的會議：</p><ul class="stu">'+
+    d.stu.map(x=>'<li>'+esc(x.c)+'　<span class="note">'+esc(x.r)+(x.cm?'・個管 '+esc(x.cm):'')+'</span></li>').join('')+'</ul>'+
+    '<p class="note" style="margin:8px 0 0">調查範圍：'+esc(IEP.fmtDate(d.d1))+'～'+esc(IEP.fmtDate(d.d2))+'。請在 <b>'+esc(IEP.fmtDate(d.due))+'</b> 前，點選您<b>有空</b>的節次後按「送出」。</p></div>';
+  if(d.who==='p')h+='<div class="card note"><b>說明與同意</b><br>這份調查只用來安排孩子的 IEP 會議時間，由學校特教組與個管老師查看，不會用在其他地方。按「送出」即表示您同意學校使用您填的時段與備註安排會議。回覆保存期間：'+esc(d.keep)+'。</div>';
+  h+='<div class="lg"><span><i style="background:var(--acc)"></i>有空（您點選的）</span><span><i style="background:#e8e2d6"></i>系統查到您這節有課，可以調課的話仍可點選</span></div>';
+  G.forEach(day=>{h+='<div class="card day"><h2><span>'+esc(day.label)+'</span>'+(ro?'':'<button type="button" data-day="'+esc(day.date)+'">整天有空</button>')+'</h2><div class="cells">'+
+    day.cells.map(c=>'<button type="button" class="cell'+(c.on?' on':'')+(c.busy?' busy':'')+'" data-k="'+esc(c.k)+'"'+(ro?' disabled':'')+'><b>'+esc(c.n)+'</b><small>'+esc(c.t)+'</small>'+(c.busy?'<em>'+esc(c.busy)+'</em>':'')+'</button>').join('')+'</div></div>';});
+  h+='<div class="card"><h2>備註（可不填）</h2><textarea id="note" maxlength="300" placeholder="例：週三下午要開會，其他時間都可以"'+(ro?' disabled':'')+'>'+esc(d.note||'')+'</textarea></div>';
+  $('app').innerHTML=h;$('bar').hidden=ro;cnt();}
+function cnt(){$('cnt').textContent='已選 '+FREE.size+' 節有空'+(dirty?'（還沒送出）':'');}
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||!DOC||locked())return;
+  if(b.dataset.k){const k=b.dataset.k;if(FREE.has(k))FREE.delete(k);else FREE.add(k);b.classList.toggle('on',FREE.has(k));dirty=true;cnt();}
+  else if(b.dataset.day){const ks=DOC.keys.filter(k=>k.startsWith(b.dataset.day+'|')),all=ks.every(k=>FREE.has(k));ks.forEach(k=>{if(all)FREE.delete(k);else FREE.add(k);});dirty=true;draw();}});
+$('send').addEventListener('click',async()=>{if(!DOC||locked())return;const btn=$('send');btn.disabled=true;
+  const free=DOC.keys.filter(k=>FREE.has(k)),note=String(($('note')||{}).value||'').slice(0,300);
+  if(!free.length&&!confirm('您一節都沒有點選，表示這段期間都不能參加。確定送出嗎？')){btn.disabled=false;return;}
+  try{await FN.send({k:K,free,note});dirty=false;await reload();window.scrollTo(0,0);}
+  catch(e){alert('送出失敗：'+errMsg(e));}
+  btn.disabled=false;});
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
+start();
+</script>
+</body>
+</html>

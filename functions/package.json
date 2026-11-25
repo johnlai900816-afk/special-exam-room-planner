@@ -1,0 +1,11 @@
+{
+  "name": "resource-class-functions",
+  "private": true,
+  "description": "資源班管理系統的 Cloud Functions（IEP 會議線上時間調查）",
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  }
+}
