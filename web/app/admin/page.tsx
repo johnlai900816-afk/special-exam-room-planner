@@ -63,7 +63,7 @@ function Today() {
         <Link href="/admin/students/" className="block hover:opacity-90">
           <Stat label="學生" value={D.students.length} hint={noG ? noG + " 位沒分組" : "都已分組"} />
         </Link>
-        <a href={OLD_APP + "#sched/board"} className="block hover:opacity-90">
+        <Link href="/admin/sched/?step=board" className="block hover:opacity-90">
           <Stat
             label="已排"
             value={
@@ -74,7 +74,7 @@ function Today() {
             }
             hint={probs ? <span className="text-bad">{probs} 個衝突</span> : board && board.placed < board.total ? "差 " + (board.total - board.placed) + " 節" : "沒有衝突"}
           />
-        </a>
+        </Link>
         <Stat label="老師" value={D.teachers.length} hint={D.teachers.filter((t) => t.role === "資源班").length + " 位資源班"} />
       </div>
 

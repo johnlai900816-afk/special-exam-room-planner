@@ -89,17 +89,16 @@ export function handover(D: RcData, today: string): Handover {
 export function adminTodos(x: AdminTodayInput): AdminTodo[] {
   const { D, board, R, today } = x;
   const out: AdminTodo[] = [];
-  const OLD = "old:";
   const probs = board.problems.filter((p) => p.k !== "un").length;
-  if (probs) out.push({ level: "bad", text: "排課衝突 " + probs + " 個", act: "排課表", href: OLD + "#sched/board" });
-  if (board.total && board.placed < board.total) out.push({ level: "warn", text: "還有 " + (board.total - board.placed) + " 節沒排", act: "排課表", href: OLD + "#sched/board" });
+  if (probs) out.push({ level: "bad", text: "排課衝突 " + probs + " 個", act: "排課表", href: "/admin/sched/?step=board" });
+  if (board.total && board.placed < board.total) out.push({ level: "warn", text: "還有 " + (board.total - board.placed) + " 節沒排", act: "排課表", href: "/admin/sched/?step=board" });
   const warns = board.M.G.filter((g) => g.per).reduce((n, g) => n + g.warn.length, 0);
-  if (warns) out.push({ level: "warn", text: "開課提醒 " + warns + " 則", act: "開課", href: OLD + "#sched/groups" });
+  if (warns) out.push({ level: "warn", text: "開課提醒 " + warns + " 則", act: "開課", href: "/admin/sched/?step=groups" });
   const pn = C.needList(D);
-  if (pn.length) out.push({ level: "warn", text: new Set(pn.map((p) => p.id)).size + " 位學生 " + pn.length + " 科待編組", act: "編組", href: OLD + "#sched/need" });
+  if (pn.length) out.push({ level: "warn", text: new Set(pn.map((p) => p.id)).size + " 位學生 " + pn.length + " 科待編組", act: "編組", href: "/admin/sched/?step=need" });
   const inG = new Set(D.groups.flatMap((g) => g.students));
   const noG = D.students.filter((s) => !inG.has(s.id)).length;
-  if (noG) out.push({ level: "warn", text: noG + " 位學生沒分組", act: "編組", href: OLD + "#sched/need" });
+  if (noG) out.push({ level: "warn", text: noG + " 位學生沒分組", act: "編組", href: "/admin/sched/?step=need" });
   const noCM = D.students.filter((s) => !s.caseMgr).length;
   if (noCM) out.push({ level: "warn", text: noCM + " 位學生沒有個管", act: "個管分配", href: "/admin/students/?cm=-" });
   const due = dueThisMonth(R, today);

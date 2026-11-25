@@ -51,8 +51,9 @@ export interface AdminSide {
   D: RcData | null;
   board: Board | null;
   role: "admin" | "editor";
-  /** 這一塊可以寫嗎（過渡期 schools/{sid}.mode=='legacy' 時，只有交給新版的集合可以寫） */
-  canWrite(col: WritableCol): boolean;
+  /** 這一塊可以寫嗎（過渡期 schools/{sid}.mode=='legacy' 時，只有交給新版的集合可以寫）。
+      'sched'＝排課整塊（課程、草稿、版本、鎖課紀錄）：native 列了 'sched' 就可以 */
+  canWrite(col: WritableCol | "sched"): boolean;
 }
 
 export interface Nx {
@@ -316,7 +317,7 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
       D: adminD,
       board: adminBoard,
       role: adminRepo.scope.role === "editor" ? "editor" : "admin",
-      canWrite(col: WritableCol) {
+      canWrite(col: WritableCol | "sched") {
         if (adminRepo.readOnly) return false;
         if (adminRepo.kind === "memory" || !school || school.mode === "native") return true;
         return school.native.includes(col);

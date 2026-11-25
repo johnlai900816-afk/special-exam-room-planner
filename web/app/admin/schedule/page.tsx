@@ -1,11 +1,10 @@
 "use client";
-/* 管理者「排課」：還沒搬到新版（phase 3b），先連到舊版的同一頁。 */
-import { AdminShell, UseOld } from "@/components/AdminShell";
+/* 舊網址：排課已經搬到 /admin/sched/ */
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default function SchedulePage() {
-  return (
-    <AdminShell title="排課" needData={false}>
-      <UseOld title="排課" hash="#sched/board" />
-    </AdminShell>
-  );
+export default function ScheduleRedirect() {
+  const r = useRouter();
+  useEffect(() => r.replace("/admin/sched/?step=board"), [r]);
+  return <p className="py-20 text-center text-mute">排課已經搬到新的位置…</p>;
 }

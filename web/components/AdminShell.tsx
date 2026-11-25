@@ -34,7 +34,7 @@ const ic = (C: typeof Sun) => <C size={I} strokeWidth={1.7} />;
 export const ADMIN_NAV = [
   { href: "/admin/", label: "今天", icon: ic(Sun) },
   { href: "/admin/students/", label: "學生", icon: ic(Users) },
-  { href: "/admin/schedule/", label: "排課", icon: ic(CalendarRange) },
+  { href: "/admin/sched/", label: "排課", icon: ic(CalendarRange) },
   { href: "/admin/exam/", label: "段考", icon: ic(ClipboardList) },
   { href: "/admin/iep/", label: "IEP 會議", icon: ic(FileHeart) },
   { href: "/admin/check/", label: "點名", icon: ic(ClipboardCheck) },
@@ -42,7 +42,7 @@ export const ADMIN_NAV = [
   { href: "/admin/settings/", label: "設定", icon: ic(Settings) },
 ];
 /** 手機底部列放這幾個，其他收在「更多」 */
-const MOBILE = ["/admin/", "/admin/students/", "/admin/schedule/", "/admin/settings/"];
+const MOBILE = ["/admin/", "/admin/students/", "/admin/sched/", "/admin/settings/"];
 
 /** 管理者頁面裡用：資料一定已經讀好（AdminShell 會擋） */
 export interface AdminCtx {
@@ -53,8 +53,8 @@ export interface AdminCtx {
   revs: Loaded["revs"];
   D: RcData;
   board: Board | null;
-  /** 這一塊不能改（過渡期、或範例資料以外的唯讀） */
-  ro(col: WritableCol): boolean;
+  /** 這一塊不能改（過渡期、或範例資料以外的唯讀）；'sched'＝排課整塊 */
+  ro(col: WritableCol | "sched"): boolean;
 }
 export function useAdmin(): AdminCtx {
   const x = useNx();
