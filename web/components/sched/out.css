@@ -1,0 +1,65 @@
+/* 課表輸出（④ 輸出）的紙張與列印樣式：從 repo 根目錄 app.css 逐字複製（「輸出：白紙黑字」與「列印」兩段裡和課表輸出有關的規則）。
+   每一行規則都要和 app.css 一樣（test/sched-out.test.ts 檢查）；只多包了一層 @media，變數補在 .schedout。 */
+.schedout {
+  --fs-xs:.8125rem;--fs-sm:.875rem;--fs-base:.9375rem;--fs-md:1rem;--fs-lg:1.0625rem;--fs-xl:1.25rem;--fs-2xl:1.75rem;
+  --r-sm:8px;--r-md:10px;--r-lg:16px;--r-pill:999px;
+  --shadow-1:0 1px 2px rgba(31,36,48,.04);--shadow-2:0 6px 24px rgba(31,36,48,.08);--shadow-pop:0 24px 64px rgba(31,36,48,.22);
+}
+.note{font-size:var(--fs-sm);color:var(--mute);margin:6px 0 10px}
+.tagv{display:inline-flex;align-items:center;font-size:13px;border-radius:var(--r-pill);padding:1px 10px;margin:1px 4px 1px 0;background:var(--blue-l);color:var(--blue);white-space:nowrap;line-height:1.6}
+.tagv.warn{background:var(--warn-l);color:var(--warn)}
+#outArea{background:#fff;color:#000;border-radius:var(--r-lg);padding:24px;box-shadow:var(--shadow-1),0 0 0 1px var(--line);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+#outArea h2{font-size:var(--fs-lg);font-weight:700;text-align:center;margin:4px 0 10px}
+#outArea .note{color:#555}
+table.out{border-collapse:collapse;width:100%;margin-bottom:22px}
+table.out th,table.out td{border:1px solid #555;padding:5px 7px;vertical-align:top;font-size:var(--fs-sm);line-height:1.45}
+table.out th{background:#efece6}
+table.out td.c{text-align:center}
+table.out td small{color:#555}
+table.out thead{display:table-header-group}
+table.out tr{break-inside:avoid;page-break-inside:avoid}
+.pg+.pg{margin-top:28px}
+.pg{color:#000}
+.sign{margin-top:18px}
+.master .dt{font-size:12px;margin:0;color:#333}.master .lg{text-align:center;margin:2px 0 8px;font-size:var(--fs-sm)}
+table.mt{border:1px solid #333}
+table.mt th,table.mt td{padding:3px 1px;text-align:center;font-size:12px;line-height:1.25;min-width:24px;border-top:1px solid #333;border-bottom:1px solid #333;border-left:1px dashed #bbb;border-right:1px dashed #bbb;background:#fff;vertical-align:middle}
+table.mt .dl{border-left:1px solid #333}
+table.mt tr>th:first-child{border-right:1px solid #333;width:26px}
+table.mt td{height:64px;font-weight:700}table.mt td span{display:block}
+.pcard h2{text-align:left!important;font-size:var(--fs-xl)!important;margin-bottom:10px}
+table.pt th,table.pt td{border-color:#888;vertical-align:middle;text-align:center}
+table.pt th{background:#efece6}
+table.pt tr>th:first-child{background:#fff;font-size:var(--fs-sm)}table.pt tr.alt>th:first-child,table.pt tr.alt td{background:#f7f5f0}
+table.pt th small{display:block;font-weight:400;color:#555;font-size:12px}
+table.pt td{height:62px;padding:4px;width:17%}
+.pc{border-left:4px solid;border-radius:6px;padding:6px 4px;display:flex;flex-direction:column;gap:1px}
+.pc b{font-size:var(--fs-base)}.pc span{font-size:12px}.pc small{font-size:12px;color:#555!important}
+/* 輸出裡的老師：顏色之外再加不同的線型，黑白列印也分得出來（.t0～.t11，和 app.js 的 TCOL 同一組） */
+.out .t0,.lg .t0{color:#b4541a}.out .t1,.lg .t1{color:#b02a2a}.out .t2,.lg .t2{color:#7a4a22}.out .t3,.lg .t3{color:#5a3a8c}
+.out .t4,.lg .t4{color:#2a2620}.out .t5,.lg .t5{color:#1f7fa8}.out .t6,.lg .t6{color:#a83a86}.out .t7,.lg .t7{color:#6f6556}
+.out .t8,.lg .t8{color:#2f6a3a}.out .t9,.lg .t9{color:#2f47a8}.out .t10,.lg .t10{color:#1f7a70}.out .t11,.lg .t11{color:#8a6a10}
+:is(.out,.lg) :is(.t0,.t1,.t2,.t3,.t4,.t5,.t6,.t7,.t8,.t9,.t10,.t11){border-color:currentColor;padding-bottom:1px}
+:is(.out,.lg) .t0{border-bottom:2px solid}:is(.out,.lg) .t1{border-bottom:2px dashed}:is(.out,.lg) .t2{border-bottom:2px dotted}:is(.out,.lg) .t3{border-bottom:3px double}
+:is(.out,.lg) .t4{border-top:2px solid;border-bottom:2px solid}:is(.out,.lg) .t5{border-top:2px dashed;border-bottom:2px dashed}
+:is(.out,.lg) .t6{border-top:2px dotted;border-bottom:2px dotted}:is(.out,.lg) .t7{border-top:3px double;border-bottom:3px double}
+:is(.out,.lg) .t8{border-left:3px solid;padding-left:2px}:is(.out,.lg) .t9{border-left:3px dashed;padding-left:2px}
+:is(.out,.lg) .t10{border-left:3px dotted;padding-left:2px}:is(.out,.lg) .t11{border-left:4px double;padding-left:2px}
+.lg :is(.t0,.t1,.t2,.t3,.t4,.t5,.t6,.t7,.t8,.t9,.t10,.t11){display:inline-block;line-height:1.3;margin:0 2px}
+@media screen {
+  #outArea table.mt tr>th:first-child,#outArea table.pt tr>th:first-child{position:sticky;left:0;z-index:1}
+}
+@page{size:A4 portrait;margin:12mm}
+@media print {
+  #outArea{border:0;padding:0;border-radius:0;box-shadow:none}
+  .pg{page-break-after:always;break-after:page}.pg:last-child{page-break-after:auto;break-after:auto}
+  #outArea h2,.pg h2{font-size:16pt}
+  .tcard h2{font-size:13pt!important}
+  table.out th,table.out td{border:1px solid #000}
+  table.out thead{display:table-header-group}
+  table.out tr{break-inside:avoid;page-break-inside:avoid}
+  table.mt,table.mt th,table.mt td,table.mt .dl,table.mt tr>th:first-child{border-color:#000}
+  table.mt th,table.mt td{border-left:1px dashed #888;border-right:1px dashed #888}
+  table.mt .dl{border-left:1px solid #000}table.mt tr>th:first-child{border-right:1px solid #000}
+  table.pt th,table.pt td{border:1px solid #888}
+}
