@@ -42,7 +42,7 @@ function defaultData(){
       {id:'1',name:'第1節',start:'08:20',end:'09:05'},
       {id:'2',name:'第2節',start:'09:15',end:'10:00'},
       {id:'3',name:'第3節',start:'10:10',end:'10:55'},
-      {id:'4',name:'第4節',start:'11:05',end:'11:50'},
+      {id:'4',name:'第4節',start:'11:05',end:'11:50',breakAfter:true},
       {id:'5',name:'第5節',start:'13:10',end:'13:55'},
       {id:'6',name:'第6節',start:'14:05',end:'14:50'},
       {id:'7',name:'第7節',start:'15:10',end:'15:55'}
@@ -82,7 +82,8 @@ function normalize(D){
   ['classSubj','assign','settings','offBy'].forEach(k=>{if(!D[k]||typeof D[k]!=='object')D[k]={};});
   if(D.settings.regClash==null)D.settings.regClash=true;
   if(!D.settings.seed)D.settings.seed=1;
-  D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';t.hours=Math.max(0,+t.hours||0);});
+  D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';t.hours=Math.max(0,+t.hours||0);if(t.prefRooms!=null&&!Array.isArray(t.prefRooms))delete t.prefRooms;});
+  if(D.sched!=null&&(typeof D.sched!=='object'||Array.isArray(D.sched)))delete D.sched;   // 試排草稿與確定的版本（沒用過就不存）
   D.students.forEach(s=>{if(!Array.isArray(s.needs))s.needs=[];});
   // 備註拆成「公開提醒」（note，簽到時給學生看）和「個管私密備註」（privNote）。舊資料的備註不知道能不能給學生看，一律先搬到私密
   if(!D.settings.noteSplit){D.students.forEach(s=>{if(s.note&&!s.privNote){s.privNote=s.note;s.note='';}});D.settings.noteSplit=1;}
@@ -91,8 +92,11 @@ function normalize(D){
   return D;
 }
 
-const GRADE={7:'七年級',8:'八年級',9:'九年級',1:'一年級',2:'二年級',3:'三年級',4:'四年級',5:'五年級',6:'六年級'};
-function gradeOfCls(c){const g=parseInt(String(c).trim()[0],10);return isNaN(g)?0:g;}
+const GRADE={7:'七年級',8:'八年級',9:'九年級',1:'一年級',2:'二年級',3:'三年級',4:'四年級',5:'五年級',6:'六年級',10:'高一',11:'高二',12:'高三'};
+// 班級號碼看年級：三位數看第一位（701→7），四位數看前兩位（1012→10）；其他寫法（例：7年1班）退回看第一個字
+function gradeOfCls(c){const x=String(c==null?'':c).trim();if(/^\d{4}$/.test(x))return parseInt(x.slice(0,2),10);const g=parseInt(x[0],10);return isNaN(g)?0:g;}
+// 升一個年級後的班級號碼：701→801、1012→1112；不是三、四位數的不改
+function promoteCls(c){const x=String(c).trim(),g=gradeOfCls(x);if(/^\d{3}$/.test(x))return String(g+1)+x.slice(1);if(/^\d{4}$/.test(x))return String(g+1).padStart(2,'0')+x.slice(2);return x;}
 
 /* 把資料整理成求解器用的索引與「每一組可以排的時段」 */
 function compile(D){
@@ -138,8 +142,15 @@ function compile(D){
   M.spareR=D.rooms.map(r=>!!r.spare);M.mainR=D.rooms.filter(r=>!r.spare).length;M.roomOrder=D.rooms.map((r,i)=>i).sort((a,b)=>M.spareR[a]-M.spareR[b]);
   const caps=ST_.lockCap||{};M.capOf=sj=>caps[sj]>0?+caps[sj]:99;
   // 手排鎖課（從學校的資料輸入讀進來）：這一班這一節指定鎖這位老師
-  const tByName={};T.forEach((t,i)=>{tByName[t.name]=i;});M.lfix=new Map();M.fixW=ST_.keepFix===false?0:1.5;
-  (D.lockFix||[]).forEach(f=>{const c=cIdx[f.cls],t=tByName[f.t],s=key2s(f.k);if(c==null||t==null||s<0)return;M.lfix.set(c*NS+s,{t,sj:f.sj,cls:f.cls,c,s});});
+  const byName={};T.forEach((t,i)=>{(byName[t.name]=byName[t.name]||[]).push(i);});M.lfix=new Map();M.lfixAmb=[];M.fixW=ST_.keepFix===false?0:1.5;
+  // 手排鎖課只記老師名字。有同名的老師時：先看這一班這一科的任課老師是不是其中一位，再看誰有教這一班；還是分不出來就不猜，列出來請老師確認
+  (D.lockFix||[]).forEach(f=>{const c=cIdx[f.cls],s=key2s(f.k),list=byName[f.t]||[];if(c==null||s<0||!list.length)return;
+    let t=list.length===1?list[0]:-1;
+    if(list.length>1){const cs=f.sj?tIdx[D.classSubj[f.cls+'|'+f.sj]]:null;
+      if(cs!=null&&list.includes(cs))t=cs;
+      else{const hit=list.filter(i=>Object.keys(D.classSubj).some(k=>k.startsWith(f.cls+'|')&&D.classSubj[k]===T[i].id));if(hit.length===1)t=hit[0];}}
+    if(t<0){M.lfixAmb.push({cls:f.cls,s,t:f.t});return;}
+    M.lfix.set(c*NS+s,{t,sj:f.sj,cls:f.cls,c,s});});
   M.dbl=new Set(String(ST_.lockDouble||'').split(/[,，、\s]+/).filter(Boolean));
   M.lkav=new Uint8Array(NS*Math.max(1,M.NC));      // 彈性鎖課：這一班這一節還有幾位主科老師可以鎖
   if(flex)for(let c=0;c<M.NC;c++)for(let s=0;s<NS;s++)if(!(klay[c]&&klay[c][s])){let n=0;copt[c].forEach(x=>{if(!off[x.t][s])n++;});M.lkav[c*NS+s]=Math.min(n,200);}
@@ -157,6 +168,16 @@ function compile(D){
   M.rts=[...new Set(G.filter(g=>g.per&&g.t>=0).map(g=>g.t))];
   M.a_tc=new Int16Array(NS*Math.max(1,NT));M.a_sc=new Int16Array(NS*Math.max(1,NStu));M.a_cs=new Int16Array(NS*Math.max(1,M.NC));
   M.a_rt=new Int16Array(NS*Math.max(1,NT));M.a_rc=new Int16Array(NS);M.a_fr=new Int16Array(NS*Math.max(1,NR));M.a_gd=new Int16Array(G.length*5);
+  // 老師偏好的教室（依志願序）。分教室時照志願給；排課時盡量別讓兩位想要同一間的老師排在同一節
+  M.pref=T.map(t=>[...new Set((Array.isArray(t.prefRooms)?t.prefRooms:[]).map(id=>rIdx[id]).filter(i=>i!=null))]);
+  M.pr1=Int16Array.from(M.pref.map(a=>a.length?a[0]:-1));M.prefW=1.5;
+  // 只有真的有人搶同一間（兩位老師的第一志願相同，或第一志願是別人指定的教室）才在 evaluate 多算，沒有就完全不花時間
+  const wantBy={};G.forEach(g=>{if(!g.per||g.t<0)return;const w=g.room>=0?g.room:M.pr1[g.t];if(w<0)return;(wantBy[w]=wantBy[w]||{p:0,t:new Set()});wantBy[w].t.add(g.t);if(g.room<0)wantBy[w].p=1;});
+  M.prefOn=NR>0&&Object.values(wantBy).some(o=>o.p&&o.t.size>1);
+  M.a_pw=new Int16Array(NS*Math.max(1,NR));M.a_pf=new Int16Array(NS*Math.max(1,NR));
+  M.a_gs=new Int32Array(Math.max(1,G.length*NS));M.gsStamp=0;
+  M.H=1000;   // 一個違規算幾分；排課時會從低慢慢升到 1000（見 solve），其他時候都是 1000
+  M.brk=Uint8Array.from(P.map(p=>p.breakAfter?1:0));   // 這一節和下一節中間隔著午休等，不算相連
   return M;
 }
 
@@ -179,15 +200,20 @@ function evaluate(M,slot,out){
   const {NS,NP,NT,NStu,NC,NR,G,L}=M;
   const tc=M.a_tc.fill(0),sc=M.a_sc.fill(0),cs=M.a_cs.fill(0),rt=M.a_rt.fill(0),rc=M.a_rc.fill(0),fr=M.a_fr.fill(0),gd=M.a_gd.fill(0);
   let v=0,soft=0;
+  const pw=M.prefOn?M.a_pw.fill(0):null,pf=pw?M.a_pf.fill(0):null;
+  // 同一組同一格：用「這一輪的編號」標記，不必每次把整個陣列清成 0
+  if(++M.gsStamp>2e9){M.a_gs.fill(0);M.gsStamp=1;}const gs=M.a_gs,stp=M.gsStamp;
   const bad=(k,gi,l,s,m)=>{v++;if(out)out.push({k,g:gi,l,s,m});};
   for(let l=0;l<L.length;l++){
     const gi=L[l].g,g=G[gi],s=slot[l];
     if(s<0){bad('un',gi,l,-1,out&&(g.name+'還有節數沒排進去'));continue;}
     if(!g.allowed[s])bad('off',gi,l,s,out&&(M.sn(s)+'：'+g.name+'不能排在這裡（'+why(M,gi,s).join('、')+'）'));
-    if(g.t>=0){const k=s*NT+g.t;if(tc[k])bad('teacher',gi,l,s,out&&(M.sn(s)+'：'+(tc[k]-1===gi?g.name+'有兩節排在同一格':M.T[g.t].name+'同時有兩組（'+G[tc[k]-1].name+'、'+g.name+'）')));else tc[k]=gi+1;}
+    // 同一組兩節排在同一格只算一個問題；後面的老師、學生、教室都不再重複算這一節（不然一組 8 個學生會算成 8 個）
+    const kg=gi*NS+s;if(gs[kg]===stp){bad('dup',gi,l,s,out&&(M.sn(s)+'：'+g.name+'有兩節排在同一格'));continue;}gs[kg]=stp;
+    if(g.t>=0){const k=s*NT+g.t;if(tc[k])bad('teacher',gi,l,s,out&&(M.sn(s)+'：'+M.T[g.t].name+'同時有兩組（'+G[tc[k]-1].name+'、'+g.name+'）'));else tc[k]=gi+1;}
     if(g.t>=0&&M.strict&&rt[s*NT+g.t])bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[g.t].name+'這一節要上'+g.name+'，但他同時是 '+M.classes[rt[s*NT+g.t]-1]+' 的任課老師、被鎖在原班'));
     for(let a=0;a<g.stu.length;a++){const i=g.stu[a],k=s*NStu+i;
-      if(sc[k]-1===gi)v++;else if(sc[k])bad('student',gi,l,s,out&&(M.sn(s)+'：'+M.D.students[i].cls+' '+M.D.students[i].name+'同時在兩組（'+G[sc[k]-1].name+'、'+g.name+'）'));else sc[k]=gi+1;}
+      if(sc[k])bad('student',gi,l,s,out&&(M.sn(s)+'：'+M.D.students[i].cls+' '+M.D.students[i].name+'同時在兩組（'+G[sc[k]-1].name+'、'+g.name+'）'));else sc[k]=gi+1;}
     for(let a=0;a<g.locks.length;a++){const lk=g.locks[a],k=s*NC+lk.c,j=g.j+1;
       if(M.flex){   // 盡量排在「原班鎖得到課」的時段：完全鎖不到扣最多，鎖不到同一科或要和別班搶同一位老師扣一點
         if(M.lfix.size&&!M.lfix.has(lk.c*NS+s))soft+=M.fixW;   // 有手排鎖課時，盡量排回手排鎖課的節次
@@ -197,7 +223,10 @@ function evaluate(M,slot,out){
       if(M.strict&&lk.t>=0){const k2=s*NT+lk.t,c=lk.c+1;
         if(tc[k2]&&!rt[k2])bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[lk.t].name+'這一節要上'+G[tc[k2]-1].name+'，但他同時是 '+lk.cls+' 的任課老師、被鎖在原班'));
         if(rt[k2]&&rt[k2]!==c)bad('reg',gi,l,s,out&&(M.sn(s)+'：'+M.T[lk.t].name+'同一節要在兩個班上課（'+M.classes[rt[k2]-1]+'、'+lk.cls+'）'));else rt[k2]=c;}}
-    if(NR>0&&M.roomCheck){const fx=M.lroom&&M.lroom[l]>=0&&M.lroom[l]<NR?M.lroom[l]:g.room;
+    const fx=NR>0?(M.lroom&&M.lroom[l]>=0&&M.lroom[l]<NR?M.lroom[l]:g.room):-1;
+    if(pw&&g.t>=0){const w=fx>=0?fx:M.pr1[g.t];   // 同一節有幾位老師想要同一間：每多一對扣一點（兩組都是指定教室的已經算違規，不重複扣）
+      if(w>=0){const k=s*NR+w;soft+=M.prefW*(fx>=0?pw[k]-pf[k]:pw[k]);pw[k]++;if(fx>=0)pf[k]++;}}
+    if(NR>0&&M.roomCheck){
       if(fx>=0){const k=s*NR+fx;if(fr[k])bad('room',gi,l,s,out&&(M.sn(s)+'：'+M.D.rooms[fx].name+'同時被兩組指定（'+G[fr[k]-1].name+'、'+g.name+'）'));else fr[k]=gi+1;}
       if(++rc[s]>NR)bad('room',gi,l,s,out&&(M.sn(s)+'：教室不夠，同時有 '+rc[s]+' 組但只有 '+NR+' 間'));
       else if(M.mainR<NR&&rc[s]>M.mainR)soft+=8;   // 用到備用教室
@@ -206,10 +235,10 @@ function evaluate(M,slot,out){
   }
   for(let gi=0;gi<G.length;gi++)for(let d=0;d<5;d++){const c=gd[gi*5+d];if(c>M.maxDay)soft+=(c-M.maxDay)*4;}
   for(let a=0;a<M.rts.length;a++){const t=M.rts[a];let tot=0;const dc=[0,0,0,0,0];
-    for(let d=0;d<5;d++){let run=0;for(let p=0;p<NP;p++){if(tc[(d*NP+p)*NT+t]){dc[d]++;tot++;if(++run>M.tRun)soft+=2;}else run=0;}}
+    for(let d=0;d<5;d++){let run=0;for(let p=0;p<NP;p++){if(tc[(d*NP+p)*NT+t]){dc[d]++;tot++;if(++run>M.tRun)soft+=2;}else run=0;if(M.brk[p])run=0;}}   // 午休等「與下一節不相連」的地方，連續節數重新算
     const avg=tot/5;for(let d=0;d<5;d++)soft+=(dc[d]-avg)*(dc[d]-avg)*0.4;}
   for(let i=0;i<NStu;i++)for(let d=0;d<5;d++){let c=0;for(let p=0;p<NP;p++)if(sc[(d*NP+p)*NStu+i])c++;if(c>M.sDay)soft+=c-M.sDay;}
-  M.viol=v;return v*1000+soft;
+  M.viol=v;return v*M.H+soft;
 }
 
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
@@ -222,24 +251,34 @@ function solve(M,S0,opt){
   for(let l=0;l<L.length;l++){if(S0.pin[l]&&base[l]>=0)continue;if(opt.only&&!opt.only(l))continue;if(M.G[L[l].g].alist.length)free.push(l);else base[l]=-1;}
   if(!free.length){const o={slot:base,pin:S0.pin};o.cost=evaluate(M,base);o.viol=M.viol;return o;}
   let best=null,bestC=Infinity;
+  const isFree=new Uint8Array(L.length);free.forEach(l=>{isFree[l]=1;});
+  const cl=new Int32Array(L.length),co=new Int16Array(L.length);   // 這一步動了哪些節、原本在哪，退回用
+  try{
   for(let rs=0;rs<RS;rs++){
     const slot=Int16Array.from(base);
     for(const l of free){const a=M.G[L[l].g].alist;slot[l]=a[ri(a.length)];}
-    let cur=evaluate(M,slot);
-    if(cur<bestC){bestC=cur;best=Int16Array.from(slot);}
+    M.H=1000;let c0=evaluate(M,slot),curV=M.viol,curSoft=c0-1000*curV;
+    if(c0<bestC){bestC=c0;best=Int16Array.from(slot);}
     const T0=30,T1=0.05;
     for(let i=0;i<N&&bestC>0;i++){
       const T=T0*Math.pow(T1/T0,i/N);
-      const l=free[ri(free.length)],g=M.G[L[l].g],o1=slot[l];let l2=-1,o2=-1;
-      if(rnd()<0.6||free.length<2){const ns=g.alist[ri(g.alist.length)];if(ns===o1)continue;slot[l]=ns;}
-      else{l2=free[ri(free.length)];o2=slot[l2];const g2=M.G[L[l2].g];
-        if(l2===l||o1===o2||g2===g||!g.allowed[o2]||!g2.allowed[o1])continue;slot[l]=o2;slot[l2]=o1;}
-      const c=evaluate(M,slot);
-      if(c<=cur||rnd()<Math.exp((cur-c)/T)){cur=c;if(c<bestC){bestC=c;best.set(slot);}}
-      else{slot[l]=o1;if(l2>=0)slot[l2]=o2;}
+      // 違規的分數一開始很低、慢慢升到 1000：前期可以先接受暫時的衝突、跨過去找別的排法，後期才嚴格（和段考考場的做法一樣）
+      M.H=Math.min(1000,15*Math.pow(1000/15,i/(0.35*N)));
+      let n=0;const mv=(x,s)=>{cl[n]=x;co[n]=slot[x];n++;slot[x]=s;};
+      const m=rnd(),l=free[ri(free.length)],g=M.G[L[l].g],o1=slot[l];
+      if(m<0.55||free.length<2){const ns=g.alist[ri(g.alist.length)];if(ns===o1)continue;mv(l,ns);}
+      else if(m<0.9){const l2=free[ri(free.length)],o2=slot[l2],g2=M.G[L[l2].g];   // 兩節互換
+        if(l2===l||o1===o2||g2===g||!g.allowed[o2]||!g2.allowed[o1])continue;mv(l,o2);mv(l2,o1);}
+      else{const b=g.alist[ri(g.alist.length)];if(b===o1)continue;   // 兩個時段整批對調：卡在一起的一串課一起搬，比一節一節搬容易解開
+        for(const x of free){const s=slot[x],gx=M.G[L[x].g];if(s===o1&&gx.allowed[b])mv(x,b);else if(s===b&&gx.allowed[o1])mv(x,o1);}
+        if(!n)continue;}
+      const c=evaluate(M,slot),v=M.viol,soft=c-M.H*v,cur=curSoft+M.H*curV;
+      if(c<=cur||rnd()<Math.exp((cur-c)/T)){curSoft=soft;curV=v;const tr=soft+1000*v;if(tr<bestC){bestC=tr;best.set(slot);}}
+      else for(let j=n-1;j>=0;j--)slot[cl[j]]=co[j];
     }
     if(bestC===0)break;
   }
+  }finally{M.H=1000;}   // 其他地方用 evaluate 時一律是 1000
   let cur=evaluate(M,best),imp=true,pass=0;
   while(imp&&pass++<5){imp=false;
     for(const l of free){const g=M.G[L[l].g],o=best[l];let b=o;
@@ -264,18 +303,41 @@ function canPlace(M,slot,l,s){
   slot[l]=s;evaluate(M,slot);const v1=M.viol;slot[l]=o;return v1<v0;
 }
 
-/* 分配教室：有指定的照指定；其餘同一位老師盡量固定同一間 */
+/* 分配教室，順序是：這一節或這一組指定的教室（硬性）→ 老師偏好的教室（依志願序）→ 平常用的教室 → 備用教室。
+   沒填偏好的老師輪流分一間「常用教室」，而且先避開別人的第一志願，讓有偏好的老師比較拿得到 */
 function assignRooms(M,slot){
   const room=new Int16Array(M.L.length).fill(-1);if(!M.NR)return room;
-  const order=M.roomOrder||[...Array(M.NR).keys()],nMain=Math.max(1,M.mainR||M.NR),home={};M.rts.forEach((t,i)=>{home[t]=order[i%nMain];});
+  const order=M.roomOrder||[...Array(M.NR).keys()],spare=M.spareR||[],pref=M.pref||[],home={};
+  const main=order.filter(i=>!spare[i]),first=new Set();M.rts.forEach(t=>{if(pref[t]&&pref[t].length)first.add(pref[t][0]);});
+  const open=main.filter(i=>!first.has(i)),pool=open.length?open:main.length?main:order;let k=0;
+  M.rts.forEach(t=>{if(!(pref[t]&&pref[t].length))home[t]=pool[k++%pool.length];});
+  const want=l=>{const t=M.G[M.L[l].g].t;return t>=0&&pref[t]?pref[t]:[];};
   const by={};M.L.forEach((x,l)=>{if(slot[l]>=0)(by[slot[l]]=by[slot[l]]||[]).push(l);});
   for(const s in by){const used=new Uint8Array(M.NR),rest=[];
     by[s].forEach(l=>{const g=M.G[M.L[l].g],fx=M.lroom&&M.lroom[l]>=0&&M.lroom[l]<M.NR?M.lroom[l]:g.room;if(fx>=0&&!used[fx]){used[fx]=1;room[l]=fx;}else rest.push(l);});
-    rest.forEach(l=>{const g=M.G[M.L[l].g];let r=g.room>=0?-1:(home[g.t]!=null?home[g.t]:0);
-      if(r<0||used[r]){r=-1;for(const i of order)if(!used[i]){r=i;break;}}
+    // 一輪一輪照志願分：這一節每位老師的第一志願先分完，才輪到第二志願，避免有人第二志願搶走別人的第一志願
+    const nw=rest.reduce((n,l)=>Math.max(n,want(l).length),0);
+    for(let r=0;r<nw;r++)rest.forEach(l=>{if(room[l]>=0)return;const w=want(l)[r];if(w!=null&&!used[w]){used[w]=1;room[l]=w;}});
+    rest.forEach(l=>{if(room[l]>=0)return;const g=M.G[M.L[l].g];let r=g.room>=0?-1:(home[g.t]!=null?home[g.t]:-1);
+      if(r<0||used[r]){r=-1;for(const i of order)if(!used[i]){r=i;break;}}   // order 已經把備用教室排在最後
       if(r>=0){used[r]=1;room[l]=r;}});}
   return room;
 }
+
+/* ───── 試排草稿與確定的版本：排法用短字串存，資料才不會越存越大 ───── */
+// assign {組id:[{s:'0-1',pin:true,r:'A'}]} → {組id:'0-1*@A,2-3'}；* 是固定、@ 後面是這一節指定的教室
+function packAssign(a){const o={};for(const id in a||{})o[id]=(a[id]||[]).map(e=>!e?'':(e.s||'')+(e.pin?'*':'')+(e.r?'@'+e.r:'')).join(',');return o;}
+function unpackAssign(o){const a={};for(const id in o||{})a[id]=String(o[id]).split(',').map(x=>{const m=x.match(/^([^*@]*)(\*?)(?:@(.*))?$/)||[];const e={s:m[1]||'',pin:!!m[2]};if(m[3])e.r=m[3];return e;});return a;}
+// 一份排法的摘要：排了幾節、幾個衝突、不理想的程度；彈性鎖課時加上原班鎖得到課的比例。rfix 是這份排法自己指定的教室
+function schedStats(M,slot,rfix){
+  const keep=M.lroom;if(rfix)M.lroom=rfix;const out=[],cost=evaluate(M,slot,out),viol=M.viol;
+  const r={placed:0,un:0,probs:out.filter(o=>o.k!=='un').length,cost,soft:Math.round((cost-viol*1000)*10)/10,locks:null};
+  for(let l=0;l<slot.length;l++){if(slot[l]>=0)r.placed++;else r.un++;}
+  if(M.flex){const A=assignLocks(M,slot);r.locks={pulled:A.pulled,open:A.open.length};}
+  M.lroom=keep;return r;
+}
+// 兩份排法有幾節換了時段（同一份 M 下逐節比）
+function schedDiff(a,b){let n=0;for(let l=0;l<a.length;l++)if(a[l]!==b[l])n++;return n;}
 
 /* 給教務處的鎖課表：哪一班、哪一科、哪幾節必須排這一科 */
 function lockTable(M,slot){
@@ -403,7 +465,7 @@ function importCourseTable(D,text){
     const a=c.indexOf('教師'),b=c.indexOf('總節數');
     if(a>=0&&b>a){ti=a;hi=b;}else if(ti>=0&&c[ti]&&+c[hi]>0&&!/節數|合計/.test(c[ti])){tOf(c[ti]).hours=+c[hi];R.hours++;}
     const per=+c[5];if(!c[0]||!c[2]||!(per>0)||/領域|名稱/.test(c[0]))return;
-    const subject=canonSubj(D,c[0]),grade=/^[1-9]$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[],miss0=R.miss.length;
+    const subject=canonSubj(D,c[0]),grade=/^([1-9]|1[0-2])$/.test(c[1])?c[1]:'',name=grade+c[2]+subject,ids=[],miss0=R.miss.length;
     (c[4]||'').split(/[、,，;；\/\s]+/).filter(Boolean).forEach(m=>{const mm=m.match(/^(\d{3,4})[-－]?\d{0,2}(\D.*)$/);if(!mm){R.miss.push(m);return;}
       const nm=mm[2],k=nm.search(MK),f=k<0?nm:nm.slice(0,k),l=k<0?'':nm.replace(/^.*[○〇ＯO＊*]/,'');
       const hit=D.students.filter(s=>String(s.cls)===mm[1]&&(k<0?s.name===nm:s.name.length>=f.length+l.length&&s.name.startsWith(f)&&s.name.endsWith(l)));
@@ -426,34 +488,92 @@ function importCourseTable(D,text){
   return R;
 }
 
+/* 配鎖課的精確搜尋（assignLocks 內部用）。增廣搜尋多半已經是最好的，但這個問題同時有「老師一節只能被一班鎖」
+   和「一班一科最多鎖幾節」兩種限制，偶爾會差一兩節。做法：
+   1. 算上限：每一班自己最多能鎖幾節（只看這一班的老師有沒有空、各科上限），加起來。增廣搜尋已經到上限就結束。
+   2. 沒到上限才分支定界：一班一班試，每一步用「這一班剩下的最多還能鎖幾節＋後面各班的上限」剪枝。
+      最多試 nodes 步（預設 20000），找不到更好的就維持增廣搜尋的結果，所以只會更好、不會更差。
+   目標：鎖到的節數最多，其次同一科的最多。手排鎖課（fixed）不動。 */
+function exactLocks(M,list,byC,K){
+  const {put,rem,own,NS}=K,LIMIT=K.nodes||20000,free=list.filter(o=>!o.fixed&&o.opt.length);if(!free.length)return;
+  const val=os=>{let n=0,s=0;os.forEach(o=>{if(o.pick){n++;if(o.want.has(o.pick.sj))s++;}});return n*100+s;};
+  const keep=free.map(o=>o.pick);let best=val(free),bestPick=keep;
+  free.forEach(o=>put(o,null));   // 先全部拿掉，只留手排鎖課，算上限和搜尋都從這裡開始
+  // 一班之內：節次配科目的最大配對（每一科的容量是還能鎖的節數）
+  const match=(os,c)=>{const asg=new Map();let n=0;
+    const tryM=(o,seen)=>{for(const x of o.opt){if(own.has(x.t*NS+o.s)||seen.has(x.sj))continue;seen.add(x.sj);
+        const hold=[];asg.forEach((sj,p)=>{if(sj===x.sj)hold.push(p);});
+        if(hold.length<rem(c,x.sj)){asg.set(o,x.sj);return true;}
+        for(const h of hold)if(tryM(h,seen)){asg.set(o,x.sj);return true;}}
+      return false;};
+    for(const o of os)if(tryM(o,new Set()))n++;return n;};
+  const cls=[...new Set(free.map(o=>o.c))],groups=cls.map(c=>free.filter(o=>o.c===c)),stat=groups.map((g,i)=>match(g,cls[i])),suf=new Array(cls.length+1).fill(0);
+  for(let i=cls.length-1;i>=0;i--)suf[i]=suf[i+1]+stat[i];
+  if(Math.floor(best/100)>=suf[0]){free.forEach((o,i)=>put(o,keep[i]));return;}
+  const flat=[],ci=[],pos=[];groups.forEach((g,i)=>g.forEach((o,k)=>{flat.push(o);ci.push(i);pos.push(k);}));
+  let nodes=0;
+  const dfs=(i,n,s)=>{if(++nodes>LIMIT)return;
+    if(i===flat.length){const v=n*100+s;if(v>best){best=v;bestPick=flat.map(o=>o.pick);}return;}
+    const o=flat[i],ub=n+match(groups[ci[i]].slice(pos[i]),o.c)+suf[ci[i]+1];
+    if(ub*100+ub<=best)return;   // 同一科的節數不會超過鎖到的節數，所以最多 ub*101
+    for(const x of o.opt){if(own.has(x.t*NS+o.s)||rem(o.c,x.sj)<=0)continue;put(o,x);dfs(i+1,n+1,s+(o.want.has(x.sj)?1:0));put(o,null);if(nodes>LIMIT)return;}
+    dfs(i+1,n,s);};
+  dfs(0,0,0);
+  const pick=bestPick===keep?keep:bestPick,order=bestPick===keep?free:flat;
+  order.forEach((o,i)=>put(o,pick[i]));
+}
+
 /* 配鎖課：課表排好之後，替每個「有學生被抽離的班級 × 節次」決定請教務處鎖哪一科。
    先盡量鎖和資源班同一科；鎖不到（老師不排課、被別班鎖走、該科節數用完）就改鎖其他主科；都不行就列為鎖不到。
    同一位老師同一節只能被一個班鎖。回傳 locks、open（鎖不到的）、warn（連堂提醒）。 */
-function assignLocks(M,slot){
+function assignLocks(M,slot,opt){const K_BUDGET=opt&&opt.exact===false?120:400;   // 每次增廣搜尋最多試幾步；快速模式（收尾時大量呼叫）少一點
   const {NS,NP,G,L}=M,P=new Map(),busy=new Set();
   for(let l=0;l<L.length;l++){const s=slot[l],g=G[L[l].g];if(s<0)continue;if(g.t>=0)busy.add(g.t*NS+s);if(!g.need)continue;
     g.locks.forEach(k=>{const key=k.c*NS+s;let o=P.get(key);if(!o)P.set(key,o={c:k.c,cls:k.cls,s,want:new Set(),groups:new Set(),pick:null});o.want.add(g.subject);o.groups.add(g.name);});}
   const used={},own=new Map(),rem=(c,sj)=>M.capOf(sj)-(used[c+'|'+sj]||0);
-  const set=(o,x)=>{if(o.pick)used[o.c+'|'+o.pick.sj]--;o.pick=x;used[o.c+'|'+x.sj]=(used[o.c+'|'+x.sj]||0)+1;own.set(x.t*NS+o.s,o);};
-  const list=[...P.values()].sort((a,b)=>a.s-b.s||a.c-b.c);
-  list.forEach(o=>{const w=x=>o.want.has(x.sj)?1:0;o.opt=(M.klay[o.c]&&M.klay[o.c][o.s])?[]:M.copt[o.c].filter(x=>!M.off[x.t][o.s]&&!busy.has(x.t*NS+o.s)).sort((a,b)=>w(b)-w(a));});
-  const tryA=(o,seen,same)=>{for(const x of o.opt){if(same&&!o.want.has(x.sj))continue;if(seen.has(x.t))continue;
-      if(!(rem(o.c,x.sj)>0||(o.pick&&o.pick.sj===x.sj)))continue;seen.add(x.t);
-      const w=own.get(x.t*NS+o.s);if(w&&w!==o&&w.fixed)continue;if(!w||w===o||tryA(w,seen,same)){set(o,x);return true;}}
+  // 把 o 改成鎖 x（null 是不鎖），同時維護「老師這一節被誰鎖」和「這一班這一科鎖了幾節」。每一步記在 log，搜尋失敗時整串退回
+  const log=[];
+  const put=(o,x)=>{const old=o.pick;if(old){used[o.c+'|'+old.sj]--;if(own.get(old.t*NS+o.s)===o)own.delete(old.t*NS+o.s);}
+    o.pick=x;if(x){used[o.c+'|'+x.sj]=(used[o.c+'|'+x.sj]||0)+1;own.set(x.t*NS+o.s,o);}};
+  const set=(o,x)=>{log.push([o,o.pick]);put(o,x);},back=n=>{while(log.length>n){const e=log.pop();put(e[0],e[1]);}};
+  const list=[...P.values()].sort((a,b)=>a.s-b.s||a.c-b.c),byC={};
+  list.forEach(o=>{const w=x=>o.want.has(x.sj)?1:0;o.opt=(M.klay[o.c]&&M.klay[o.c][o.s])?[]:M.copt[o.c].filter(x=>!M.off[x.t][o.s]&&!busy.has(x.t*NS+o.s)).sort((a,b)=>w(b)-w(a));(byC[o.c]=byC[o.c]||[]).push(o);});
+  /* 增廣搜尋：替 o 找一個（和現在不同的）科目來鎖。會卡住的資源有兩種，都可以「請別人讓」：
+     1. 那位老師這一節已經被別班鎖了 → 請那一班改鎖別的；
+     2. 這一班這一科已經鎖到上限 → 請這一班另一節改鎖別科。
+     讓得動才算成功，否則把這一串都退回。seen 讓同一次搜尋裡每一節只被請一次，搜尋量才不會爆掉
+     （所以偶爾會漏掉更好的配法，交給後面的 exactLocks 補）；budget 是保險，最壞情況也不會卡住 */
+  let budget=0;
+  const aug=(o,seen,same,depth)=>{
+    for(const x of o.opt){if(same&&!o.want.has(x.sj))continue;if(o.pick&&o.pick.sj===x.sj)continue;
+      if(--budget<0)return false;
+      const mk=log.length,w=own.get(x.t*NS+o.s),other=w&&w!==o;
+      if(other&&(w.fixed||seen.has(w)||depth>=12))continue;
+      if(other){seen.add(w);set(w,null);}
+      set(o,x);
+      let ok=!other||aug(w,seen,same,depth+1);
+      if(ok&&rem(o.c,x.sj)<0){ok=false;
+        for(const o2 of byC[o.c]){if(o2===o||!o2.pick||o2.pick.sj!==x.sj||o2.fixed||seen.has(o2)||depth>=12)continue;
+          const mk2=log.length;seen.add(o2);if(aug(o2,seen,same,depth+1)){ok=true;break;}back(mk2);}}
+      if(ok)return true;back(mk);}
     return false;};
+  // 這一班能鎖的科目都已經鎖滿：多鎖一節不可能，不用搜尋（大部分鎖不到的節都是這種，省很多時間）
+  const full=c=>{const seen=new Set();for(const x of M.copt[c]){if(seen.has(x.sj))continue;seen.add(x.sj);if(rem(c,x.sj)>0)return false;}return true;};
+  const tryA=(o,same)=>{if(full(o.c))return false;const mk=log.length;budget=K_BUDGET;if(aug(o,new Set([o]),same,0))return true;back(mk);return false;};
   // 手排鎖課優先：這一節有學生被抽離、而且那位老師沒有在資源班上課，就照手排的鎖
   const idle=[];
   if(M.lfix&&M.lfix.size)M.lfix.forEach((f,key)=>{const o=P.get(key);
     if(!o){idle.push({cls:f.cls,s:f.s,t:M.T[f.t].name,sj:f.sj});return;}
     if(busy.has(f.t*NS+o.s)||own.has(f.t*NS+o.s))return;
     const x=M.copt[o.c].find(y=>y.t===f.t)||{sj:f.sj,t:f.t};set(o,x);o.fixed=true;});
-  list.forEach(o=>{if(!o.pick)tryA(o,new Set(),true);});
-  list.forEach(o=>{if(!o.pick)tryA(o,new Set(),false);});
+  list.forEach(o=>{if(!o.pick)tryA(o,true);});
+  list.forEach(o=>{if(!o.pick)tryA(o,false);});
+  if(!(opt&&opt.exact===false))exactLocks(M,list,byC,{put,rem,own,NS,nodes:opt&&opt.nodes});
   // 連堂：某一科鎖到只剩 1 節（或全鎖）時，鎖的節次裡要有兩節連在一起，不然教務處排不出連堂；沒有就在旁邊多鎖一節
-  const warn=[],extra=[];
+  const warn=(M.lfixAmb||[]).map(a=>a.cls+' '+M.sn(a.s)+' 手排鎖課的「'+a.t+'」名冊裡有兩位以上同名，分不出是哪一位，這一節先不照手排。請到名冊把名字改成分得出來的寫法（例：王小明（國））'),extra=[];
   if(M.dbl.size){const byC={};list.forEach(o=>{if(o.pick&&M.dbl.has(o.pick.sj)){const k=o.c+'|'+o.pick.sj;(byC[k]=byC[k]||[]).push(o);}});
     for(const key in byC){if(byC[key].some(o=>o.fixed))continue;const a=byC[key],c=a[0].c,sj=a[0].pick.sj,t=a[0].pick.t,capv=M.capOf(sj);if(capv>=99||a.length<capv-1)continue;
-      const has=new Set(a.map(o=>o.s)),adj=s=>[s%NP?s-1:-1,(s+1)%NP?s+1:-1].filter(x=>x>=0);
+      const has=new Set(a.map(o=>o.s)),adj=s=>[s%NP&&!M.brk[(s-1)%NP]?s-1:-1,(s+1)%NP&&!M.brk[s%NP]?s+1:-1].filter(x=>x>=0);   // 中間隔著午休的兩節不算連堂
       if(a.some(o=>adj(o.s).some(x=>has.has(x))))continue;
       let done=false;
       if(a.length<capv)for(const o of a){for(const s2 of adj(o.s)){if(M.coff[c][s2]||M.off[t][s2]||busy.has(t*NS+s2)||own.has(t*NS+s2))continue;const p=P.get(c*NS+s2);if(p&&p.pick)continue;
@@ -471,11 +591,12 @@ function assignLocks(M,slot){
 
 /* 彈性鎖課的收尾：排完之後逐節試著換時段，只要不增加衝堂、課表品質不明顯變差，而鎖不到的節次變少（或同科變多）就換過去 */
 function refineLocks(M,S,opt){
-  opt=opt||{};const slot=Int16Array.from(S.slot),sc=()=>{const A=assignLocks(M,slot);return A.open.length*20-A.same-A.fixed*8;};   // 也盡量回到手排鎖課的節次
-  let c0=evaluate(M,slot);const v0=M.viol;let b=sc();
+  opt=opt||{};const slot=Int16Array.from(S.slot),sc=()=>{const A=assignLocks(M,slot,{exact:false});return A.open.length*20-A.same-A.fixed*8;};   // 也盡量回到手排鎖課的節次
+  // 課表品質最多只能比一開始差 tol（總共），不是每換一次都再放寬，不然換很多次會越走越差
+  const c0=evaluate(M,slot),v0=M.viol,tol=opt.tol!=null?opt.tol:3;let b=sc();
   for(let pass=0;pass<(opt.passes||2);pass++){let imp=false;
     for(let l=0;l<M.L.length;l++){if(S.pin[l]||slot[l]<0||(opt.only&&!opt.only(l)))continue;const g=M.G[M.L[l].g];if(!g.need)continue;const o=slot[l];let best=o;
-      for(const s of g.alist){if(s===o)continue;slot[l]=s;const c=evaluate(M,slot);if(M.viol>v0||c>c0+1.5)continue;const x=sc();if(x<b){b=x;best=s;c0=c;}}
+      for(const s of g.alist){if(s===o)continue;slot[l]=s;const c=evaluate(M,slot);if(M.viol>v0||c>c0+tol)continue;const x=sc();if(x<b){b=x;best=s;}}
       slot[l]=best;if(best!==o)imp=true;}
     if(!imp)break;}
   return {slot,pin:S.pin};
@@ -495,7 +616,8 @@ function importLocks(D,text){
     if(!tn||/^[#\-－0]/.test(tn)||/^\d+$/.test(tn)||isSubj(tn))return;
     if(!per||!(d>=1&&d<=5)){R.bad++;return;}
     const k=(d-1)+'-'+per.id,key=cls+'|'+k;if(seen.has(key))return;seen.add(key);
-    let t=teaByName(D,tn);if(!t){t=newTeacher(D,tn,'普通班');R.newT.push(tn);}
+    const same=D.teachers.filter(x=>x.name===tn||normName(x.name)===normName(tn));   // 同名時優先選有教這一班的那一位
+    let t=same.find(x=>Object.keys(D.classSubj).some(q=>q.startsWith(cls+'|')&&D.classSubj[q]===x.id))||same[0];if(!t){t=newTeacher(D,tn,'普通班');R.newT.push(tn);}
     sj=sj?canonSubj(D,sj):'';
     if(!sj){const e=Object.keys(D.classSubj).find(q=>q.startsWith(cls+'|')&&D.classSubj[q]===t.id);sj=e?e.slice(e.indexOf('|')+1):'';}
     if(sj&&!D.classSubj[cls+'|'+sj])D.classSubj[cls+'|'+sj]=t.id;
@@ -682,8 +804,8 @@ function teaByName(D,name){const n=String(name||'').trim();if(!n)return null;con
 function newTerm(D,opt){
   const R={grad:0,up:0};
   if(opt.promote){opt.clearAssign=opt.clearGroups=opt.clearCS=opt.clearClassOff=true;
-    const gone=[];D.students=D.students.filter(s=>{const g=gradeOfCls(s.cls);if(g===9||g===6){gone.push(s.id);R.grad++;return false;}
-      if(g>=1&&g<=8&&/^\d{3,4}$/.test(String(s.cls))){s.cls=String(g+1)+String(s.cls).slice(1);R.up++;}return true;});
+    const gone=[];D.students=D.students.filter(s=>{const g=gradeOfCls(s.cls);if(g===9||g===6||g===12){gone.push(s.id);R.grad++;return false;}
+      if(g>=1&&g<=11&&/^\d{3,4}$/.test(String(s.cls))){s.cls=promoteCls(s.cls);R.up++;}return true;});
     D.gone=(D.gone||[]).concat(gone).slice(-500);
     gone.forEach(id=>{delete D.offBy['s:'+id];});D.sets.forEach(x=>{x.students=x.students.filter(id=>!gone.includes(id));});
     // 班級號碼變了，舊的全校課表和導師會對到錯的班（批閱教師、任課老師都會錯），一起清掉
@@ -742,5 +864,5 @@ function suggestCaseMgr(D,opt){
   const summary=T.map(t=>{const m=byT[t.id];return {id:t.id,name:t.name,n:m.length,cap:cap[t.id],capSet:+t.cmCap>0,grades:[...new Set(m.map(grade))].sort(),classes:new Set(m.map(o=>String(o.cls))).size,taught:m.filter(o=>teach[o.id+'|'+t.id]).length};});
   return {list,summary};
 }
-const CORE={suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash};
+const CORE={suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash,promoteCls,packAssign,unpackAssign,schedStats,schedDiff};
 if(typeof module!=='undefined')module.exports=CORE;
