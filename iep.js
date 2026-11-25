@@ -160,11 +160,15 @@ function busyOf(D,R,ctx){ctx=ctx||ctxOf(D);const {tb,rb,M}=weekBusy(D,ctx),NS=M.
   people.forEach(k=>{if(!isTeacher(k))return;const t=teacherOf(D,k.slice(2));if(!t)return;const ti=M.tIdx[t.id];
     inf.forEach(f=>{if(f.w<0)return;for(const pi of f.pis){const why=tb.get(ti*NS+f.w*NP+pi);if(why){(out[k]=out[k]||{})[f.k]=why;break;}}});});
   // 別的調查回合已經排定的 IEP 會議
-  ensure(D).rounds.forEach(R2=>{if(R2===R)return;R2.meets.forEach(m=>{if(!m.at)return;const f2=slotInfo(D,m.at);
-    m.p.forEach(x=>{if(!people.has(x[0]))return;inf.forEach(f=>{if(overlap(f,f2)){const o=out[x[0]]=out[x[0]]||{};if(!o[f.k])o[f.k]='已排 IEP（'+stuLabel(stuOf(D,m.s))+'）';}});});});});
+  // 不管是哪一位老師開的調查都算：同一個人、同一間開會地點不會同時排兩場。__iep 是硬限制（自己回覆「可」也不排）
+  const hard={};
+  ensure(D).rounds.forEach(R2=>{if(R2===R)return;R2.meets.forEach(m=>{if(!m.at)return;const f2=slotInfo(D,m.at),hit=inf.filter(f=>overlap(f,f2));if(!hit.length)return;
+    const lab='已排 IEP（'+stuLabel(stuOf(D,m.s))+'）';
+    m.p.forEach(x=>{if(!people.has(x[0]))return;const o=out[x[0]]=out[x[0]]||{},h=hard[x[0]]=hard[x[0]]||{};hit.forEach(f=>{if(!o[f.k])o[f.k]=lab;h[f.k]=lab;});});
+    if(m.room&&R.rooms.includes(m.room)){const o=rooms[m.room]=rooms[m.room]||{};hit.forEach(f=>{o[f.k]='已排 IEP';});}});});
   R.rooms.forEach(name=>{const ri=D.rooms.findIndex(r=>r.name===name);if(ri<0)return;
-    inf.forEach(f=>{if(f.w<0)return;for(const pi of f.pis){const g=rb.get(ri*NS+f.w*NP+pi);if(g){(rooms[name]=rooms[name]||{})[f.k]='資源班上課（'+g+'）';break;}}});});
-  out.__rooms=rooms;return out;}
+    inf.forEach(f=>{if(f.w<0)return;for(const pi of f.pis){const g=rb.get(ri*NS+f.w*NP+pi);if(g){const o=rooms[name]=rooms[name]||{};if(!o[f.k])o[f.k]='資源班上課（'+g+'）';break;}}});});
+  out.__rooms=rooms;out.__iep=hard;return out;}
 
 /* ───── 回覆 ───── */
 function record(R,k,sk,v){if(!k||!sk)return;if(v==='y'||v==='n'||v==='m'){(R.ans[k]=R.ans[k]||{})[sk]=v;}
@@ -197,9 +201,9 @@ function grid(D,keys){const inf=keys.map(k=>slotInfo(D,k)),dates=[...new Set(inf
   const has=new Set(keys);return {dates:dates.map(d=>({date:d,label:fmtDate(d)})),cols,cell:(d,p)=>has.has(key(d,p))?key(d,p):''};}
 
 /* ───── 一場會議的時段排名 ───── */
-function rank(D,R,m,busy){const ppl=m.p;
+function rank(D,R,m,busy){const ppl=m.p,hard=(busy&&busy.__iep)||{};
   return meetSlots(R,m).map((sk,i)=>{let ok=true,val=0,yes=0;const bad=[],miss=[],unk=[];
-    ppl.forEach(x=>{const st=status(R,busy,x[0],sk),n=pName(D,R,x[0]);
+    ppl.forEach(x=>{const st=hard[x[0]]&&hard[x[0]][sk]?{v:'n',auto:true}:status(R,busy,x[0],sk),n=pName(D,R,x[0]);
       if(st.v==='n'){if(x[2]){ok=false;bad.push(n);}else miss.push(n);return;}
       if(st.v==='y')yes++;else unk.push(n);
       val+=(x[2]?2:1)*W[st.v];});
@@ -286,6 +290,32 @@ function conflicts(D,R){const out=[],ms=R.meets.filter(m=>m.at);
     a.p.forEach(x=>{if(rb.has(x[0])&&x[2]&&rb.get(x[0]))out.push({a:a.id,b:b.id,k:x[0],m:pName(D,R,x[0])+' 同時要參加 '+stuLabel(stuOf(D,a.s))+' 和 '+stuLabel(stuOf(D,b.s))+' 的會議'});});
     if(a.room&&a.room===b.room)out.push({a:a.id,b:b.id,room:a.room,m:a.room+' 同時排了兩場會議'});}
   return out;}
+// 和別的調查（別位老師開的也算）已經排定的會議撞到：同一個人或同一間地點。不寫出別場是哪位學生
+function crossConflicts(D,R){const out=[];
+  R.meets.forEach(a=>{if(!a.at)return;const fa=slotInfo(D,a.at),pa=new Set(a.p.map(x=>x[0]));
+    ensure(D).rounds.forEach(R2=>{if(R2===R)return;R2.meets.forEach(b=>{if(!b.at||!overlap(fa,slotInfo(D,b.at)))return;
+      b.p.forEach(x=>{if(pa.has(x[0]))out.push({a:a.id,r:R2.id,b:b.id,k:x[0],m:pName(D,R,x[0])+' 在 '+fa.label+' 已經有另一場會議（'+stuLabel(stuOf(D,a.s))+'）'});});
+      if(a.room&&a.room===b.room)out.push({a:a.id,r:R2.id,b:b.id,room:a.room,m:a.room+' 在 '+fa.label+' 已經有另一場會議'});});});});
+  return out;}
+
+/* ───── 每位老師自己的調查（老師登入後的「我的 IEP」） ─────
+   R.host＝承辦：老師自己開的記老師 id（畫面和公開頁顯示成老師姓名）；特教組開的是文字（例：特教組）。
+   老師只能替自己個管的學生開調查、只看到自己開的；別人開的會議邀請了他，他可以直接填空堂。 */
+function hostId(D,R){const h=String((R&&R.host)||'');return h&&D.teachers.some(t=>t.id===h)?h:'';}
+function hostLabel(D,R){const id=hostId(D,R);return id?D.teachers.find(t=>t.id===id).name:String((R&&R.host)||'');}
+function mineStu(D,tid){return D.students.filter(s=>!tid||s.caseMgr===tid);}
+// 一位老師看得到、改得動的調查：tid 空白＝管理者，全部；quick：直接開會的（1）或調查（0）；undefined＝兩種都要
+function ownRounds(D,tid,quick){return ensure(D).rounds.filter(R=>(quick==null||!!R.quick===!!quick)&&(!tid||hostId(D,R)===tid));}
+function canEdit(D,R,tid){return !!R&&(!tid||hostId(D,R)===tid);}
+// 別人（或自己）開的調查裡，有邀請這位老師、而且有候選時段的
+function invited(D,tid){const k='t:'+tid;return ensure(D).rounds.filter(R=>!R.quick&&R.slots.length&&R.meets.some(m=>m.p.some(x=>x[0]===k)));}
+// 老師模式加學生：只收自己個管的
+function addMeetAs(D,R,sid,tid){const s=stuOf(D,sid);if(!s||(tid&&s.caseMgr!==tid))return null;return addMeet(D,R,sid);}
+function newRoundAs(D,tid,opt){const R=newRound(D,Object.assign({},opt||{},{stu:[]}));if(tid)R.host=tid;
+  ((opt&&opt.stu)||[]).forEach(sid=>addMeetAs(D,R,sid,tid));return R;}
+// 老師在系統裡直接填自己的空堂（不用連結）：free＝有空的時段，其餘當「不可」；和線上回覆同一個格式
+function selfAnswer(D,R,pk,free,note){const o=consolidate(D,R,{all:true}).find(x=>x.k===pk);if(!o)return false;
+  const prev=R.web&&R.web[pk],at=Math.max(Date.now(),prev?prev.at+1:0);return applyWeb(R,o,{free:free||[],note:note||'',at});}
 
 /* 開會通知：每個人一張，只列已排定的會議 */
 function notices(D,R,opt){return consolidate(D,R,Object.assign({},opt||{},{fixed:true})).map(o=>{o.meets.sort((x,y)=>String(x.m.at).localeCompare(String(y.m.at)));return o;});}
@@ -310,7 +340,7 @@ function slipItems(D,R,opt){opt=opt||{};const out=[];
     m.p.slice().sort((a,b)=>ROLE_ORDER(a[1])-ROLE_ORDER(b[1])).forEach(x=>{const t=isTeacher(x[0]);if(!opt.all&&!t)return;
       const name=pName(D,R,x[0]);
       out.push({m,k:x[0],name,to:salute(name,x[1],t),role:x[1],req:!!x[2],stu:stuShow(s,opt.privacy),cm,kind:R.kind||KINDS[0],
-        time:t0,room:m.room||R.place||'',due:R.cdue||'',host:R.host||''});});});
+        time:t0,room:m.room||R.place||'',due:R.cdue||'',host:hostLabel(D,R)});});});
   return out;}
 // 很快開一場：已經知道時間的個管老師，選學生、填日期時間地點，就能印通知單
 function quickMeet(D,o){const I=ensure(D),s=stuOf(D,o.sid);if(!s)return null;
@@ -346,7 +376,7 @@ function publicDoc(D,R,o,busy){const pk=o.k,keys=o.keys,b={};keys.forEach(k=>{co
   const pids=[...new Set(keys.map(k=>splitKey(k)[1]))],ps=D.periods.filter(p=>pids.includes(p.id)).map(p=>({id:p.id,n:p.name,t:pad(p.start)+'–'+pad(p.end)}));
   const role=o.meets.map(x=>x.role).join('、');
   return {v:1,who:o.teacher?'t':'p',once:o.teacher?0:1,name:salute(o.name,role,o.teacher),title:String(D.title||''),round:String(R.name||''),kind:String(R.kind||KINDS[0]),
-    d1:R.d1||'',d2:R.d2||'',due:R.due||'',host:String(R.host||''),keys:keys.slice(),ps,busy:b,
+    d1:R.d1||'',d2:R.d2||'',due:R.due||'',host:hostLabel(D,R),keys:keys.slice(),ps,busy:b,
     stu:o.meets.map(x=>({c:stuShow(x.s,R.priv==='mask'?'mask':'cls'),r:x.role,q:x.req?1:0,cm:x.cm})),
     keep:String(R.keep||'會議時間排定後由特教組刪除，最晚保留到本學期結束'),expMs:expMs(R)};}
 // 讀回老師在手機上送出的回覆：勾的節次＝可，沒勾的＝不可；只收比上次新的
@@ -365,11 +395,316 @@ function progress(D,R){const list=consolidate(D,R,{all:true}),done=new Map();
   return {people:list,meets,ready:meets.filter(x=>x.ready).length};}
 function remindText(D,R,o,url){const n=o.meets.length,first=o.meets[0];
   return salute(o.name,o.meets.map(x=>x.role).join('、'),o.teacher)+'您好：提醒您填寫 IEP 會議時間調查'+(first?'（學生 '+stuShow(first.s,'cls')+(n>1?' 等 '+n+' 位':'')+'）':'')+
-    '，請'+(R.due?'於 '+fmtDate(R.due)+' 前':'儘快')+'打開連結，點選您有空的節次：'+url+'　謝謝！'+(R.host?'（'+R.host+'）':'');}
+    '，請'+(R.due?'於 '+fmtDate(R.due)+' 前':'儘快')+'打開連結，點選您有空的節次：'+url+'　謝謝！'+(hostLabel(D,R)?'（'+hostLabel(D,R)+'）':'');}
 
 const IEP={token,tokHash,TOKEN_RE,setRange,expMs,webPeople,ensureTokens,shortBusy,publicDoc,applyWeb,webGrid,webInit,progress,remindText,KINDS,stuShow,salute,slipItems,quickMeet,ROLES,DEF_REQ,ANS,W,ensure,round,normRound,newRound,addMeet,delMeet,derive,rederive,addPerson,addOther,removePerson,setReq,subjTeachers,subjOptions,
   tKey,pName,isTeacher,stuOf,stuLabel,key,splitKey,keysOf,slotInfo,fmtDate,dateRange,genSlots,sortSlots,overlap,ctxOf,busyOf,
-  record,fillRest,status,cycle,meetSlots,consolidate,grid,rank,schedule,applyPlan,conflicts,notices};
+  record,fillRest,status,cycle,meetSlots,consolidate,grid,rank,schedule,applyPlan,conflicts,crossConflicts,notices,
+  hostId,hostLabel,mineStu,ownRounds,canEdit,invited,addMeetAs,newRoundAs,selfAnswer};
 if(typeof module!=='undefined'&&module.exports)module.exports=IEP;
 else root.IEP=IEP;
 })(typeof window!=='undefined'?window:globalThis);
+
+/* ═════════════ 畫面（只在瀏覽器）：IEP 會議（管理者，全部）與「我的 IEP」（老師，只有自己的） ═════════════
+   三個分頁：調查（①建立 ②名單 ③連結與 QR ④回覆）、排定與通知、直接開會；老師多一個「填空堂」（別人邀請我的會議）。
+   用到 app.js、cloud.js、checkin.js 的全域（D、M、ST、ROOM、save、render、go、esc、toast、CLOUD…），都是用到時才找。
+   teacher.js 在 app.js 之後呼叫 IEP.ui.install()，把 PAGES.iep 換成這裡的版本，並登記 PAGES.me_iep。
+   事件用 data-ia（點擊）／data-ic（改值），不和 app.js 舊的 IEP 畫面（data-a／data-c）互相觸發。 */
+(function(){
+if(typeof document==='undefined'||typeof window==='undefined'||!window.IEP)return;
+const IEP=window.IEP;
+const U={step:{},cur:{},cm:'',per:4,priv:'full',pm:'qr',nm:'cut',all:false,only:false,qr:'',qk:'',open:0,un:{},pullAt:0,q:null,free:{}};
+let SC='';   // ''＝管理者（全部）；老師 id＝只看他開的調查、只能放他個管的學生
+const E=s=>esc(s);
+const attrs=o=>Object.keys(o||{}).map(k=>' data-'+k+'="'+esc(o[k])+'"').join('');
+const A=(a,o)=>' data-ia="'+a+'"'+attrs(o);
+const C=(a,o)=>' data-ic="'+a+'"'+attrs(o);
+const SEL=(c,o,list,cur)=>'<select'+C(c,o)+'>'+list.map(x=>{const v=Array.isArray(x)?x[0]:x,n=Array.isArray(x)?x[1]:x;return '<option value="'+esc(v)+'"'+(String(v)===String(cur)?' selected':'')+'>'+esc(n)+'</option>';}).join('')+'</select>';
+const RAW=(id,list)=>'<select id="'+esc(id)+'">'+list.map(x=>'<option>'+esc(x)+'</option>').join('')+'</select>';
+const out=h=>{document.getElementById('page').innerHTML=h;};
+const ymdNow=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+const stuSort=(a,b)=>typeof sortStu==='function'?sortStu(a||{},b||{}):0;
+const ttl=()=>esc(D.title||'');
+function rounds(){return IEP.ownRounds(D,SC,0);}
+function curR(){const rs=rounds(),id=SC?U.cur[SC]:D.iep.cur;return rs.find(r=>r.id===id)||rs[rs.length-1]||null;}
+function setCur(id){if(SC)U.cur[SC]=id;else D.iep.cur=id;}
+function findM(mid){for(const R of IEP.ownRounds(D,SC)){const m=R.meets.find(x=>x.id===mid);if(m)return {R,m};}return {};}
+function busyOf(R){try{return IEP.busyOf(D,R,{M,slot:ST.slot,room:ROOM});}catch(e){return {};}}
+function cloudOK(){return typeof cloudState!=='undefined'&&cloudState==='on'&&!!(CLOUD&&CLOUD.db&&CLOUD.user)&&!isRO();}
+function urlOf(R,pk){return R.tok&&R.tok[pk]?location.origin+location.pathname.replace(/[^/]*$/,'')+'iep.html?k='+R.tok[pk]:'';}
+function keep(){save();render();}
+function host(R){return IEP.hostLabel(D,R)||(SC?'':'特教組');}
+function empty(t,btn){return '<div class="iepempty"><span>'+E(t)+'</span>'+(btn||'')+'</div>';}
+
+/* ── 共用：選調查、步驟列 ── */
+function pick(R){const rs=rounds();
+  return '<div class="bar iepui">'+SEL('pick',{},rs.map(r=>[r.id,r.name||'未命名的調查']),R&&R.id)+'<button class="b"'+A('newR')+'>新增調查</button>'+(R?'<button class="b danger"'+A('delR')+'>刪除</button>':'')+'</div>';}
+const STEPS=['建立','名單','連結與 QR','回覆'],NUM='①②③④';
+function steps(n){return '<nav class="iepsteps iepui">'+STEPS.map((t,i)=>'<button class="'+(i+1===n?'on':'')+'"'+A('step',{n:i+1})+'><i>'+NUM[i]+'</i>'+E(t)+'</button>').join('')+'</nav>';}
+function next(n){return '<div class="bar iepui iepnext">'+(n<4?'<button class="b"'+A('step',{n:n+1})+'>下一步：'+NUM[n]+' '+E(STEPS[n])+'</button>':'<button class="b"'+A('goPlan')+'>下一步：排定與通知</button>')+'</div>';}
+
+/* ── 調查 ── */
+function vSurvey(){const R=curR();if(!R){out(empty('還沒有調查','<button class="b pri"'+A('newR')+'>新增調查</button>'));return;}
+  const n=U.step[SC]||1;out(pick(R)+steps(n)+[s1,s2,s3,s4][n-1](R)+next(n));if(n===3)drawQR();}
+function s1(R){const ps=R.ps||[],hid=IEP.hostId(D,R);
+  let h='<div class="iepcard"><h4>基本資料</h4><div class="iepf">'+
+    '<span>名稱</span><input type="text" value="'+E(R.name)+'"'+C('rset',{f:'name'})+'>'+
+    '<span>會議</span>'+SEL('rset',{f:'kind'},IEP.KINDS,R.kind||IEP.KINDS[0])+
+    '<span>回覆期限</span><input type="date" value="'+E(R.due)+'"'+C('rset',{f:'due'})+'>'+
+    '<span>承辦</span>'+(hid||SC?'<span class="iepv">'+E(IEP.hostLabel(D,R))+'</span>':'<input type="text" value="'+E(R.host||'')+'" placeholder="特教組"'+C('rset',{f:'host'})+'>')+
+    '<span>地點</span><input type="text" value="'+E(R.rooms.join('、'))+'" placeholder="會議室、資源教室一"'+C('rooms')+'>'+
+    '</div><details class="more"><summary>線上頁與家長</summary><div class="iepf">'+
+    '<span>學生顯示</span>'+SEL('rset',{f:'priv'},[['cls','班級座號'],['mask','班級座號＋王○明']],R.priv||'cls')+
+    '<span>家長</span><label class="iepchk"><input type="checkbox"'+(R.par?' checked':'')+C('rset',{f:'par'})+'> 家長、專業人員也發連結</label>'+
+    '<span>保存期間</span><input type="text" value="'+E(R.keep||'')+'" placeholder="排定後刪除，最晚到學期結束"'+C('rset',{f:'keep'})+'>'+
+    '</div></details></div>';
+  h+='<div class="iepcard"><h4>日期與節次<small>'+R.slots.length+' 個時段</small></h4><div class="bar">'+
+    '<input type="date" id="iuD1" value="'+E(R.d1||'')+'"'+C('range')+' aria-label="開始日期"> – <input type="date" id="iuD2" value="'+E(R.d2||'')+'"'+C('range')+' aria-label="結束日期"></div><div>'+
+    D.periods.map(p=>'<label class="iepchk"><input type="checkbox" class="iups" value="'+E(p.id)+'"'+(ps.includes(p.id)?' checked':'')+C('range')+'> '+E(p.name)+' <small class="dim">'+E(p.start)+'</small></label>').join('')+'</div></div>';
+  const S=IEP.mineStu(D,SC).slice().sort(stuSort).filter(s=>SC||!U.cm||s.caseMgr===U.cm),inR=new Set(R.meets.map(m=>m.s)),by={};S.forEach(s=>{(by[s.cls]=by[s.cls]||[]).push(s);});
+  const cms=[...new Set(D.students.map(s=>s.caseMgr).filter(Boolean))];
+  h+='<div class="iepcard"><h4>學生<small>已選 '+R.meets.length+' 位</small></h4><div class="bar">'+
+    (SC?'':'<label class="note" style="margin:0">個管 '+SEL('cmf',{},[['','全部']].concat(cms.map(id=>[id,IEP.pName(D,null,'t:'+id)])),U.cm)+'</label>')+
+    (S.length?'<button class="b sm"'+A('stuAll')+'>全選</button><button class="b sm"'+A('stuNone')+'>全不選</button>':'')+'</div>'+
+    Object.keys(by).sort().map(c=>'<div class="iepcls"><b>'+E(c)+'</b>'+by[c].map(s=>'<label class="iepchk"><input type="checkbox"'+(inR.has(s.id)?' checked':'')+C('stu',{s:s.id})+'> '+E(s.seat)+' '+E(s.name)+'</label>').join('')+'</div>').join('')+
+    (S.length?'':'<p class="note">'+(SC?'還沒有你個管的學生':'名冊還沒有學生')+'</p>')+'</div>';
+  if((R.pub||[]).length)h+='<p class="note">已發布：改了之後到 ③ 按「更新線上內容」</p>';
+  if(!SC)h+=settings();
+  return h;}
+function settings(){const c=D.iep.cfg,cls=[...new Set(D.students.map(s=>String(s.cls)))].sort();
+  return '<details class="more iepui"><summary>會議設定：必要出席、行政、導師</summary>'+
+    '<h4>必要出席的身分</h4><div>'+IEP.ROLES.map(r=>'<label class="iepchk"><input type="checkbox"'+(c.req[r]?' checked':'')+C('req',{r})+'> '+E(r)+'</label>').join('')+'</div>'+
+    '<p><label class="iepchk"><input type="checkbox"'+(c.subj?' checked':'')+C('subj')+'> 邀請資源班科目的原班任課老師</label></p>'+
+    '<h4>每場都邀請</h4><table class="ed"><tr><th>姓名</th><th>職稱</th><th>必要</th><th></th></tr>'+c.admin.map((a,i)=>'<tr><td>'+E(IEP.pName(D,null,a[0]))+'</td><td><input type="text" class="w5" value="'+E(a[1]||'')+'"'+C('adm',{i,f:1})+'></td><td><input type="checkbox"'+(a[2]?' checked':'')+C('adm',{i,f:2})+' aria-label="必要"></td><td><button class="x" title="移除"'+A('admDel',{i})+'>✕</button></td></tr>').join('')+'</table>'+
+    '<div class="bar"><select id="iuAdmT">'+tOpts('','res')+'</select><input type="text" class="w5" id="iuAdmN" placeholder="或打姓名"><input type="text" class="w5" id="iuAdmR" placeholder="職稱"><button class="b sm"'+A('admAdd')+'>加入</button></div>'+
+    '<h4>導師</h4><datalist id="iuTN">'+D.teachers.map(t=>'<option value="'+E(t.name)+'">').join('')+'</datalist>'+
+    '<table class="ed"><tr><th>班級</th><th>導師</th></tr>'+cls.map(k=>'<tr><td>'+E(k)+'</td><td><input type="text" class="w5" list="iuTN" value="'+E(D.classHead[k]||'')+'"'+C('hr',{c:k})+' aria-label="'+E(k)+' 導師"></td></tr>').join('')+'</table></details>';}
+// 一場會議的出席名單
+function PE(R,m){const all=IEP.subjOptions(D,m.s),opts=all.filter(o=>!m.p.some(x=>x[0]===o.k)),mid=m.id;
+  return '<div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>必要</th><th></th></tr>'+m.p.map((x,i)=>'<tr><td>'+(x[0][0]==='x'?'<input type="text" class="w5" value="'+E(IEP.pName(D,R,x[0]))+'"'+C('pname',{m:mid,i})+' aria-label="姓名">':E(IEP.pName(D,R,x[0])))+'</td>'+
+    '<td><input type="text" class="w8" value="'+E(x[1])+'"'+C('prole',{m:mid,i})+' aria-label="身分"></td><td><input type="checkbox"'+(x[2]?' checked':'')+C('preq',{m:mid,i})+' aria-label="必要出席"></td>'+
+    '<td><button class="x" title="移除"'+A('pdel',{m:mid,i})+'>✕</button></td></tr>').join('')+'</table></div>'+
+    '<div class="bar"><select id="iuT_'+E(mid)+'" aria-label="老師">'+tOpts('','res')+'</select>'+RAW('iuTR_'+mid,['資源班','任課','導師','行政','專業'])+'<button class="b sm"'+A('paddT',{m:mid})+'>加入老師</button>'+
+    '<input type="text" class="w5" id="iuO_'+E(mid)+'" placeholder="家長或其他人">'+RAW('iuOR_'+mid,['家長','專業','行政','其他'])+'<button class="b sm"'+A('paddO',{m:mid})+'>加入</button>'+
+    '<button class="b sm"'+A('prederive',{m:mid})+'>照名冊重新帶入</button></div>'+
+    (opts.length?'<div class="iepchips">'+opts.map(o=>'<button class="b sm"'+A('paddK',{m:mid,j:all.indexOf(o)})+'>＋'+E(o.sj+' '+o.name)+'</button>').join('')+'</div>':'');}
+function s2(R){if(!R.meets.length)return empty('還沒有學生','<button class="b"'+A('step',{n:1})+'>選學生</button>');
+  let h='';const noHr=[...new Set(R.meets.map(m=>{const s=IEP.stuOf(D,m.s);return s&&!D.classHead[String(s.cls)]?String(s.cls):'';}).filter(Boolean))];
+  if(noHr.length)h+='<p class="note iepwarn">還沒設定導師：'+E(noHr.join('、'))+'</p>';
+  R.meets.slice().sort((a,b)=>stuSort(IEP.stuOf(D,a.s),IEP.stuOf(D,b.s))).forEach(m=>{const s=IEP.stuOf(D,m.s);
+    h+='<div class="iepcard"><h4>'+E(IEP.stuLabel(s))+'<small>個管 '+E(s&&s.caseMgr?IEP.pName(D,R,'t:'+s.caseMgr):'未指定')+'・'+m.p.length+' 人，必要 '+m.p.filter(x=>x[2]).length+'</small></h4>'+PE(R,m)+'</div>';});
+  return h;}
+// ③ 連結與 QR
+function slipQR(R,o){const url=urlOf(R,o.k),max=7,ms=o.meets.slice(0,max);
+  return '<div class="slip"><div class="hd"><b>'+E(R.kind||'IEP 會議')+'時間調查</b><span>'+ttl()+'</span></div><div class="qs"><div class="qt">'+
+    '<div class="to">'+E(IEP.salute(o.name,o.meets.map(x=>x.role).join('、'),o.teacher))+' 您好：</div>'+
+    '<p>請用手機掃描右邊的 QR Code，點選您<b>有空</b>的節次後送出。</p>'+
+    '<p>學生：'+ms.map(x=>E(IEP.stuShow(x.s,U.priv))).join('、')+(o.meets.length>max?' 等 '+o.meets.length+' 位':'')+'</p>'+
+    '<p>調查範圍：'+E(IEP.fmtDate(R.d1))+'～'+E(IEP.fmtDate(R.d2))+'</p><p>請於 <b>'+E(IEP.fmtDate(R.due))+'</b> 前填寫'+(host(R)?'　'+E(host(R)):'')+'</p>'+
+    '<p class="url">'+E(url)+'</p></div><div class="iepqr" data-t="'+E(url)+'"></div></div><span class="cut">✂</span></div>';}
+function cut(items,fn){const n=U.per===3?3:4;let h='';for(let i=0;i<items.length;i+=n)h+='<div class="pg iepcut n'+n+'">'+items.slice(i,i+n).map(fn).join('')+'</div>';return h;}
+function paper(R,o,busy){const G=IEP.grid(D,o.keys),b=busy[o.k]||{},bz=w=>/上課/.test(w)?'有課':/IEP/.test(w)?'已有會議':'已登記有事';
+  return '<div class="pg iepA4"><h2>'+ttl()+'　'+E(R.kind||'IEP 會議')+'時間調查表</h2><p>'+E(IEP.salute(o.name,o.meets.map(x=>x.role).join('、'),o.teacher))+' 您好：</p>'+
+    '<p>下列學生的會議需要您參與。請在您可以的時段打「○」、不行的打「╳」，'+(R.due?'於 '+E(IEP.fmtDate(R.due))+' 前':'')+'交回'+E(host(R)||'個管老師')+'。標「有課」的節次如果可以調課，仍請打○。</p>'+
+    '<table><tr><th>班級座號</th><th>學生</th><th>個管老師</th><th>您的身分</th><th>出席</th></tr>'+o.meets.map(x=>'<tr><td>'+E(IEP.stuShow(x.s,'cls'))+'</td><td>'+E(U.priv==='full'?(x.s?x.s.name:''):IEP.stuShow(x.s,U.priv).split(' ')[1]||'')+'</td><td>'+E(x.cm)+'</td><td>'+E(x.role)+'</td><td>'+(x.req?'必要':'邀請')+'</td></tr>').join('')+'</table>'+
+    '<table><tr><th>日期</th>'+G.cols.map(c=>'<th>'+E(c.name)+'<span class="bz">'+E(c.time)+'</span></th>').join('')+'</tr>'+
+    G.dates.map(d=>'<tr><th>'+E(d.label)+'</th>'+G.cols.map(c=>{const k=G.cell(d.date,c.p);return k?'<td>'+(b[k]?'<span class="bz">'+bz(b[k])+'</span>':'')+'</td>':'<td class="x"></td>';}).join('')+'</tr>').join('')+'</table>'+
+    '<p>備註：<span class="ln" style="min-width:30em"></span></p><p class="sg">填表人：<span class="ln"></span></p></div>';}
+function s3(R){const busy=busyOf(R),list=IEP.webPeople(D,R),pg=IEP.progress(D,R),st=new Map(pg.people.map(o=>[o.k,o.done])),pub=(R.pub||[]).length;let h='';
+  if(!cloudOK())h+='<p class="note iepui">'+(typeof isRO==='function'&&isRO()?'檢視權限不能發布連結':'登入雲端共用後才能發布連結')+'；也可以印紙本時段表。</p>';
+  const miss=[!R.due&&'回覆期限',!R.slots.length&&'日期與節次',!R.meets.length&&'學生'].filter(Boolean);
+  if(miss.length)h+='<p class="note iepwarn iepui">還沒填：'+E(miss.join('、'))+'</p>';
+  h+='<div class="bar iepui"><button class="b pri"'+A('publish')+(cloudOK()&&!miss.length?'':' disabled')+'>'+(pub?'更新線上內容':'發布連結')+'</button>'+
+    (pub?'<button class="b danger"'+A('unpub')+(cloudOK()?'':' disabled')+'>結束調查</button><span class="note" style="margin:0">已發布 '+pub+' 份'+(R.pubAt?'・'+E(new Date(R.pubAt).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})):'')+'</span>':'')+'</div>';
+  h+='<div class="scroll iepui"><table class="ed"><tr><th>姓名</th><th>身分</th><th>學生</th><th>狀態</th><th></th></tr>'+list.map(o=>{const url=pub?urlOf(R,o.k):'';
+    return '<tr><td>'+E(o.name)+'</td><td class="dim">'+E([...new Set(o.meets.map(x=>x.role.split('、')[0]))].join('、'))+'</td><td class="dim">'+E(o.meets.map(x=>IEP.stuShow(x.s,'cls')).join('、'))+'</td><td>'+(st.get(o.k)?'<span class="iepok">填了</span>':'還沒填')+'</td>'+
+      '<td class="nw">'+(url?'<button class="b sm"'+A('copyUrl',{k:o.k})+'>複製連結</button><button class="b sm"'+A('showQR',{k:o.k})+'>QR</button>':'')+'</td></tr>'+
+      (U.qr===o.k&&url?'<tr><td colspan="5"><div class="iepqr big" data-t="'+E(url)+'"></div></td></tr>':'');}).join('')+'</table></div>';
+  const pk=list.filter(o=>!U.only||!st.get(o.k));
+  h+='<h3 class="iepui">列印</h3><div class="bar iepui">'+SEL('iv',{f:'pm'},[['qr','QR 小單'],['paper','紙本時段表（A4）']],U.pm)+
+    (U.pm==='qr'?SEL('iv',{f:'per'},[[4,'一張裁 4'],[3,'一張裁 3']],U.per):'')+SEL('iv',{f:'priv'},[['full','班級座號＋姓名'],['cls','只印班級座號'],['mask','姓名遮字']],U.priv)+
+    '<label class="iepchk"><input type="checkbox"'+(U.only?' checked':'')+C('iv',{f:'only'})+'> 只印還沒填的</label><button class="b"'+A('print')+'>印出</button><span class="note" style="margin:0">'+pk.length+' 人</span></div>';
+  h+=U.pm==='qr'&&!pub?'<p class="note iepui">發布後才有 QR</p>':'<div id="outArea">'+(U.pm==='qr'?cut(pk,o=>slipQR(R,o)):pk.map(o=>paper(R,o,busy)).join(''))+'</div>';
+  return h;}
+function drawQR(){const els=[...document.querySelectorAll('#page .iepqr')];if(!els.length)return;
+  libLoad(()=>window.QRCode,'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js').then(()=>{els.forEach(el=>{el.innerHTML='';new QRCode(el,{text:el.dataset.t,width:220,height:220,correctLevel:QRCode.CorrectLevel.M});});})
+    .catch(()=>{els.forEach(el=>{el.textContent='QR Code 載入失敗，請檢查網路';});});}
+// 發布：每位出席者一份 iepTok/{鑰匙的雜湊}；老師自己開的調查，承辦顯示老師姓名（公開頁不出現老師 id）
+async function publish(){const R=curR();if(!R||!cloudOK())return;
+  if(IEP.expMs(R)<Date.now()){toast('回覆期限已過，請先改期限');return;}
+  const list=IEP.ensureTokens(D,R),busy=busyOf(R),db=CLOUD.db,F=firebase.firestore,kept=new Set(list.map(o=>R.tok[o.k]));
+  const fields=['v','who','once','name','title','round','kind','d1','d2','due','host','keys','ps','busy','stu','keep','exp','r','pk','by','pubAt'];
+  try{for(const o of list){const d=IEP.publicDoc(D,R,o,busy);d.exp=F.Timestamp.fromMillis(d.expMs);delete d.expMs;d.r=R.id;d.pk=o.k;d.by=CLOUD.user.email;d.pubAt=F.FieldValue.serverTimestamp();
+      await db.doc('iepTok/'+await IEP.tokHash(R.tok[o.k])).set(d,{mergeFields:fields});}
+    for(const t of (R.pub||[]))if(!kept.has(t))await db.doc('iepTok/'+await IEP.tokHash(t)).delete().catch(()=>{});
+    Object.keys(R.tok).forEach(k=>{if(!list.some(o=>o.k===k))delete R.tok[k];});
+    R.pub=[...kept];R.pubAt=Date.now();keep();toast('已發布 '+list.length+' 份');}
+  catch(e){toast('發布失敗：'+(e.code||e.message));}}
+async function unpub(R,quiet){if(!R||!(R.pub||[]).length)return true;if(!cloudOK()){toast('要先登入雲端共用');return false;}
+  try{for(const t of R.pub)await CLOUD.db.doc('iepTok/'+await IEP.tokHash(t)).delete();
+    const rs=await CLOUD.db.collection('iepResp/'+R.id+'/r').get();for(const d of rs.docs)await d.ref.delete();
+    R.pub=[];R.tok={};if(!quiet)keep();toast('舊連結都失效了');return true;}
+  catch(e){toast('刪除失敗：'+(e.code||e.message));return false;}}
+async function pull(R,quiet){if(!R||!cloudOK()||!(R.pub||[]).length)return;U.pullAt=Date.now();let n=0;
+  try{const by=new Map(IEP.webPeople(D,R).map(o=>[o.k,o])),rs=await CLOUD.db.collection('iepResp/'+R.id+'/r').get();
+    rs.forEach(d=>{const x=d.data(),o=by.get(x.pk);if(o&&IEP.applyWeb(R,o,{free:x.free,note:x.note,at:x.at&&x.at.toMillis?x.at.toMillis():+x.at||0}))n++;});}
+  catch(e){if(!quiet)toast('抓取失敗：'+(e.code||e.message));return;}
+  if(n)save();if(page==='iep'||page==='me_iep')render();if(!quiet||n)toast(n?'收到 '+n+' 份新的回覆':'沒有新的回覆');}
+// ④ 回覆
+function s4(R){if(cloudOK()&&(R.pub||[]).length&&Date.now()-U.pullAt>60000)setTimeout(()=>pull(R,true),0);
+  const pg=IEP.progress(D,R),wait=pg.people.filter(o=>!o.done&&(o.teacher||R.par)),pub=(R.pub||[]).length;
+  let h='<div class="bar"><span class="stat">填了 <b>'+pg.people.filter(o=>o.done).length+'</b> / '+pg.people.length+' 人</span><span class="stat">可以排：<b>'+pg.ready+'</b> / '+pg.meets.length+' 場</span>'+
+    (cloudOK()&&pub?'<button class="b"'+A('pull')+'>抓取回覆</button>':'')+(wait.length&&pub?'<button class="b"'+A('copyAll')+'>複製提醒（'+wait.length+'）</button>':'')+'</div>';
+  h+='<div class="scroll"><table class="ed"><tr><th>姓名</th><th>會議</th><th>狀態</th><th>備註</th><th></th></tr>'+pg.people.map(o=>'<tr><td>'+E(o.name)+'</td><td class="dim">'+o.meets.length+' 場'+(o.meets.some(x=>x.req)?'・必要':'')+'</td>'+
+    '<td>'+(o.done==='web'?'<span class="iepok">填了</span> <small class="dim">'+E(new Date(o.at).toLocaleString('zh-TW',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}))+'</small>':o.done==='paper'?'<span class="iepok">填了</span> <small class="dim">手動</small>':'還沒填')+'</td>'+
+    '<td class="dim">'+E(o.note||'')+'</td><td class="nw">'+(!o.done&&urlOf(R,o.k)?'<button class="b sm"'+A('copyRem',{k:o.k})+'>複製提醒</button>':'')+'</td></tr>').join('')+'</table></div>';
+  const busy=busyOf(R),keys=IEP.keysOf(R),inf=keys.map(k=>IEP.slotInfo(D,k)),sym={y:'○',n:'╳',m:'△'};U.busy=busy;
+  h+='<details class="more"'+(U.open?' open':'')+'><summary>手動登錄（紙本、電話）</summary><p class="ieplegend">點格子：○ 可 → ╳ 不可 → △ 不確定 → 空白。「課」＝查到有課、沒回覆</p>'+
+    '<div class="scroll"><table class="iepans"><tr><th>姓名</th>'+inf.map(f=>'<th>'+E(IEP.fmtDate(f.date))+'<br>'+E(f.name)+'</th>').join('')+'<th></th></tr>'+
+    pg.people.map(o=>{const ks=new Set(o.keys);return '<tr><td class="nm">'+E(o.name)+'</td>'+keys.map(k=>{if(!ks.has(k))return '<td></td>';const s=IEP.status(R,busy,o.k,k);
+      return '<td><button class="c '+(s.auto?'a':s.v)+'" title="'+E(s.why||'')+'"'+A('cyc',{k:o.k,s:k})+'>'+(s.auto?'課':sym[s.v]||'')+'</button></td>';}).join('')+
+      '<td class="nw"><button class="b sm"'+A('rest',{k:o.k})+'>其餘都可</button></td></tr>';}).join('')+'</table></div></details>';
+  return h;}
+
+/* ── 排定與通知 ── */
+function vPlan(){const R=curR();if(!R){out(empty('還沒有調查','<button class="b pri"'+A('newR')+'>新增調查</button>'));return;}
+  const busy=busyOf(R),pg=IEP.progress(D,R),cf=IEP.conflicts(D,R).concat(IEP.crossConflicts(D,R)),ready=new Map(pg.meets.map(x=>[x.m.id,x]));
+  let h=pick(R)+'<div class="bar iepui"><button class="b pri"'+A('run')+(R.meets.length?'':' disabled')+'>排出時間</button><button class="b"'+A('clearPlan')+'>清除沒固定的</button><span class="stat">可以排：<b>'+pg.ready+'</b> / '+pg.meets.length+' 場</span></div>';
+  if(cf.length)h+='<div class="probs iepui">'+cf.map(c=>E(c.m)).join('<br>')+'</div>';
+  if(!R.meets.length){out(h+empty('還沒有學生','<button class="b"'+A('goStep',{n:1})+'>選學生</button>'));return;}
+  h+='<div class="scroll iepui"><table class="ed"><tr><th>學生</th><th>回覆</th><th>時間</th><th>地點</th><th>固定</th><th>情形</th></tr>'+
+    R.meets.slice().sort((a,b)=>String(a.at||'~').localeCompare(String(b.at||'~'))).map(m=>{const s=IEP.stuOf(D,m.s),rk=IEP.rank(D,R,m,busy),cur=rk.find(r=>r.k===m.at),rd=ready.get(m.id);
+      const opts=[['','（未排）']].concat(rk.map(r=>[r.k,(r.ok?'':'✗ ')+IEP.slotInfo(D,r.k).label+'　'+(r.ok?r.yes+'/'+r.tot+' 人可':r.bad.join('、')+' 不行')]));
+      const rooms=[['','（未定）']].concat(R.rooms.map(x=>[x,x]));if(m.room&&!R.rooms.includes(m.room))rooms.push([m.room,m.room]);
+      return '<tr><td>'+E(IEP.stuLabel(s))+'</td><td>'+(rd&&rd.ready?'<span class="iepok">齊了</span>':'<small class="dim">等 '+E((rd?rd.wait:[]).join('、'))+'</small>')+'</td><td>'+SEL('at',{m:m.id},opts,m.at||'')+'</td><td>'+SEL('room',{m:m.id},rooms,m.room||'')+'</td>'+
+        '<td><input type="checkbox"'+(m.pin?' checked':'')+C('pin',{m:m.id})+' aria-label="固定"></td><td class="dim">'+(U.un[m.id]?'<span class="iepwarn">'+E(U.un[m.id])+'</span>':cur?E([cur.miss.length?'不能來：'+cur.miss.join('、'):'',cur.unk.length?'沒回：'+cur.unk.join('、'):''].filter(Boolean).join('；'))||'都可以':'')+'</td></tr>';}).join('')+'</table></div>';
+  out(h+noticeUI(R));}
+function noticeUI(R){const fixed=R.meets.filter(m=>m.at);let h='<h3 class="iepui">開會通知</h3>';if(!fixed.length)return h+'<p class="note">排好時間才能印通知</p>';
+  h+='<div class="bar iepui">'+SEL('iv',{f:'nm'},[['cut','小通知單'],['sum','安排總表'],['each','每人一張彙整']],U.nm)+
+    (U.nm==='cut'?SEL('iv',{f:'per'},[[4,'裁 4'],[3,'裁 3']],U.per):'')+(U.nm!=='sum'?SEL('iv',{f:'priv'},[['full','班級座號＋姓名'],['cls','只印班級座號'],['mask','姓名遮字']],U.priv)+'<label class="iepchk"><input type="checkbox"'+(U.all?' checked':'')+C('iv',{f:'all'})+'> 家長、專業人員也印</label>':'')+
+    '<label class="note" style="margin:0">回條交回 <input type="date" value="'+E(R.cdue||'')+'"'+C('rset',{f:'cdue',r:R.id})+'></label><button class="b"'+A('print')+'>印出</button></div>';
+  return h+'<div id="outArea">'+notices(R)+'</div>';}
+function slipC(x){const t=x.time;
+  return '<div class="slip"><div class="hd"><b>'+E(x.kind)+'開會通知</b><span>'+ttl()+'</span></div><div class="to">'+E(x.to)+' 您好：</div>'+
+    '<p>學生 <b>'+E(x.stu)+'</b> 的'+E(x.kind)+'訂於：</p><p class="big"><b>'+E(IEP.fmtDate(t.date))+'　'+E(t.custom?'':t.name)+(t.time?'（'+E(t.time)+'）':'')+'</b></p>'+
+    '<p>地點：<b>'+(x.room?E(x.room):'<span class="ln"></span>')+'</b>　　個管老師：'+E(x.cm)+'</p><p>敬請'+(x.req?'出席':'撥冗參加')+'。'+(x.host?'　'+E(x.host)+' 敬啟':'')+'</p>'+
+    '<div class="rt">回條：□可以出席　□無法出席，原因：<span class="ln"></span><br>簽名：<span class="ln"></span>'+(x.due?'　請於 '+E(IEP.fmtDate(x.due))+' 前交回個管老師':'')+'</div><span class="cut">✂</span></div>';}
+function notices(R){
+  if(U.nm==='cut')return cut(IEP.slipItems(D,R,{all:U.all,privacy:U.priv}),slipC);
+  if(U.nm==='sum'){const ms=R.meets.filter(m=>m.at).sort((a,b)=>a.at.localeCompare(b.at));
+    return '<div class="pg iepA4"><h2>'+ttl()+'　'+E(R.kind||'IEP 會議')+'安排表</h2><table><tr><th>日期</th><th>時間</th><th>地點</th><th>學生</th><th>個管</th><th>出席人員</th></tr>'+
+      ms.map(m=>{const f=IEP.slotInfo(D,m.at),s=IEP.stuOf(D,m.s);return '<tr><td>'+E(IEP.fmtDate(f.date))+'</td><td>'+E((f.custom?'':f.name+' ')+f.time)+'</td><td>'+E(m.room||'')+'</td><td>'+E(IEP.stuLabel(s))+'</td><td>'+E(s&&s.caseMgr?IEP.pName(D,R,'t:'+s.caseMgr):'')+'</td>'+
+        '<td class="l">'+m.p.map(x=>E(IEP.pName(D,R,x[0]))+(x[2]?'':'（邀）')).join('、')+'</td></tr>';}).join('')+'</table></div>';}
+  return IEP.notices(D,R,{all:U.all}).map(o=>'<div class="pg iepA4"><h2>'+ttl()+'　'+E(R.kind||'IEP 會議')+'開會通知</h2><p>'+E(IEP.salute(o.name,o.meets.map(x=>x.role).join('、'),o.teacher))+' 您好：</p><p>下列會議時間已經排定，敬請準時出席。</p>'+
+    '<table><tr><th>日期</th><th>時間</th><th>地點</th><th>學生</th><th>個管老師</th><th>您的身分</th></tr>'+o.meets.map(x=>{const f=IEP.slotInfo(D,x.m.at);
+      return '<tr><td>'+E(IEP.fmtDate(f.date))+'</td><td>'+E((f.custom?'':f.name+' ')+f.time)+'</td><td>'+E(x.m.room||'')+'</td><td>'+E(IEP.stuShow(x.s,U.priv))+'</td><td>'+E(x.cm)+'</td><td>'+E(x.role)+(x.req?'':'（邀請）')+'</td></tr>';}).join('')+'</table>'+
+    '<p class="sg">'+E(host(R)||'特教組')+' 敬啟</p></div>').join('');}
+
+/* ── 直接開會（已經知道時間） ── */
+function vQuick(){const Q=U.q=U.q||{sid:'',kind:IEP.KINDS[0],date:'',p:'',room:''},qs=IEP.ownRounds(D,SC,1),R=qs.find(r=>r.id===U.qk);
+  const S=IEP.mineStu(D,SC).slice().sort(stuSort),cust=Q.p==='*'||/:/.test(Q.p);
+  let h='<div class="iepcard iepui"><div class="iepf"><span>學生</span>'+SEL('q',{f:'sid'},[['','（選擇）']].concat(S.map(s=>[s.id,IEP.stuLabel(s)])),Q.sid)+
+    '<span>會議</span>'+SEL('q',{f:'kind'},IEP.KINDS,Q.kind)+'<span>日期</span><input type="date" value="'+E(Q.date)+'"'+C('q',{f:'date'})+'>'+
+    '<span>時間</span><div>'+SEL('q',{f:'p'},[['','（選擇）']].concat(D.periods.map(p=>[p.id,p.name+' '+p.start+'–'+p.end])).concat([['*','自訂時間']]),cust?'*':Q.p)+
+      (cust?' <input type="text" class="w8" placeholder="15:10-16:00" value="'+E(/:/.test(Q.p)?Q.p:'')+'"'+C('q',{f:'pt'})+'>':'')+'</div>'+
+    '<span>地點</span><input type="text" value="'+E(Q.room)+'" placeholder="會議室"'+C('q',{f:'room'})+'>'+
+    '</div><div class="bar" style="margin:10px 0 0"><button class="b pri"'+A('qgo')+(S.length?'':' disabled')+'>帶入出席名單</button></div></div>';
+  if(R){const m=R.meets[0],f=m&&m.at?IEP.slotInfo(D,m.at):null;
+    h+='<div class="iepcard iepui"><h4>'+E(R.name)+'<small>'+E(f?f.label+' '+f.time:'')+(m&&m.room?'・'+E(m.room):'')+'</small></h4>'+(m?PE(R,m):'')+'</div>'+noticeUI(R);}
+  if(qs.length)h+='<h3 class="iepui">最近的會</h3><div class="scroll iepui"><table class="ed">'+qs.slice().reverse().slice(0,20).map(r=>{const m=r.meets[0];return '<tr><td>'+E(r.name)+'</td><td class="dim">'+E(m&&m.at?IEP.slotInfo(D,m.at).label:'')+'</td><td class="nw"><button class="b sm"'+A('qopen',{r:r.id})+'>開啟</button><button class="x" title="刪除"'+A('qdel',{r:r.id})+'>✕</button></td></tr>';}).join('')+'</table></div>';
+  out(h);}
+
+/* ── 填空堂（老師：別人或自己開的調查邀請了我） ── */
+function vInv(){const pk='t:'+SC,rs=IEP.invited(D,SC).slice().sort((a,b)=>String(a.due||'~').localeCompare(String(b.due||'~')));
+  const list=rs.map(R=>({R,o:IEP.progress(D,R).people.find(x=>x.k===pk)})).filter(x=>x.o&&x.o.keys.length);
+  if(!list.length){out(empty('目前沒有要填的會議時間'));return;}
+  const t=ymdNow();
+  out(list.map(({R,o})=>{const busy=busyOf(R),G=IEP.grid(D,o.keys),b=busy[pk]||{},a=R.ans[pk]||{};
+    const F=U.free[R.id]=U.free[R.id]||new Set(o.keys.filter(k=>a[k]==='y'));
+    return '<section class="iepcard"><h4>'+E(R.name||R.kind||'IEP 會議')+'<small>'+E([host(R),R.due?IEP.fmtDate(R.due)+' 前':''].filter(Boolean).join('・'))+'</small>'+
+      (o.done?'<span class="iepok">已填</span>':R.due&&R.due<t?'<span class="iepwarn">已過期限</span>':'')+'</h4>'+
+      '<div class="iepchips">'+o.meets.map(x=>'<span class="iepchip">'+E(IEP.stuShow(x.s,'cls'))+'・'+E(x.role.split('、')[0])+(x.req?'':'（邀）')+'</span>').join('')+'</div>'+
+      '<div class="scroll"><table class="iepans iepme"><tr><th></th>'+G.cols.map(c=>'<th>'+E(c.name)+'</th>').join('')+'</tr>'+
+      G.dates.map(d=>'<tr><th>'+E(d.label)+'</th>'+G.cols.map(c=>{const k=G.cell(d.date,c.p);if(!k)return '<td></td>';const on=F.has(k),bz=b[k];
+        return '<td><button class="c '+(on?'y':bz?'a':'')+'" aria-pressed="'+on+'" title="'+E(bz?IEP.shortBusy(bz):'')+'"'+A('meTog',{r:R.id,s:k})+'>'+(on?'○':bz?IEP.shortBusy(bz).slice(0,2):'')+'</button></td>';}).join('')+'</tr>').join('')+'</table></div>'+
+      '<div class="bar"><input type="text" class="iepnote" placeholder="備註（例：可以調課）" value="'+E((R.web&&R.web[pk]&&R.web[pk].note)||'')+'" id="iuN_'+E(R.id)+'"><button class="b"'+A('meSend',{r:R.id})+'>'+(o.done?'更新':'送出')+'</button></div></section>';}).join(''));}
+
+/* ── 事件 ── */
+function canR(R){return IEP.canEdit(D,R,SC);}
+const ACT={
+  step(el){U.step[SC]=+el.dataset.n;render();},
+  goStep(el){U.step[SC]=+el.dataset.n;go(page,'survey');},
+  goPlan(){go(page,'plan');},
+  newR(){const c0=D.iep.cur,R=IEP.newRoundAs(D,SC,{name:'IEP 會議時間調查'});R.kind=IEP.KINDS[0];R.priv='cls';if(!SC)R.host='特教組';else D.iep.cur=c0;
+    R.ps=D.periods.filter(p=>!p.extra).map(p=>p.id);setCur(R.id);U.step[SC]=1;save();go(page,'survey');},
+  async delR(){const R=curR();if(!canR(R)||!confirm('刪除「'+(R.name||'這次調查')+'」？出席名單和回覆都會刪掉。'))return;
+    if((R.pub||[]).length&&!(await unpub(R,true))&&!confirm('線上資料沒有刪掉，連結會到期限才失效。仍要刪除嗎？'))return;
+    if(typeof snapshot==='function')snapshot('刪除 IEP 調查之前');D.iep.rounds=D.iep.rounds.filter(r=>r!==R);keep();},
+  stuAll(){const R=curR();if(!canR(R))return;IEP.mineStu(D,SC).filter(s=>SC||!U.cm||s.caseMgr===U.cm).forEach(s=>IEP.addMeetAs(D,R,s.id,SC));keep();},
+  stuNone(){const R=curR();if(!canR(R))return;if(R.meets.length&&!confirm('移除全部學生？名單的修改也會清掉。'))return;R.meets.slice().forEach(m=>IEP.delMeet(R,m.id));keep();},
+  pdel(el){const {R,m}=findM(el.dataset.m);if(!m)return;IEP.removePerson(R,m,m.p[+el.dataset.i][0]);keep();},
+  paddT(el){const {R,m}=findM(el.dataset.m);if(!m)return;const id=document.getElementById('iuT_'+el.dataset.m).value,role=document.getElementById('iuTR_'+el.dataset.m).value;if(!id){toast('請先選老師');return;}IEP.addPerson(D,R,m,'t:'+id,role,D.iep.cfg.req[role]);keep();},
+  paddO(el){const {R,m}=findM(el.dataset.m);if(!m)return;const n=document.getElementById('iuO_'+el.dataset.m).value.trim(),role=document.getElementById('iuOR_'+el.dataset.m).value;if(!n){toast('請先填姓名');return;}IEP.addOther(D,R,m,n,role,D.iep.cfg.req[role]);keep();},
+  paddK(el){const {R,m}=findM(el.dataset.m);if(!m)return;const o=IEP.subjOptions(D,m.s)[+el.dataset.j];if(o)IEP.addPerson(D,R,m,o.k,'任課',0);keep();},
+  prederive(el){const {R,m}=findM(el.dataset.m);if(!m)return;IEP.rederive(D,R,m);keep();toast('已重新帶入');},
+  publish(){publish();},
+  async unpub(){const R=curR();if(!canR(R)||!confirm('結束線上調查？連結會立刻失效，線上的回覆會刪掉（已抓回的留著）。'))return;await pull(R,true);await unpub(R);},
+  copyUrl(el){copyText(urlOf(curR(),el.dataset.k),'已複製連結');},
+  showQR(el){U.qr=U.qr===el.dataset.k?'':el.dataset.k;render();},
+  copyRem(el){const R=curR(),o=IEP.webPeople(D,R).find(x=>x.k===el.dataset.k);if(o)copyText(IEP.remindText(D,R,o,urlOf(R,o.k)),'已複製提醒');},
+  copyAll(){const R=curR(),pg=IEP.progress(D,R);copyText(pg.people.filter(o=>!o.done&&urlOf(R,o.k)).map(o=>IEP.remindText(D,R,o,urlOf(R,o.k))).join('\n\n'),'已複製提醒');},
+  pull(){pull(curR());},
+  cyc(el){const R=curR();if(!canR(R))return;IEP.cycle(R,U.busy,el.dataset.k,el.dataset.s);U.open=1;keep();},
+  rest(el){const R=curR();if(!canR(R))return;IEP.fillRest(R,el.dataset.k,'y',null,U.busy);U.open=1;keep();},
+  run(){const R=curR();if(!canR(R))return;const res=IEP.schedule(D,R,{busy:busyOf(R)});IEP.applyPlan(R,res);U.un={};res.un.forEach(u=>{U.un[u.id]=u.why;});keep();
+    toast('排好 '+Object.keys(res.at).length+' 場'+(res.un.length?'，'+res.un.length+' 場排不進去':''));},
+  clearPlan(){const R=curR();if(!canR(R))return;R.meets.forEach(m=>{if(!m.pin){m.at='';m.room='';}});U.un={};keep();},
+  print(){window.print();},
+  qgo(){const Q=U.q;if(!Q.sid||!Q.date||!Q.p||Q.p==='*'){toast('請選學生、日期和時間');return;}
+    const s=IEP.stuOf(D,Q.sid);if(SC&&(!s||s.caseMgr!==SC)){toast('只能替自己個管的學生開會');return;}
+    const c0=D.iep.cur,R=IEP.quickMeet(D,{sid:Q.sid,date:Q.date,p:Q.p,room:Q.room,kind:Q.kind,host:SC||'特教組'});if(SC)D.iep.cur=c0;U.qk=R.id;keep();},
+  qopen(el){U.qk=el.dataset.r;render();},
+  qdel(el){const R=IEP.ownRounds(D,SC,1).find(r=>r.id===el.dataset.r);if(!R||!confirm('刪除這場會議的通知資料？'))return;D.iep.rounds=D.iep.rounds.filter(r=>r!==R);if(U.qk===R.id)U.qk='';keep();},
+  admDel(el){if(SC)return;D.iep.cfg.admin.splice(+el.dataset.i,1);keep();},
+  admAdd(){if(SC)return;const id=document.getElementById('iuAdmT').value,n=document.getElementById('iuAdmN').value.trim(),r=document.getElementById('iuAdmR').value.trim()||'行政';const k=id?'t:'+id:n?IEP.tKey(D,n):'';if(!k){toast('請選老師或打姓名');return;}
+    if(D.iep.cfg.admin.some(a=>a[0]===k)){toast('已經在名單裡');return;}D.iep.cfg.admin.push([k,r,0]);keep();},
+  meTog(el){const F=U.free[el.dataset.r];if(!F)return;const k=el.dataset.s;if(F.has(k))F.delete(k);else F.add(k);render();},
+  meSend(el){const R=D.iep.rounds.find(r=>r.id===el.dataset.r),F=U.free[el.dataset.r];if(!R||!F||!SC)return;const nt=document.getElementById('iuN_'+R.id);
+    if(IEP.selfAnswer(D,R,'t:'+SC,[...F],nt?nt.value.trim():'')){save();render();toast('已送出：有空 '+F.size+' 節');}}
+};
+const CHG={
+  pick(el){setCur(el.value);U.un={};if(SC)render();else keep();},
+  rset(el){const R=el.dataset.r?IEP.ownRounds(D,SC).find(r=>r.id===el.dataset.r):curR();if(!canR(R))return;const f=el.dataset.f;R[f]=el.type==='checkbox'?(el.checked?1:0):el.value.trim();keep();},
+  rooms(el){const R=curR();if(!canR(R))return;R.rooms=el.value.split(/[、,，;；\s]+/).map(x=>x.trim()).filter(Boolean);keep();},
+  range(){const R=curR();if(!canR(R))return;const ps=[...document.querySelectorAll('#page .iups')].filter(x=>x.checked).map(x=>x.value);IEP.setRange(D,R,document.getElementById('iuD1').value,document.getElementById('iuD2').value,ps);keep();},
+  cmf(el){U.cm=el.value;render();},
+  stu(el){const R=curR();if(!canR(R))return;const sid=el.dataset.s;if(el.checked){if(!IEP.addMeetAs(D,R,sid,SC)){el.checked=false;return;}}else{const m=R.meets.find(x=>x.s===sid);if(m)IEP.delMeet(R,m.id);}keep();},
+  pname(el){const {R,m}=findM(el.dataset.m);const x=m&&m.p[+el.dataset.i];if(x&&R.ppl[x[0].slice(2)])R.ppl[x[0].slice(2)].n=el.value.trim();save();},
+  prole(el){const {m}=findM(el.dataset.m);const x=m&&m.p[+el.dataset.i];if(x)x[1]=el.value.trim()||'其他';save();},
+  preq(el){const {m}=findM(el.dataset.m);const x=m&&m.p[+el.dataset.i];if(x)IEP.setReq(m,x[0],el.checked);keep();},
+  iv(el){const f=el.dataset.f;U[f]=el.type==='checkbox'?el.checked:f==='per'?+el.value:el.value;render();},
+  at(el){const {m}=findM(el.dataset.m);if(!m)return;m.at=el.value;m.pin=el.value?1:0;delete U.un[m.id];keep();},
+  room(el){const {m}=findM(el.dataset.m);if(m){m.room=el.value;keep();}},
+  pin(el){const {m}=findM(el.dataset.m);if(m){m.pin=el.checked?1:0;keep();}},
+  q(el){const Q=U.q,f=el.dataset.f;if(f==='pt'){const v=el.value.trim().replace(/[~～－—]/g,'-');if(!/^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(v)){toast('時間寫成 15:10-16:00');return;}Q.p=v;}else Q[f]=el.value;if(f==='p')render();},
+  req(el){if(SC)return;D.iep.cfg.req[el.dataset.r]=el.checked?1:0;save();},
+  subj(el){if(SC)return;D.iep.cfg.subj=el.checked?1:0;save();},
+  adm(el){if(SC)return;const a=D.iep.cfg.admin[+el.dataset.i];if(!a)return;if(el.dataset.f==='2')a[2]=el.checked?1:0;else a[1]=el.value.trim();save();},
+  hr(el){if(SC)return;const v=el.value.trim();if(!v)delete D.classHead[el.dataset.c];else D.classHead[el.dataset.c]=v;save();}
+};
+const meTid=()=>String((typeof ME_TID!=='undefined'?ME_TID:window.ME_TID)||'');
+const onIep=()=>typeof page!=='undefined'&&(page==='iep'||page==='me_iep');
+
+// scope：''＝全部（管理者）；老師 id＝只有他的。老師頁沒有綁定老師時不顯示任何調查
+function draw(scope,teacherPage){if(teacherPage&&!scope){out(empty('還沒有綁定老師'));return;}
+  SC=scope||'';IEP.ensure(D);({survey:vSurvey,plan:vPlan,quick:vQuick,inv:SC?vInv:vSurvey}[sub]||vSurvey)();}
+let wired=false;
+function install(){if(typeof PAGES==='undefined')return false;
+  PAGES.iep={t:'IEP 會議',subs:[['survey','調查'],['plan','排定與通知'],['quick','直接開會']],render:()=>draw('')};
+  PAGES.me_iep={t:'我的 IEP',subs:[['inv','填空堂'],['survey','調查'],['plan','排定與通知'],['quick','直接開會']],render:()=>draw(meTid(),true)};
+  if(!wired){wired=true;const P=document.getElementById('page');
+    P.addEventListener('click',e=>{if(!onIep())return;const el=e.target.closest('[data-ia]');if(!el||el.disabled||!ACT[el.dataset.ia])return;e.preventDefault();ACT[el.dataset.ia](el,e);});
+    P.addEventListener('change',e=>{if(!onIep())return;const el=e.target.closest('[data-ic]');if(!el||!CHG[el.dataset.ic])return;CHG[el.dataset.ic](el,e);});}
+  return true;}
+IEP.ui={install,draw,state:U};
+})();
