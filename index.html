@@ -10,37 +10,29 @@
 try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark')r.dataset.theme=t;if(localStorage.getItem('rc-big')==='1')r.classList.add('big');})(document.documentElement);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css?v=18">
-<link rel="stylesheet" href="iep.css?v=18">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=19">
+<link rel="stylesheet" href="iep.css?v=19">
 </head>
 <body>
 <aside class="side">
-  <div class="brand"><div class="logo">資</div><div><b>資源班管理系統</b><small id="school"></small></div></div>
-  <nav id="nav">
-    <button data-p="home"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>總覽</button>
-    <button data-p="roster"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>名冊</button>
-    <button data-p="sched"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>排課</button>
-    <button data-p="exam"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>段考考場</button>
-    <button data-p="checkin"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>簽到退</button>
-    <button data-p="iep"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/><circle cx="9" cy="15" r="1.6"/><circle cx="15" cy="15" r="1.6"/></svg>IEP 會議</button>
-  </nav>
+  <div class="brand"><span class="logo" aria-hidden="true"><i></i><i></i></span><div class="bt"><b>資源班管理系統</b><input id="title" type="text" placeholder="學校、學期" aria-label="學校、學年度、學期" onchange="D.title=this.value;save();paintSchool()"></div></div>
+  <nav id="nav" aria-label="主選單"></nav>
   <div class="grow"></div>
-  <button class="b aiset" onclick="gmSettings()" title="Gemini 金鑰與模型，只存在這個瀏覽器">AI 設定</button>
   <div id="cloud"></div>
   <div id="prefs">
     <div class="seg" role="group" aria-label="外觀"><button type="button" data-th="auto">自動</button><button type="button" data-th="light">淺色</button><button type="button" data-th="dark">深色</button></div>
-    <button type="button" class="b" id="fsBig" aria-pressed="false">字放大</button>
+    <button type="button" class="b sm" id="fsBig" aria-pressed="false" title="字放大">A+</button>
   </div>
 </aside>
 <main id="main">
   <header class="ph">
-    <div class="phrow"><h1 id="pgTitle"></h1><span class="grow"></span><input id="title" type="text" placeholder="學校、學年度、學期" aria-label="學校、學年度、學期" onchange="D.title=this.value;save();paintSchool()"></div>
+    <div class="phrow"><h1 id="pgTitle"></h1><span class="grow"></span><div id="roleSw"></div></div>
     <nav class="sub" id="sub"></nav>
   </header>
-  <div id="roBar">你是「檢視」權限：可以看和列印，不能修改。</div>
+  <div id="roBar">檢視權限：可以看和列印，不能修改。</div>
   <div id="page"></div>
-  <iframe id="examFrame" title="段考考場" hidden></iframe>
+  <iframe id="examFrame" title="段考" hidden></iframe>
 </main>
 <dialog id="dlg"><div id="dlgBody"></div></dialog>
 <input type="file" id="imp" accept=".json,application/json" style="display:none" onchange="importJson(this)">
@@ -57,13 +49,17 @@ try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark'
     paint();});
   paint();})();</script>
 <script src="firebase-config.js"></script>
-<script src="school.js?v=18"></script>
-<script src="core.js?v=18"></script>
-<script src="cloud.js?v=18"></script>
-<script src="checkin.js?v=18"></script>
-<script src="gemini.js?v=18"></script>
-<script src="ai.js?v=18"></script>
-<script src="iep.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="school.js?v=19"></script>
+<script src="core.js?v=19"></script>
+<script src="cloud.js?v=19"></script>
+<script src="checkin.js?v=19"></script>
+<script src="gemini.js?v=19"></script>
+<script src="ai.js?v=19"></script>
+<script src="iep.js?v=19"></script>
+<script src="app.js?v=19"></script>
+<!-- 附加功能（統計、導師週報、學年交接、家長聯絡紀錄…）。還沒有這個檔時會載入失敗，不影響其他功能 -->
+<script src="extras.js?v=19"></script>
+<!-- 老師模式的頁面（另一個分支做的）。還沒有這個檔時會載入失敗，不影響其他功能 -->
+<script src="teacher.js?v=19"></script>
 </body>
 </html>

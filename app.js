@@ -3,7 +3,8 @@
 const KEY='resource-class-v1',EXKEY='special-exam-room-v1',NKEY='exam-notice-v1';
 let D,M,ST,ROOM,undoStack=[],page='home',sub='',offSel='*',view='',outMode='teacher',selL=-1,dlgDone=null;
 const lastSub={};
-const $=id=>document.getElementById(id);
+// 'dlgBody'：設定 › 帳號與共用把 cloud.js 的共用畫面放在頁面裡（#shareHost）；有對話框開著時還是對話框
+const $=id=>{if(id==='dlgBody'&&shareEmbed){const d=document.getElementById('dlg');if(!(d&&d.open)){const h=document.getElementById('shareHost');if(h)return h;}}return document.getElementById(id);};
 const EXAM_V='18';   // 段考頁的版本：每次改 exam.html 都要加一，不然瀏覽器會用舊的
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // 放進 onclick="f(…)" 裡的資料：先轉成 JSON 字串，再轉成 HTML 屬性可用的字元（瀏覽器會先還原 &#39; 等字元才執行）
@@ -46,36 +47,127 @@ function sortStu(a,b){return String(a.cls).localeCompare(String(b.cls))||(+a.sea
 function paintSchool(){$('school').textContent=D.title||'';}
 function colorOf(g){const i=M.rts.indexOf(g.t);return i<0?6:i%6;}
 
-/* ───── 頁面切換 ───── */
-const PAGES={
-  home:{t:'總覽'},
-  roster:{t:'名冊',subs:[['stu','學生'],['tea','老師'],['env','教室與作息'],['tt','全校課表'],['data','學期初匯入'],['backup','資料與備份']]},
-  // 照實際做的順序排：先開課、填任課老師、點不排課，再編學生、排課、輸出
-  sched:{t:'排課',subs:[['groups','① 老師開課'],['teach','② 任課老師'],['off','③ 不排課時段'],['need','④ 學生編組'],['board','⑤ 排課表'],['out','⑥ 課表輸出']]},
-  exam:{t:'段考考場'},
-  checkin:{t:'簽到退',subs:[['now','點名'],['log','出缺席紀錄'],['cards','學生卡']]}
-};
+/* ───── 頁面切換與兩種身分 ─────
+   給 teacher.js（老師模式）用的接點：
+   ・window.APPROLE：'admin'（管理者，預設）或 'teacher'（老師）
+   ・window.ME_TID：綁定的老師 id（D.teachers[].id）；沒綁定是 ''
+   ・setRole(role,tid)：切換身分並重畫選單；teacher.js 在登入綁定之後呼叫 setRole('teacher',老師id)
+     （cloud.js 也有一個 setRole(信箱,'e'|'v') 管共用名單的權限；第一個參數是 'admin'／'teacher' 時才是切換身分）
+   ・老師的頁面：PAGES.me_today、PAGES.me_stu、PAGES.me_iep、PAGES.me_check、PAGES.me_set，各自 {t:'標題',render(){…}}；
+     可以有 subs:[[key,名稱]]。沒有登記的頁面會顯示「準備中」。登記之後呼叫 registerPage(key,def) 或 render() 重畫
+   ・stuOpen(學生id)：打開個案頁（老師身分時私密欄位只給他個管的學生）
+   ・IEP 會議頁：PAGES.iep={t,subs,render}（P.render 自己畫整頁） */
+window.APPROLE=window.APPROLE||'admin';window.ME_TID=window.ME_TID||'';window.APPREVIEW=false;
+const ICON={
+  home:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  stu:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sched:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+  exam:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  iep:'<path d="M8 2v4M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 14h4M8 18h8"/>',
+  checkin:'<path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="m8 12 3 3 5-6"/>',
+  set:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  me:'<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  stats:'<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+  help:'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/>',
+  back:'<path d="m12 19-7-7 7-7M19 12H5"/>',
+  next:'<path d="m9 18 6-6-6-6"/>',
+  search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'};
+const ico=(k,c)=>`<svg class="ic${c?' '+c:''}" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]||''}</svg>`;
+// 「？」小按鈕：點開才看到說明
+const tip=t=>`<details class="tip"><summary aria-label="說明">${ico('help')}</summary><div class="tipbox">${t}</div></details>`;
+// 區段標題：前面小小的紅色編號（01、02…）
+const secH=(n,t,x)=>`<h3 class="sh"><span class="no">${String(n).padStart(2,'0')}</span>${t}${x||''}</h3>`;
+// 空白狀態：一行字＋一個按鈕
+const emptyBox=(t,btn)=>`<div class="empty"><span>${t}</span>${btn||''}</div>`;
+var PAGES=window.PAGES=Object.assign(window.PAGES||{},{
+  home:{t:'今天'},
+  stu:{t:'學生',hide:['case']},
+  sched:{t:'排課',subs:[['groups','① 開課'],['need','② 編組'],['board','③ 排課表'],['out','④ 輸出']]},
+  exam:{t:'段考'},
+  checkin:{t:'點名',subs:[['now','點名'],['log','紀錄'],['weekly','導師週報']],hide:['cards']},
+  stats:{t:'統計',subs:[['load','老師工作量'],['rooms','教室使用'],['locklog','鎖課異動']]},
+  set:{t:'設定',subs:[['school','學校資料'],['account','帳號與共用'],['data','資料與備份'],['ai','AI']],
+    hide:['import','tt','tea','off','env','rules','handover'],tabOf:{import:'school',tt:'school',tea:'school',off:'school',env:'school',rules:'school',handover:'school'}}
+});
+// 學校資料的步驟：照學期初準備資料的順序
+const SCHOOL_STEPS=[['import','匯入 Excel'],['tt','全校課表'],['tea','老師與任課'],['off','不排課時段'],['env','教室與作息'],['rules','排課規則'],['handover','學年交接檢查']];
+const NAV={admin:[['home','今天'],['stu','學生'],['sched','排課'],['exam','段考'],['iep','IEP 會議'],['checkin','點名'],['stats','統計'],['set','設定']],
+  teacher:[['me_today','今天','home'],['me_stu','我的學生','stu'],['me_iep','我的 IEP','iep'],['me_check','點名','checkin'],['me_set','我的設定','me']]};
+// 舊網址（書籤）轉到新的位置
+const REDIR={'roster':'stu','roster/stu':'stu','roster/tea':'set/tea','roster/env':'set/env','roster/tt':'set/tt','roster/data':'set/import','roster/backup':'set/data',
+  'sched/teach':'set/tea','sched/off':'set/off','today':'home'};
+let stuCur='';   // 個案頁看的是哪一位學生
+function paintNav(){const role=APPROLE==='teacher'?'teacher':'admin';
+  $('nav').innerHTML=NAV[role].map(([k,n,ic])=>`<button type="button" data-p="${k}"${k===page?' class="on" aria-current="page"':''}>${ico(ic||k)}<span>${n}</span></button>`).join('');
+  paintRoleSw();}
+// 右上角：管理者可以「以老師身分看」；預覽中可以回到管理者
+function paintRoleSw(){const el=$('roleSw');if(!el||typeof D==='undefined'||!D)return;
+  if(APPROLE==='teacher'){const t=D.teachers.find(x=>x.id===ME_TID);
+    el.innerHTML=APPREVIEW?`<span class="rs">以 <b>${esc(t?t.name:'老師')}</b> 的身分看</span><button type="button" class="b sm" onclick="setRole('admin')">回到管理者</button>`:(t?`<span class="rs">${esc(t.name)}</span>`:'');return;}
+  const ts=D.teachers.slice().sort((a,b)=>(a.role==='資源班'?0:1)-(b.role==='資源班'?0:1));
+  el.innerHTML=ts.length?`<label class="rs">以老師身分看<select onchange="if(this.value)setRole('teacher',this.value,{preview:true})"><option value="">選老師</option>${ts.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}</select></label>`:'';}
+function appSetRole(role,tid,o){o=o||{};window.APPROLE=role==='teacher'?'teacher':'admin';window.ME_TID=role==='teacher'?String(tid||ME_TID||''):(o.keepTid?ME_TID:'');
+  window.APPREVIEW=APPROLE==='teacher'&&!!o.preview;
+  const home=APPROLE==='teacher'?'me_today':'home';const ok=APPROLE==='teacher'?page.slice(0,3)==='me_':page.slice(0,3)!=='me_';
+  go(ok?page:home,ok?sub:undefined);}
+(function(){const cloudSetRole=window.setRole;   // cloud.js 的成員權限（setRole(信箱,'e'|'v')）
+  window.setRole=function(a,b,c){if(a==='admin'||a==='teacher')return appSetRole(a,b,c);if(typeof cloudSetRole==='function')return cloudSetRole.apply(this,arguments);};})();
+// 外掛頁登記：teacher.js 用；登記的剛好是現在這一頁就重畫
+function registerPage(k,def){PAGES[k]=def;if(page===k)go(k,sub);}
+function stuOpen(id){stuCur=id;go(APPROLE==='teacher'&&PAGES.me_stu&&PAGES.me_stu.caseHere?'me_stu':'stu','case');}
 function go(p,s){
-  if(!PAGES[p])p='home';const P=PAGES[p];page=p;
-  sub=P.subs?(P.subs.some(x=>x[0]===s)?s:(lastSub[p]||P.subs[0][0])):'';lastSub[p]=sub;selL=-1;if(cam&&!(p==='checkin'&&sub==='now'))camStop();
-  try{history.replaceState(null,'','#'+p+(sub?'/'+sub:''));}catch(e){}
+  const r=REDIR[p+(s?'/'+s:'')]||REDIR[p];if(r){const a=r.split('/');p=a[0];s=a[1]||s;}
+  if(p==='set'&&s==='school')s=lastSub.school||'import';
+  const tch=APPROLE==='teacher';
+  if(tch&&p.slice(0,3)!=='me_'&&p!=='iep')p='me_today';   // 老師身分只看「我的」頁面
+  if(!tch&&p.slice(0,3)==='me_')p='home';
+  if(!PAGES[p]&&p.slice(0,3)!=='me_')p='home';
+  const P=PAGES[p]||{t:(NAV.teacher.find(x=>x[0]===p)||[0,''])[1]};page=p;
+  const keys=(P.subs||[]).map(x=>x[0]).concat(P.hide||[]);
+  sub=keys.length?(keys.includes(s)?s:(lastSub[p]&&keys.includes(lastSub[p])?lastSub[p]:P.subs?P.subs[0][0]:'')):'';
+  if(p==='set'&&sub==='school')sub=lastSub.school||'import';
+  lastSub[p]=sub;if(P.tabOf&&P.tabOf[sub])lastSub.school=sub;
+  selL=-1;if(cam&&!(p==='checkin'&&sub==='now'))camStop();
+  if(!(p==='set'&&sub==='account')&&shareEmbed){shareEmbed=false;shareOpen=false;}
+  try{history.replaceState(null,'','#'+p+(sub?'/'+sub:'')+(sub==='case'&&stuCur?'/'+encodeURIComponent(stuCur):''));}catch(e){}
   render();$('main').scrollTo(0,0);
 }
 function render(){
-  const P=PAGES[page];
-  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.p===page));
-  $('pgTitle').textContent=P.t;
-  $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button class="${k===sub?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
+  const P=PAGES[page]||{t:(NAV.teacher.find(x=>x[0]===page)||[0,''])[1]};
+  paintNav();
+  $('pgTitle').textContent=P.t;document.title=P.t+'｜資源班管理系統';
+  const tab=(P.tabOf&&P.tabOf[sub])||sub;
+  $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button type="button" class="${k===tab?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
   const gate=typeof cloudGateHtml==='function'?cloudGateHtml():'';   // 用過雲端的電腦登出時不顯示學生資料
   if(gate){$('page').hidden=false;$('examFrame').hidden=true;$('page').innerHTML=gate;return;}
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
   if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed&ver='+EXAM_V;return;}
-  if(P.render){P.render();return;}   // 外掛頁（例：IEP 會議）自己畫
+  if(P.render){P.render();return;}   // 外掛頁（IEP 會議、老師模式的頁面）自己畫
+  // extras.js 的頁面：window.EXT_PAGES[鍵](#page) 畫整頁；有登記就用它，不用內建的
+  const xk=EXTKEY[page+'/'+sub]||page+(sub?'/'+sub:''),XP=window.EXT_PAGES||{};
+  if(typeof XP[xk]==='function'){try{XP[xk]($('page'));}catch(e){$('page').innerHTML=emptyBox('這一頁出錯了：'+esc(e.message||e));}stepWrap(P);return;}
+  if(EXTKEY[page+'/'+sub]||page==='stats'){$('page').innerHTML=emptyBox('這一頁準備中。');stepWrap(P);return;}
+  if(page.slice(0,3)==='me_'){$('page').innerHTML=emptyBox('這一頁準備中。');return;}
   syncST();   // 排課頁有試排草稿時看的是草稿，其他頁是正式課表
-  ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/tt':renderTT,'roster/data':renderData,'roster/backup':renderBackup,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
+  ({home:renderHome,'stu':renderStu,'stu/case':renderCase,
+    'set/import':renderData,'set/tt':renderTT,'set/tea':renderTeaAll,'set/off':renderOff,'set/env':renderEnv,'set/rules':renderRules,
+    'set/account':renderAccount,'set/data':renderBackup,'set/ai':renderAI,
+    'sched/groups':renderGroups,'sched/need':renderNeed,'sched/board':renderBoard,'sched/out':renderOut,
+    'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
+  stepWrap(P);
   draftBanner();
 }
-document.querySelectorAll('#nav button[data-p]').forEach(b=>{b.onclick=()=>go(b.dataset.p);});
+// extras.js 頁面的鍵（頁面/分頁 → EXT_PAGES 的鍵）；沒列的就用「頁面/分頁」本身
+const EXTKEY={'stats/load':'stats/load','stats/rooms':'stats/rooms','stats/locklog':'stats/locklog','checkin/weekly':'checkin/weekly','set/handover':'settings/handover'};
+// 學校資料的 ①②③ 步驟列＋下一步
+function stepWrap(P){
+  if(P.tabOf&&P.tabOf[sub]){const i=SCHOOL_STEPS.findIndex(x=>x[0]===sub),nx=SCHOOL_STEPS[i+1];
+    $('page').insertAdjacentHTML('afterbegin',`<nav class="steps" aria-label="學校資料的步驟">${SCHOOL_STEPS.map(([k,n],j)=>`<button type="button" class="${k===sub?'on':''}" onclick="go('set','${k}')"${k===sub?' aria-current="step"':''}><span>${j+1}</span>${n}</button>`).join('')}</nav>`);
+    if(nx)$('page').insertAdjacentHTML('beforeend',`<div class="stepnext"><button type="button" class="b" onclick="go('set','${nx[0]}')">下一步：${nx[1]} ${ico('next')}</button></div>`);}
+}
+let shareEmbed=false;   // 設定 › 帳號與共用：cloud.js 的 renderShare 畫在頁面裡，不開對話框
+$('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-p]');if(b)go(b.dataset.p);});
 
 /* ───── 總覽 ───── */
 const SVN={ext:'延長',read:'誦讀',oral:'口頭',pc:'電腦',small:'獨立'};
@@ -86,197 +178,248 @@ function examInfo(){
     return {title:E.title||'',n:E.students.filter(s=>s.on!==false&&has(s)).length,dates:[...new Set((E.sessions||[]).map(s=>s.date))],total:a.length,placed:a.filter(x=>x&&x.room).length,sv};
   }catch(e){return null;}
 }
+// 進行中的 IEP 調查（不含直接開會）：給「今天」的待辦和個案頁用；沒有 IEP 模組時是空的
+function iepRounds(){try{if(typeof IEP==='undefined'||!D.iep||!Array.isArray(D.iep.rounds))return [];return D.iep.rounds;}catch(e){return [];}}
+function iepOpen(id,s){if(D.iep)D.iep.cur=id;go('iep',s||'ans');}
 function renderHome(){
   const now=new Date(),wd=now.getDay(),isSchool=wd>=1&&wd<=5,d=isSchool?wd-1:0,hm=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   const out=[];evaluate(M,ST.slot,out);
   const total=M.L.length,placed=[...ST.slot].filter(s=>s>=0).length,probs=out.filter(o=>o.k!=='un').length;
   const inG=new Set(D.groups.flatMap(g=>g.students)),noG=D.students.filter(s=>!inG.has(s.id)).length,noCM=D.students.filter(s=>!s.caseMgr).length;
   const warns=M.G.filter(g=>g.per).reduce((n,g)=>n+g.warn.length,0),E=examInfo();
-  let h=`<div class="hello"><div class="date">${now.getMonth()+1} 月 ${now.getDate()} 日　週${'日一二三四五六'[wd]}</div><h2>${esc(D.title||'資源班')}</h2></div>`;
+  let h=`<p class="hello">${now.getMonth()+1} 月 ${now.getDate()} 日　週${'日一二三四五六'[wd]}${D.title?'<span>'+esc(D.title)+'</span>':''}</p>`;
   if(!D.students.length&&!D.groups.length){
-    $('page').innerHTML=h+`<div class="start"><b>從這三步開始</b><ol><li>到「名冊」貼上學生名單、加入老師。</li><li>到「排課」填每位老師的基本鐘點、替他開課，填好各班原班的<b>任課老師</b>，再勾選每位學生要上的科目，並點選不排課的時段。</li><li>按「一鍵排課」，再到「課表輸出」印出課表與鎖課表。</li></ol>
-      <div class="bar" style="margin:0"><button class="b pri" onclick="go('roster','data')">上傳學校的 Excel</button><button class="b" onclick="go('roster','stu')">前往名冊</button><button class="b" onclick="loadDemo()">先載入範例資料看看</button></div></div>`;return;}
+    $('page').innerHTML=h+emptyBox('還沒有資料。',`<button class="b pri" onclick="go('set','import')">匯入 Excel</button><button class="b" onclick="loadDemo()">看範例</button>`);return;}
+  const td=today();
+  // 快速動作：一頁最多一個主要按鈕
+  h+=`<div class="bar quick"><button class="b pri" onclick="go('checkin','now')">點名</button><button class="b" onclick="go('sched','board')">排課表</button><button class="b" onclick="go('sched','out')">印課表</button><button class="b" onclick="go('stu')">學生</button><button class="b" onclick="go('exam')">段考</button></div>`;
   h+=`<div class="stats">
-    <button class="stt" onclick="go('roster','stu')"><span class="k">學生</span><b>${D.students.length}<small>人</small></b><span class="d${noG?' warn':''}">${noG?noG+' 位還沒分組':'都已分組'}</span></button>
-    <button class="stt" onclick="go('sched','groups')"><span class="k">組別</span><b>${M.G.filter(g=>g.per).length}<small>組</small></b><span class="d">每週共 ${total} 節</span></button>
-    <button class="stt" onclick="go('sched','board')"><span class="k">排課進度</span><b>${placed}<small>/ ${total} 節</small></b><div class="prog"><i style="width:${total?Math.round(placed/total*100):0}%"></i></div><span class="d ${probs||placed<total?'warn':'ok'}">${probs?probs+' 個衝突':placed<total?'還有 '+(total-placed)+' 節沒排':total?'沒有衝突':'尚未建立組別'}</span></button>
-    <button class="stt" onclick="go('exam')"><span class="k">段考考場</span>${E&&(E.n||E.title)?`<b class="t">${esc(E.title||'未命名的段考')}</b><span class="d">${E.n} 位學生有考評服務${E.dates.length?'　'+esc(E.dates[0]+(E.dates.length>1?'～'+E.dates[E.dates.length-1]:'')):''}</span>`:`<b class="t">尚未設定</b><span class="d">設定考評服務後自動排考場</span>`}</button>
-  </div><div class="cols"><section><h3>${isSchool?'今天的課':'下週一的課'}</h3>`;
-  const td=today(),by={};M.L.forEach((x,l)=>{const s=ST.slot[l];if(s>=0&&Math.floor(s/M.NP)===d)(by[s%M.NP]=by[s%M.NP]||[]).push(l);});
-  if(!placed)h+=`<p class="note">還沒有排課。到「排課」按一鍵排課之後，這裡會顯示每天的課表。</p>`;
-  else h+=D.periods.map((p,pi)=>{const ls=(by[pi]||[]).sort((a,b)=>colorOf(M.G[M.L[a].g])-colorOf(M.G[M.L[b].g]));
+    <button class="stt" onclick="go('stu')"><span class="k">學生</span><b>${D.students.length}</b><span class="d${noG?' warn':''}">${noG?noG+' 位沒分組':'都已分組'}</span></button>
+    <button class="stt" onclick="go('sched','board')"><span class="k">已排</span><b>${placed}<small>/ ${total} 節</small></b><span class="d ${probs||placed<total?'warn':'ok'}">${probs?probs+' 個衝突':placed<total?'差 '+(total-placed)+' 節':total?'沒有衝突':'還沒開課'}</span></button>
+    <button class="stt" onclick="go('exam')"><span class="k">段考</span>${E&&(E.n||E.title)?`<b>${E.n}<small>位有考評服務</small></b><span class="d">${esc(E.title||'')}</span>`:`<b class="t">未設定</b><span class="d">　</span>`}</button>
+  </div><div class="cols"><section class="card">${secH(1,isSchool?'今天的課':'下週一的課')}`;
+  const by={};M.L.forEach((x,l)=>{const s=ST.slot[l];if(s>=0&&Math.floor(s/M.NP)===d)(by[s%M.NP]=by[s%M.NP]||[]).push(l);});
+  if(!placed)h+=emptyBox('還沒有課表。',`<button class="b sm" onclick="go('sched','board')">去排課</button>`);
+  else h+=D.periods.map((p,pi)=>{const ls=(by[pi]||[]).sort((a,b)=>colorOf(M.G[M.L[a].g])-colorOf(M.G[M.L[b].g]));if(!ls.length&&p.extra)return '';
     return `<div class="tl${isSchool&&hm>=p.start&&hm<p.end?' now':''}"><div class="tm">${esc(p.name)}<small>${esc(p.start)}</small></div><div>${ls.length?ls.map(l=>{const g=M.G[M.L[l].g];
       const k=g.ref.id+'@'+p.id,taken=isSchool&&(ATT[td]||{})[k],inn=taken?g.stu.filter(i=>{const r=taken[D.students[i].id];return r&&(r.st==='in'||r.st==='late');}).length:0;
-      return `<span class="ev c${colorOf(g)}">${esc(g.name)}<small>${esc([g.t>=0?M.T[g.t].name:'',ROOM[l]>=0?D.rooms[ROOM[l]].name:'',taken?'到 '+inn+'/'+g.stu.length:g.stu.length+' 人'].filter(Boolean).join('・'))}</small></span>`;}).join(''):'<span class="none">沒有課</span>'}</div></div>`;}).join('');
-  h+=`</section><section><h3>待處理</h3>`;
+      return `<span class="ev c${colorOf(g)}">${esc(g.name)}<small>${esc([g.t>=0?M.T[g.t].name:'',ROOM[l]>=0?D.rooms[ROOM[l]].name:'',taken?'到 '+inn+'/'+g.stu.length:g.stu.length+' 人'].filter(Boolean).join('・'))}</small></span>`;}).join(''):'<span class="none">—</span>'}</div></div>`;}).join('');
+  h+=`</section><div class="colr"><section class="card">${secH(2,'待辦')}`;
   const todo=[];
   if(isSchool){const cur=sessionsOn(td).filter(x=>hm>=x.p.start&&hm<x.p.end),miss=cur.reduce((n,x)=>n+x.g.stu.filter(i=>!attGet(td,x.key,D.students[i].id)).length,0);
-    if(miss)todo.push(['','現在'+cur[0].p.name+'還有 '+miss+' 位學生沒簽到','點名',"go('checkin','now')"]);}
-  if(probs)todo.push(['err','排課有 '+probs+' 個衝突','排課',"go('sched','board')"]);
-  if(warns)todo.push(['','有 '+warns+' 則開課提醒（缺老師、缺任課老師或時段不夠）','老師開課',"go('sched','groups')"]);
-  if(total&&placed<total)todo.push(['','還有 '+(total-placed)+' 節沒排進課表','排課',"go('sched','board')"]);
+    if(miss)todo.push(['',cur[0].p.name+' 還有 '+miss+' 人沒簽到','點名',"go('checkin','now')"]);}
+  if(probs)todo.push(['err','排課衝突 '+probs+' 個','排課表',"go('sched','board')"]);
+  if(total&&placed<total)todo.push(['','還有 '+(total-placed)+' 節沒排','排課表',"go('sched','board')"]);
+  if(warns)todo.push(['','開課提醒 '+warns+' 則','開課',"go('sched','groups')"]);
   const pn=needList(D).length,hb=D.teachers.filter(t=>t.role==='資源班'&&t.hours&&t.hours!==hoursOf(t.id)).length;
-  if(hb)todo.push(['',hb+' 位老師開的課和基本鐘點不符','老師開課',"go('sched','groups')"]);
-  if(pn)todo.push(['',pnText(),'學生編組',"go('sched','need')"]);
-  if(noG)todo.push(['',noG+' 位學生還沒分到任何一組','學生編組',"go('sched','need')"]);
-  const due=dueList();if(due.length)todo.push(['',due.length+' 位學生的 IEP、檢討日或鑑定有效期限在本月到期','名冊',"stuMine='';stuDue=1;go('roster','stu')"]);
-  if(noCM)todo.push(['',noCM+' 位學生還沒指定個管老師','名冊',"go('roster','stu')"]);
-  if(E&&E.total>E.placed)todo.push(['','段考還有 '+(E.total-E.placed)+' 個科次沒排進考場','段考考場',"go('exam')"]);
+  if(hb)todo.push(['',hb+' 位老師鐘點不符','開課',"go('sched','groups')"]);
+  if(pn)todo.push(['',pnText(),'編組',"go('sched','need')"]);
+  if(noG)todo.push(['',noG+' 位學生沒分組','編組',"go('sched','need')"]);
+  if(noCM)todo.push(['',noCM+' 位學生沒有個管','個管分配',"stuReset();stuCM='-';go('stu')"]);
+  const due=dueList();if(due.length)todo.push(['',due.length+' 位學生本月到期','學生',"stuReset();stuDue=1;go('stu')"]);
+  iepRounds().filter(R=>!R.quick&&R.meets&&R.meets.length&&(R.pub||[]).length&&(!R.due||R.due>=td)).forEach(R=>{try{const pg=IEP.progress(D,R),n=pg.people.filter(o=>o.done).length;
+    if(n<pg.people.length)todo.push(['','IEP「'+(R.name||'調查')+'」回覆 '+n+'/'+pg.people.length,'IEP',"iepOpen("+jsArg(R.id)+")"]);}catch(e){}});
+  if(E&&E.total>E.placed)todo.push(['','段考還有 '+(E.total-E.placed)+' 科次沒排考場','段考',"go('exam')"]);
   if(cloudState==='local'||cloudState==='out'||cloudState==='part'){const lb=+localStorage.getItem(LBKEY)||0,dd=lb?Math.floor((Date.now()-lb)/864e5):-1;
-    if(dd<0||dd>=14)todo.push(['info','資料只存在這台電腦，'+(dd<0?'還沒下載過備份檔':'上次下載備份是 '+dd+' 天前')+(cloudState==='out'?'，或登入共用':''),cloudState==='out'?'共用':'備份','openShare()']);}
+    if(dd<0||dd>=14)todo.push(['info',dd<0?'還沒下載過備份':dd+' 天沒備份','備份',"go('set','data')"]);}
   // 待辦是按鈕，鍵盤（Tab、Enter）和螢幕報讀都用得到
-  h+=todo.length?'<ul class="todo">'+todo.map(([c,t,w,f])=>`<li class="${c}"><button type="button" class="todo-b" style="display:flex;flex:1;gap:10px;align-items:baseline;border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer" onclick="${f}"><span>${esc(t)}</span><em>${w} ›</em></button></li>`).join('')+'</ul>':'<div class="allok">目前沒有待處理的事項。</div>';
+  // extras.js 的待辦：window.TODO_HOOKS＝[函式]，每個回傳 [{t,n,go:'js 字串'|函式,level:'warn'|'info'}]
+  TODO_FN.length=0;(window.TODO_HOOKS||[]).forEach(f=>{try{(f()||[]).forEach(x=>{if(!x||!x.t)return;let g=x.go;if(typeof g==='function'){TODO_FN.push(g);g='todoRun('+(TODO_FN.length-1)+')';}
+    todo.push([x.level==='info'?'info':'',x.t,x.n==null?'':String(x.n),esc(g||'')]);});}catch(e){}});
+  h+=todo.length?'<ul class="todo">'+todo.map(([c,t,w,f])=>`<li class="${c}"><button type="button" onclick="${f}"><span>${esc(t)}</span><em>${esc(w)}${ico('next')}</em></button></li>`).join('')+'</ul>':'<p class="allok">沒有待辦。</p>';
+  h+='</section>';
   const res=D.teachers.filter(t=>t.role==='資源班');
   if(res.length){const ld=t=>{const ti=M.tIdx[t.id];return M.L.filter((x,l)=>M.G[x.g].t===ti&&ST.slot[l]>=0).length;},mx=Math.max(1,...res.map(ld));
-    h+=`<h3>資源班老師</h3>`+res.map(t=>{const n=ld(t),ci=M.rts.indexOf(M.tIdx[t.id]),cs=D.students.filter(s=>s.caseMgr===t.id).length;
-      return `<div class="tload"><span>${esc(t.name)}</span><div class="bar2"><i class="b${ci<0?6:ci%6}" style="width:${Math.round(n/mx*100)}%"></i></div><small>每週 ${n}${t.hours?' / '+t.hours:''} 節・個案 ${cs} 人</small></div>`;}).join('');}
-  $('page').innerHTML=h+'</section></div>';
+    h+=`<section class="card">${secH(3,'資源班老師')}`+res.map(t=>{const n=ld(t),ci=M.rts.indexOf(M.tIdx[t.id]),cs=D.students.filter(s=>s.caseMgr===t.id).length;
+      return `<div class="tload"><span>${esc(t.name)}</span><div class="bar2"><i class="b${ci<0?6:ci%6}" style="width:${Math.round(n/mx*100)}%"></i></div><small>${n}${t.hours?'/'+t.hours:''} 節・${cs} 案</small></div>`;}).join('')+'</section>';}
+  $('page').innerHTML=h+'</div></div>';
 }
-function loadDemo(){D=defaultData();changed();$('title').value=D.title;paintSchool();render();}
+const TODO_FN=[];function todoRun(i){const f=TODO_FN[i];if(f)f();}
+function loadDemo(){D=defaultData();changed();paintSchool();render();}
 
-/* ───── 名冊 ───── */
+/* ───── 學生：名單（篩選）、個案頁、個管分配 ───── */
+let stuQ='',stuG='',stuCM='',stuMe=false;
+function stuReset(){stuQ='';stuG='';stuCM='';stuMe=false;stuDue=0;}
+function stuGroupsOf(){const gOf={};D.groups.forEach(g=>g.students.forEach(id=>{(gOf[id]=gOf[id]||[]).push(g.name);}));return gOf;}
 function renderStu(){
-  const gOf={};D.groups.forEach(g=>g.students.forEach(id=>{(gOf[id]=gOf[id]||[]).push(g.name);}));
-  const E=examInfo(),sv=(E&&E.sv)||{},res=D.teachers.filter(t=>t.role==='資源班'),dueIds=new Set(dueList().map(s=>s.id));
-  // 篩選：只看某位個管老師的個案、還沒指定個管的、本月到期的
-  const show=s=>(!stuMine||(stuMine==='-'?!s.caseMgr:s.caseMgr===stuMine))&&(!stuDue||dueIds.has(s.id));
-  const rows=D.students.map((s,i)=>({s,i})).filter(o=>show(o.s)),pv=stuPriv?'':' hidden';
-  let h=`<p class="guide">整個系統共用這一份名冊：排課、段考考場、通知單都讀這裡，只要維護一次。考評服務在「段考考場」設定，這裡會同步顯示。</p>
-  <div class="bar"><button class="b pri" onclick="addStu()">新增學生</button><button class="b" onclick="pasteStu()">從 Excel 貼上名單</button><button class="b" onclick="D.students.sort(sortStu);changed();render()">依班級座號排序</button><button class="b" onclick="cmOpen()">建議個管分配</button>
-    <select aria-label="篩選學生" onchange="stuMine=this.value;render()"><option value="">全部學生</option>${res.map(t=>`<option value="${esc(t.id)}"${stuMine===t.id?' selected':''}>只看我的個案：${esc(t.name)}</option>`).join('')}<option value="-"${stuMine==='-'?' selected':''}>還沒指定個管老師</option></select>
-    ${stuDue?`<button class="b warn" onclick="stuDue=0;render()">只顯示本月到期 ✕</button>`:''}
-    <label class="note" style="margin:0"><input type="checkbox"${stuPriv?' checked':''} onchange="stuPriv=this.checked;render()"> 顯示私密欄位</label>
-    <span class="stat">共 <b>${D.students.length}</b> 人${rows.length<D.students.length?`，顯示 ${rows.length} 人`:''}</span></div>
-  <div class="bar"><span class="note" style="margin:0">勾選的 <b>${stuChk.size}</b> 位學生</span><select id="bulkCM" aria-label="要指定的個管老師">${cmOpts('')}</select><button class="b sm" onclick="bulkCM()"${stuChk.size?'':' disabled'}>一起指定個管老師</button>${stuChk.size?`<button class="b sm" onclick="stuChk.clear();render()">取消勾選</button>`:''}</div>
-  <style>@media print{.priv{display:none!important}}</style>
-  <div class="scroll"><table class="ed"><tr><th><input type="checkbox" aria-label="全選" ${rows.length&&rows.every(o=>stuChk.has(o.s.id))?'checked':''} onchange="stuChkAll(this.checked)"></th><th>班級</th><th>座號</th><th>姓名</th><th>個管老師</th><th>所屬組別</th><th>考評服務</th><th title="簽到時會顯示給學生看">公開提醒</th>
-    <th class="priv"${pv}>個管私密備註</th><th class="priv"${pv}>IEP 會議日期</th><th class="priv"${pv}>下次檢討日</th><th class="priv"${pv}>鑑定有效期限</th><th></th></tr>`;
-  rows.forEach(({s,i})=>{h+=`<tr><td><input type="checkbox" aria-label="勾選 ${esc(s.name)}" data-id="${esc(s.id)}"${stuChk.has(s.id)?' checked':''} onchange="stuChkOne(this.dataset.id,this.checked)"></td><td><input type="text" class="w3" value="${esc(s.cls)}" onchange="setStu(${i},'cls',this.value)"></td>
-    <td><input type="text" class="w2" value="${esc(s.seat)}" onchange="setStu(${i},'seat',this.value)"></td>
-    <td><input type="text" class="w5" value="${esc(s.name)}" onchange="setStu(${i},'name',this.value)"></td>
-    <td><select aria-label="${esc(s.name)} 的個管老師" onchange="setStu(${i},'caseMgr',this.value)">${cmOpts(s.caseMgr)}</select></td>
-    <td class="dim">${esc((gOf[s.id]||[]).join('、'))||'尚未分組'}</td>
-    <td>${(sv[s.id]||[]).map(x=>`<span class="tagv">${x}</span>`).join('')}</td>
-    <td><input type="text" class="w8" value="${esc(s.note)}" placeholder="例：要帶課本" onchange="setStu(${i},'note',this.value)"></td>
-    <td class="priv"${pv}><input type="text" class="w8" value="${esc(s.privNote||'')}" onchange="setStu(${i},'privNote',this.value)"></td>
-    ${DUEF.map(([k])=>`<td class="priv${dueIds.has(s.id)&&String(s[k]||'').slice(0,7)===today().slice(0,7)?' warn':''}"${pv}><input type="date" value="${esc(s[k]||'')}" onchange="setStu(${i},'${k}',this.value)"></td>`).join('')}
-    <td class="nw"><button class="b sm" onclick="stuCard(${i})">檢視</button><button class="x" title="刪除" aria-label="刪除 ${esc(s.name)}" onclick="delStu(${i})">✕</button></td></tr>`;});
-  $('page').innerHTML=h+'</table></div>'+(stuPriv?'':'<p class="note">「公開提醒」會在簽到時顯示給學生看；不想讓學生看到的，勾「顯示私密欄位」寫在「個管私密備註」（不會出現在簽到畫面，也不會印出來）。</p>');
+  const gOf=stuGroupsOf(),E=examInfo(),sv=(E&&E.sv)||{},dueIds=new Set(dueList().map(s=>s.id)),q=stuQ.trim();
+  const grs=[...new Set(D.students.map(s=>gradeOfCls(s.cls)))].filter(x=>GRADE[x]).sort();
+  const cmIds=[...new Set(D.students.map(s=>s.caseMgr).filter(Boolean))],tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
+  const mt=myTid(),me=mt&&D.teachers.some(t=>t.id===mt)?mt:'';
+  const show=s=>(!q||String(s.name).includes(q)||(String(s.cls)+String(s.seat||'')).includes(q))&&(!stuG||gradeOfCls(s.cls)===+stuG)&&
+    (!stuCM||(stuCM==='-'?!s.caseMgr:s.caseMgr===stuCM))&&(!stuDue||dueIds.has(s.id))&&(!stuMe||!me||s.caseMgr===me||D.groups.some(g=>g.teacher===me&&g.students.includes(s.id)));
+  const rows=D.students.filter(show).sort(sortStu);
+  let h=`<div class="bar"><button class="b pri" onclick="addStu()">新增學生</button><button class="b" onclick="pasteStu()">貼上名單</button><button class="b" onclick="cmOpen()">個管分配</button><span class="grow"></span><span class="stat"><b>${rows.length}</b>${rows.length<D.students.length?' / '+D.students.length:''} 人</span></div>`;
+  if(!D.students.length){$('page').innerHTML=h+emptyBox('還沒有學生。',`<button class="b" onclick="pasteStu()">貼上名單</button>`);return;}
+  h+=`<div class="filters"><label class="srch">${ico('search')}<input type="search" placeholder="姓名或班級" aria-label="搜尋學生" value="${esc(stuQ)}" oninput="stuQ=this.value;stuRows()"></label>
+    <select aria-label="年級" onchange="stuG=this.value;render()"><option value="">全部年級</option>${grs.map(x=>`<option value="${x}"${String(x)===stuG?' selected':''}>${GRADE[x]}</option>`).join('')}</select>
+    <select aria-label="個管老師" onchange="stuCM=this.value;render()"><option value="">全部個管</option>${cmIds.map(id=>`<option value="${esc(id)}"${stuCM===id?' selected':''}>${esc(tn(id))}</option>`).join('')}<option value="-"${stuCM==='-'?' selected':''}>沒有個管</option></select>
+    <button type="button" class="chipb${stuDue?' on':''}" aria-pressed="${!!stuDue}" onclick="stuDue=stuDue?0:1;render()">本月到期${dueIds.size?' '+dueIds.size:''}</button>
+    <button type="button" class="chipb${stuMe&&me?' on':''}" aria-pressed="${!!(stuMe&&me)}" onclick="stuMine()">只看我的${me?'':'…'}</button></div>`;
+  if(stuChk.size)h+=`<div class="bar bulk"><span>已勾 <b>${stuChk.size}</b> 位</span><select id="bulkCM" aria-label="要指定的個管老師">${cmOpts('')}</select><button class="b sm" onclick="bulkCM()">指定個管</button><button class="b sm" onclick="stuChk.clear();render()">取消</button></div>`;
+  h+=`<div class="card flush"><div class="scroll"><table class="ed list" id="stuTbl"><thead><tr><th class="ck"><input type="checkbox" aria-label="全選" ${rows.length&&rows.every(s=>stuChk.has(s.id))?'checked':''} onchange="stuChkAll(this.checked)"></th><th>班級座號</th><th>姓名</th><th>個管</th><th>組別</th><th>考評服務</th><th></th></tr></thead><tbody>`+
+    rows.map(s=>`<tr class="click" data-id="${esc(s.id)}" data-q="${esc(s.name+' '+s.cls+(s.seat||''))}" onclick="if(!event.target.closest('input'))stuOpen(this.dataset.id)"><td class="ck"><input type="checkbox" aria-label="勾選 ${esc(s.name)}" data-id="${esc(s.id)}"${stuChk.has(s.id)?' checked':''} onchange="stuChkOne(this.dataset.id,this.checked)"></td>
+      <td class="num">${esc(s.cls)}${s.seat?'-'+esc(String(s.seat).padStart(2,'0')):''}</td><td><b>${esc(s.name||'（未填姓名）')}</b>${dueIds.has(s.id)?' <span class="tagv warn">到期</span>':''}</td>
+      <td>${s.caseMgr?esc(tn(s.caseMgr)):'<span class="dim">—</span>'}</td><td class="dim">${esc((gOf[s.id]||[]).join('、'))||'—'}</td>
+      <td>${(sv[s.id]||[]).map(x=>`<span class="tagv">${x}</span>`).join('')}</td><td class="go">${ico('next')}</td></tr>`).join('')+'</tbody></table></div></div>';
+  if(!rows.length)h+=emptyBox('沒有符合的學生。',`<button class="b sm" onclick="stuReset();render()">清除篩選</button>`);
+  $('page').innerHTML=h;
 }
-let stuMine='',stuDue=0,stuPriv=false;const stuChk=new Set();
-// 私密日期欄位：只在名冊（勾「顯示私密欄位」）和學生檢視裡看得到，不印、不出現在簽到畫面
+// 搜尋時只藏列，不重畫（輸入框才不會失去焦點）
+function stuRows(){const q=stuQ.trim();document.querySelectorAll('#stuTbl tbody tr').forEach(tr=>{tr.hidden=!!q&&!tr.dataset.q.includes(q);});}
+function stuMine(){if(stuMe){stuMe=false;render();return;}
+  if(myTid()&&D.teachers.some(t=>t.id===myTid())){stuMe=true;render();return;}
+  const ts=D.teachers.filter(t=>t.role==='資源班');if(!ts.length){toast('還沒有資源班老師');return;}
+  openDlg(`<h3>我是哪一位？</h3><div class="pick">${ts.map(t=>`<button type="button" class="b" data-id="${esc(t.id)}" onclick="try{localStorage.setItem('rc-me',this.dataset.id)}catch(e){};stuMe=true;closeDlg();render()">${esc(t.name)}</button>`).join(' ')}</div>`);}
+// 「只看我的」：老師身分用 ME_TID；管理者在這台電腦選過自己是哪一位（rc-me）
+function myTid(){if(window.ME_TID)return ME_TID;try{return localStorage.getItem('rc-me')||'';}catch(e){return '';}}
+// 個案頁：一位學生的全部
+function canPriv(s){return APPROLE!=='teacher'||(!!ME_TID&&s.caseMgr===ME_TID);}
+function setStuId(id,k,v){const s=D.students.find(x=>x.id===id);if(!s)return;s[k]=String(v).trim();changed();if(k==='caseMgr'||k==='name'||k==='cls')render();}
+function renderCase(){
+  const s=D.students.find(x=>x.id===stuCur);
+  if(!s){$('page').innerHTML=emptyBox('找不到這位學生。',`<button class="b" onclick="go('stu')">回到名單</button>`);return;}
+  const si=M.sIdx[s.id],ro=APPROLE==='teacher',E=examInfo(),sv=((E&&E.sv)||{})[s.id]||[],at=attStats('0000','9999','')[s.id];
+  const gs=M.G.filter(g=>g.stu.includes(si)),cm=D.teachers.find(t=>t.id===s.caseMgr),sets=D.sets.filter(x=>x.students.includes(s.id)),idA=jsArg(s.id);
+  const inp=(k,cls,ph)=>ro?`<span>${esc(s[k]||'—')}</span>`:`<input type="text" class="${cls}" value="${esc(s[k]||'')}"${ph?` placeholder="${ph}"`:''} onchange="setStuId(${idA},'${k}',this.value)">`;
+  let h=`<div class="casehd"><button type="button" class="b sm ghost" onclick="go('${ro&&PAGES.me_stu?'me_stu':'stu'}')">${ico('back')}學生</button>
+    <h2>${esc(s.name||'（未填姓名）')}</h2><span class="meta">${esc(s.cls)} 班 ${esc(s.seat||'')} 號・個管 ${esc(cm?cm.name:'未指定')}</span></div><div class="cgrid">`;
+  h+=`<section class="card">${secH(1,'基本資料')}<div class="form">
+    <label>班級</label>${inp('cls','w3')}<label>座號</label>${inp('seat','w2')}<label>姓名</label>${inp('name','w5')}
+    <label>個管老師</label>${ro?`<span>${esc(cm?cm.name:'—')}</span>`:`<select aria-label="個管老師" onchange="setStuId(${idA},'caseMgr',this.value)">${cmOpts(s.caseMgr)}</select>`}
+    <label>公開提醒${tip('點名時會顯示給學生看，例如「要帶課本」。')}</label>${inp('note','w12','例：要帶課本')}</div>
+    ${sets.length?`<p class="chips">${sets.map(x=>`<span class="tagv">${esc(x.name)}</span>`).join('')}</p>`:''}</section>`;
+  if(canPriv(s))h+=`<section class="card priv">${secH(2,'私密',' '+ico('lock','sm'))}<div class="form">
+    <label>個管備註</label><input type="text" class="w12" value="${esc(s.privNote||'')}" onchange="setStuId(${idA},'privNote',this.value)">
+    ${DUEF.map(([k,n])=>`<label>${n}</label><input type="date" value="${esc(s[k]||'')}"${String(s[k]||'').slice(0,7)===today().slice(0,7)?' class="warn"':''} onchange="setStuId(${idA},'${k}',this.value);render()">`).join('')}</div>
+    <p class="hint">不印出、不顯示在點名畫面。</p></section>`;
+  // 個人課表
+  const of={};M.L.forEach((x,l)=>{const sl=ST.slot[l],g=M.G[x.g];if(sl>=0&&g.stu.includes(si))of[sl]={g,l};});
+  const n=Object.keys(of).length,ps=D.periods.filter((p,pi)=>!p.extra||DAYS.some((x,di)=>of[di*M.NP+pi]));
+  h+=`<section class="card wide">${secH(3,'課程與課表',` <small>每週 ${n} 節</small>`)}`+
+    (gs.length?`<p class="chips">${gs.map(g=>`<span class="ev c${colorOf(g)}">${esc(g.name)}<small>${esc(g.t>=0?M.T[g.t].name:'')}</small></span>`).join('')}</p>`:emptyBox('還沒分組。',ro?'':`<button class="b sm" onclick="go('sched','need')">去編組</button>`))+
+    (n?`<div class="scroll"><table class="mini"><thead><tr><th></th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr></thead><tbody>${ps.map(p=>{const pi=D.periods.indexOf(p);return `<tr><th>${esc(p.name)}</th>${DAYS.map((d,di)=>{const o=of[di*M.NP+pi];return `<td>${o?`<span class="ev c${colorOf(o.g)}">${esc(o.g.name)}<small>${esc(ROOM[o.l]>=0?D.rooms[ROOM[o.l]].name:'')}</small></span>`:''}</td>`;}).join('')}</tr>`;}).join('')}</tbody></table></div>`:'')+
+    (ro?'':`<div class="bar" style="margin:12px 0 0"><button class="b sm" onclick="offSel='s:'+${idA};go('set','off')">個人不排課時段${(D.offBy['s:'+s.id]||[]).length?'（'+D.offBy['s:'+s.id].length+' 格）':''}</button></div>`)+'</section>';
+  h+=`<section class="card">${secH(4,'考評服務')}${sv.length?`<p class="chips">${sv.map(x=>`<span class="tagv">${x}</span>`).join('')}</p>`:'<p class="dim">沒有。</p>'}${ro?'':`<button class="b sm" onclick="go('exam')">段考</button>`}</section>`;
+  h+=`<section class="card">${secH(5,'出缺席')}${at?`<div class="nums">${[['應到',at.exp],['實到',at.in],['遲到',at.late],['請假',at.leave],['缺席',at.abs]].map(([k,v])=>`<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`:'<p class="dim">還沒有點名紀錄。</p>'}</section>`;
+  const rs=iepRounds().map(R=>({R,m:(R.meets||[]).find(m=>m.s===s.id)})).filter(o=>o.m);
+  h+=`<section class="card">${secH(6,'IEP 會議')}${rs.length?`<ul class="plain2">${rs.slice().reverse().map(({R,m})=>{let w='還沒排定';try{if(m.at){const f=IEP.slotInfo(D,m.at);w=IEP.fmtDate(f.date)+' '+(f.custom?'':f.name)+(m.room?'・'+m.room:'');}}catch(e){}
+      return `<li><button type="button" onclick="iepOpen(${jsArg(R.id)},'${R.quick?'quick':'plan'}')"><span>${esc(R.name||R.kind||'IEP 會議')}</span><em>${esc(w)}${ico('next')}</em></button></li>`;}).join('')}</ul>`:'<p class="dim">沒有。</p>'}</section>`;
+  // extras.js 的區段：window.STU_SECTIONS＝[{id,t,render(學生)→html}]
+  let no=6;(window.STU_SECTIONS||[]).forEach(x=>{try{const b=x.render(s);if(b==null||b==='')return;h+=`<section class="card" data-sec="${esc(x.id||'')}">${secH(++no,esc(x.t||''))}${b}</section>`;}catch(e){}});
+  h+='</div>';
+  if(!ro)h+=`<div class="bar" style="margin-top:20px"><span class="grow"></span><button class="b danger" onclick="delStu(D.students.findIndex(x=>x.id===${idA}))">刪除學生</button></div>`;
+  $('page').innerHTML=h;
+  try{if(typeof window.STU_SECTIONS_AFTER==='function')window.STU_SECTIONS_AFTER(s,$('page'));}catch(e){}
+}
+let stuDue=0;const stuChk=new Set();
+// 私密日期欄位：只在個案頁看得到，不印、不出現在點名畫面
 const DUEF=[['iepDate','IEP 會議'],['reviewDate','下次檢討'],['certExp','鑑定有效期限']];
 function dueList(){const m=today().slice(0,7);return D.students.filter(s=>DUEF.some(([k])=>String(s[k]||'').slice(0,7)===m));}
-function pnText(){const p=needList(D);return new Set(p.map(x=>x.id)).size+' 位學生的 '+p.length+' 個科目還沒編組';}
+function pnText(){const p=needList(D);return new Set(p.map(x=>x.id)).size+' 位學生 '+p.length+' 科待編組';}
 // 個管老師下拉：資源班老師在前面，其他老師收在「其他」
 function cmOpts(sel){const r=D.teachers.filter(t=>t.role==='資源班'),o=D.teachers.filter(t=>t.role!=='資源班'),op=t=>`<option value="${esc(t.id)}"${t.id===sel?' selected':''}>${esc(t.name)}</option>`;
   return '<option value="">（未指定）</option>'+r.map(op).join('')+(o.length?`<optgroup label="其他">${o.map(op).join('')}</optgroup>`:'');}
 function stuChkOne(id,on){if(on)stuChk.add(id);else stuChk.delete(id);render();}
-function stuChkAll(on){document.querySelectorAll('#page td input[type=checkbox][data-id]').forEach(el=>{if(on)stuChk.add(el.dataset.id);else stuChk.delete(el.dataset.id);});render();}
+function stuChkAll(on){document.querySelectorAll('#page td input[type=checkbox][data-id]').forEach(el=>{if(el.closest('tr').hidden)return;if(on)stuChk.add(el.dataset.id);else stuChk.delete(el.dataset.id);});render();}
 function bulkCM(){const v=$('bulkCM').value,t=D.teachers.find(x=>x.id===v),n=D.students.filter(s=>stuChk.has(s.id)).length;if(!n)return;
-  if(!confirm('把勾選的 '+n+' 位學生的個管老師都改成「'+(t?t.name:'未指定')+'」？'))return;
-  D.students.forEach(s=>{if(stuChk.has(s.id))s.caseMgr=v;});stuChk.clear();changed();render();toast('已指定 '+n+' 位學生的個管老師');}
-function renderTea(){
+  if(!confirm(n+' 位學生的個管改成「'+(t?t.name:'未指定')+'」？'))return;
+  D.students.forEach(s=>{if(stuChk.has(s.id))s.caseMgr=v;});stuChk.clear();changed();render();toast('已指定 '+n+' 位');}
+/* ───── 設定 › 學校資料 › 老師與任課：老師名冊＋各班任課老師 ───── */
+function renderTeaAll(){
   const use={};D.groups.forEach(g=>{if(g.teacher)(use[g.teacher]=use[g.teacher]||[]).push(g.name);});
   M.G.forEach(g=>g.locks.forEach(k=>{if(k.t>=0){const id=D.teachers[k.t].id;(use[id]=use[id]||[]).push(k.cls+g.subject);}}));
   for(const k in D.classSubj){const id=D.classSubj[k];(use[id]=use[id]||[]).push(k.replace('|',''));}
-  let h=`<p class="guide">除了資源班老師，也要把<b>學生原班的任課老師</b>加進來，排課才知道哪些時段會卡到他們。資源班老師會自動成為段考的監考老師。</p>
-  <div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><button class="b" onclick="pasteTL()">貼上任課老師名單</button><button class="b" onclick="go('roster','data')">上傳學校的 Excel</button><button class="b" onclick="pruneTeachers()">移除沒用到的任課老師</button><span class="stat">共 <b>${D.teachers.length}</b> 位</span></div>
-  <datalist id="roleList">${ROLES.map(r=>`<option value="${r}">`).join('')}</datalist><p class="note">身分可以自己打（例：專輔、巡迴）；只有「資源班」會被當成資源班老師與監考老師。</p>
-  <div class="scroll"><table class="ed"><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>開的課、任課班級</th><th>偏好教室</th><th>備註</th><th></th></tr>`;
+  let h=secH(1,'老師',tip('除了資源班老師，也要加學生原班的任課老師，排課才知道他們哪些時段不行。身分是「資源班」的老師會成為段考監考。身分可以自己打，例如專輔、巡迴。'))+
+  `<div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><button class="b" onclick="pasteTL()">貼上任課名單</button><button class="b" onclick="pruneTeachers()">移除沒用到的</button><span class="grow"></span><span class="stat"><b>${D.teachers.length}</b> 位</span></div>
+  <datalist id="roleList">${ROLES.map(r=>`<option value="${r}">`).join('')}</datalist>
+  <div class="card flush"><div class="scroll"><table class="ed"><thead><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>開課、任課</th><th>偏好教室</th><th>備註</th><th></th></tr></thead><tbody>`;
   D.teachers.forEach((t,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(t.name)}" onchange="setTea(${i},'name',this.value)"></td>
     <td><input type="text" class="w3" list="roleList" value="${esc(t.role)}" onchange="setTea(${i},'role',this.value||'普通班')"></td>
-    <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('sched','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
+    <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('set','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
     <td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length||''}</td>
     <td class="dim">${esc([...new Set(use[t.id]||[])].join('、'))}</td>
     <td>${t.role==='資源班'?prefCell(i):''}</td>
     <td><input type="text" class="w8" value="${esc(t.note)}" onchange="setTea(${i},'note',this.value)"></td>
     <td><button class="x" title="刪除" aria-label="刪除 ${esc(t.name)}" onclick="delTeacher(${i})">✕</button></td></tr>`;});
-  $('page').innerHTML=h+'</table></div>';
+  $('page').innerHTML=h+'</tbody></table></div></div>'+secH(2,'各班任課老師',tip('抽離課要和原班同一科同時上，所以要知道每班這一科是哪位老師。直接打名字，名冊沒有的會自動新增。'))+teachHtml();
 }
 function renderEnv(){
   const nMain=D.rooms.filter(r=>!r.spare).length,nSp=D.rooms.length-nMain;
-  let h=`<h3>教室</h3><p class="note">教室名稱可以直接改。勾「備用」的教室平常不排：同一節最多排 <b>${nMain}</b> 組（平常用的教室數）${nSp?`，真的排不下才會用到備用的 ${nSp} 間，最多 <b>${D.rooms.length}</b> 組`:''}。排課時會照這個上限，不會在同一節塞進比教室還多的課。</p>
-  <div class="bar">`+D.rooms.map((r,i)=>`<span class="stu${r.spare?' dim':''}"><input type="text" class="w5" style="border:0;background:transparent" value="${esc(r.name)}" onchange="D.rooms[${i}].name=this.value;changed()"><label class="note" style="margin:0 4px" title="平常不排，排不下才用"><input type="checkbox"${r.spare?' checked':''} onchange="D.rooms[${i}].spare=this.checked;changed();render()"> 備用</label><button class="x" onclick="delRoom(${i})">✕</button></span>`).join('')+
-  `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>${D.rooms.length?'':'<p class="note warn">還沒有教室：排課時不會限制同一節的組數。請至少新增一間。</p>'}${prefBox()}
-  <h3>作息</h3><p class="note">勾「外加」的時段（早自習、午休、第 8 節）只會排外加課；抽離課只排在一般節次。中間隔著午休的兩節（例如第 4、5 節），請在前一節勾「與下一節不相連」，連續上課和連堂才不會把它們算在一起。</p>
-  <div class="scroll"><table class="ed"><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加時段</th><th>與下一節不相連</th><th></th></tr>`;
+  let h=secH(1,'教室',tip(`勾「備用」的教室平常不排，排不下才用。同一節最多排 ${nMain} 組${nSp?`，加上備用最多 ${D.rooms.length} 組`:''}。`))+
+  `<div class="card"><div class="chips">`+D.rooms.map((r,i)=>`<span class="stu${r.spare?' dim':''}"><input type="text" class="w5 bare" aria-label="教室名稱" value="${esc(r.name)}" onchange="D.rooms[${i}].name=this.value;changed()"><label class="sm"><input type="checkbox"${r.spare?' checked':''} onchange="D.rooms[${i}].spare=this.checked;changed();render()"> 備用</label><button class="x" aria-label="刪除 ${esc(r.name)}" onclick="delRoom(${i})">✕</button></span>`).join('')+
+  `<button class="b sm" onclick="D.rooms.push({id:uid('r'),name:'新教室'});changed();render()">新增教室</button></div>${D.rooms.length?'':'<p class="hint warn">還沒有教室，排課不會限制同一節的組數。</p>'}</div>${prefBox()}
+  ${secH(prefBox()?3:2,'作息',tip('「外加」時段（早自習、午休、第 8 節）只排外加課。隔著午休的兩節，在前一節勾「不相連」，連堂才不會算在一起。'))}
+  <div class="card flush"><div class="scroll"><table class="ed"><thead><tr><th>名稱</th><th>開始</th><th>結束</th><th>外加</th><th>與下一節不相連</th><th></th></tr></thead><tbody>`;
   D.periods.forEach((p,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(p.name)}" onchange="setPer(${i},'name',this.value)"></td>
     <td><input type="time" value="${esc(p.start)}" onchange="setPer(${i},'start',this.value)"></td><td><input type="time" value="${esc(p.end)}" onchange="setPer(${i},'end',this.value)"></td>
-    <td><input type="checkbox"${p.extra?' checked':''} onchange="setPer(${i},'extra',this.checked)"></td><td>${i<D.periods.length-1?`<input type="checkbox"${p.breakAfter?' checked':''} onchange="setPer(${i},'breakAfter',this.checked||undefined)">`:''}</td><td class="nw"><button class="b sm" title="往上移" onclick="movePer(${i})"${i?'':' disabled'}>↑</button><button class="x" title="刪除" aria-label="刪除 ${esc(p.name)}" onclick="delPer(${i})">✕</button></td></tr>`;});
-  h+=`</table></div><div class="bar"><button class="b sm" onclick="D.periods.push({id:uid('p'),name:'新節次',start:'16:05',end:'16:50',extra:true});changed();render()">新增節次</button></div>
-  <h3>排課規則</h3><p class="note">每一條都可以依學校的做法開關或改數字，改完回排課頁就會照新的規則檢查衝堂。</p>
-  <div class="rules">${[['regClash','同一位任課老師，同一節不能被兩個班同時鎖課（也包含資源班老師自己兼原班任課）',true],['classClash','同一個班，同一節不能被要求上兩科',true],['roomCheck','同一節的組數不能超過教室數，指定的教室不能重複',true]].map(([k,t])=>`<label><input type="checkbox"${D.settings[k]!==false?' checked':''} onchange="D.settings.${k}=this.checked;changed()"> ${t}</label>`).join('')}
-    ${[['maxDay','同一組一天排的節數盡量不超過',1,'節（設成 2 就允許一天兩節或連堂）'],['tRun','資源班老師連續上課盡量不超過',3,'節'],['sDay','學生一天被抽離盡量不超過',3,'節']].map(([k,a,d,b])=>`<label>${a} <input type="number" min="1" max="9" class="w2" value="${D.settings[k]>0?D.settings[k]:d}" onchange="D.settings.${k}=+this.value;changed()"> ${b}</label>`).join('')}
-    <label>抽離課請教務處鎖課的方式 <select onchange="D.settings.lockMode=this.value;changed();render()"><option value="same">原班和資源班同一節上同一科</option><option value="flex"${D.settings.lockMode==='flex'?' selected':''}>彈性：鎖不到同一科就改鎖其他主科，都不行就不鎖</option></select></label>
-    ${D.settings.lockMode==='flex'?`<label>各科每週最多可以鎖幾節 <input type="text" class="w8" value="${esc(Object.keys(D.settings.lockCap||{}).map(k=>k+D.settings.lockCap[k]).join(' '))}" placeholder="國文5 英文3 數學4" onchange="setLockCap(this.value)"></label>
-    <label>鎖到只剩 1 節時要留連堂的科目 <input type="text" class="w5" value="${esc(D.settings.lockDouble||'')}" placeholder="國文" onchange="D.settings.lockDouble=this.value.trim();changed()"></label>
-    <p class="note" style="margin:0">彈性鎖課時，上面第一、二條規則改由「配鎖課」處理：同一位老師同一節只會被一個班鎖。可以改鎖的科目，是「任課老師」頁有填老師的那些科目。</p>`:''}
-    <label>上課超過 <input type="number" min="0" max="60" class="w2" value="${D.settings.grace>=0?D.settings.grace:5}" onchange="D.settings.grace=+this.value;save()"> 分鐘才到算遲到（簽到退用）</label></div>`;
+    <td><input type="checkbox" aria-label="外加"${p.extra?' checked':''} onchange="setPer(${i},'extra',this.checked)"></td><td>${i<D.periods.length-1?`<input type="checkbox" aria-label="與下一節不相連"${p.breakAfter?' checked':''} onchange="setPer(${i},'breakAfter',this.checked||undefined)">`:''}</td><td class="nw"><button class="b sm" title="往上移" aria-label="往上移" onclick="movePer(${i})"${i?'':' disabled'}>↑</button><button class="x" title="刪除" aria-label="刪除 ${esc(p.name)}" onclick="delPer(${i})">✕</button></td></tr>`;});
+  h+=`</tbody></table></div></div><div class="bar" style="margin-top:12px"><button class="b sm" onclick="D.periods.push({id:uid('p'),name:'新節次',start:'16:05',end:'16:50',extra:true});changed();render()">新增節次</button></div>`;
+  $('page').innerHTML=h;
+}
+function renderRules(){
+  let h=`<div class="card"><div class="rules">${[['regClash','同一位任課老師同一節不被兩班同時鎖課',true],['classClash','同一班同一節不上兩科',true],['roomCheck','同一節的組數不超過教室數',true]].map(([k,t])=>`<label><input type="checkbox"${D.settings[k]!==false?' checked':''} onchange="D.settings.${k}=this.checked;changed()"> ${t}</label>`).join('')}
+    ${[['maxDay','同一組一天最多',1,'節'],['tRun','老師連續上課最多',3,'節'],['sDay','學生一天抽離最多',3,'節']].map(([k,a,d,b])=>`<label>${a} <input type="number" min="1" max="9" class="w2" value="${D.settings[k]>0?D.settings[k]:d}" onchange="D.settings.${k}=+this.value;changed()"> ${b}</label>`).join('')}
+    <label>鎖課方式 <select onchange="D.settings.lockMode=this.value;changed();render()"><option value="same">原班和資源班同一節同一科</option><option value="flex"${D.settings.lockMode==='flex'?' selected':''}>彈性：鎖不到同科改鎖其他主科</option></select></label>${tip('彈性鎖課時，前兩條改由「配鎖課」處理：同一位老師同一節只會被一個班鎖。可以改鎖的科目，是「各班任課老師」有填的科目。')}
+    ${D.settings.lockMode==='flex'?`<label>各科每週最多鎖 <input type="text" class="w8" value="${esc(Object.keys(D.settings.lockCap||{}).map(k=>k+D.settings.lockCap[k]).join(' '))}" placeholder="國文5 英文3 數學4" onchange="setLockCap(this.value)"></label>
+    <label>只剩 1 節時留連堂的科目 <input type="text" class="w5" value="${esc(D.settings.lockDouble||'')}" placeholder="國文" onchange="D.settings.lockDouble=this.value.trim();changed()"></label>`:''}
+    <label>遲到：上課超過 <input type="number" min="0" max="60" class="w2" value="${D.settings.grace>=0?D.settings.grace:5}" onchange="D.settings.grace=+this.value;save()"> 分鐘</label></div></div>`;
   $('page').innerHTML=h;
 }
 function setLockCap(v){const o={};String(v).replace(/([^\d\s,，、:：]+)\s*[:：]?\s*(\d+)/g,(m,k,n)=>{o[k]=+n;});D.settings.lockCap=o;changed();render();}
-function stuCard(i){const s=D.students[i],si=M.sIdx[s.id],E=examInfo(),sv=((E&&E.sv)||{})[s.id]||[],at=attStats('0000','9999','')[s.id];
-  const gs=M.G.filter(g=>g.stu.includes(si)),cm=D.teachers.find(t=>t.id===s.caseMgr),sets=D.sets.filter(x=>x.students.includes(s.id));
-  const rows=gs.map(g=>{const ls=M.L.map((x,l)=>l).filter(l=>M.L[l].g===g.gi&&ST.slot[l]>=0).map(l=>ST.slot[l]).sort((a,b)=>a-b);return `<tr><td><b>${esc(g.name)}</b></td><td>${esc(g.t>=0?M.T[g.t].name:'')}</td><td>${esc(ls.length?slotsText(ls):'還沒排')}</td></tr>`;}).join('');
-  openDlg(`<h3>${esc(stuLabel(s))}</h3><p class="lead">${esc(s.cls)} 班 ${esc(s.seat)} 號　個管老師：${esc(cm?cm.name:'未指定')}${s.note?'<br>'+esc(s.note):''}</p>
-    <h4>資源班課程（每週 ${gs.reduce((n,g)=>n+M.L.filter((x,l)=>x.g===g.gi&&ST.slot[l]>=0).length,0)} 節）</h4>${rows?`<table class="ed" style="width:100%"><tr><th>組別</th><th>老師</th><th>上課節次</th></tr>${rows}</table>`:'<p class="note">還沒分到任何一組。</p>'}
-    <h4>考評服務</h4><p>${sv.length?sv.map(x=>`<span class="tagv">${x}</span>`).join(''):'<span class="note">沒有設定</span>'}</p>
-    <h4>出缺席</h4><p>${at?'應到 '+at.exp+'　實到 '+at.in+'　遲到 '+at.late+'　請假 '+at.leave+'　缺席 '+at.abs:'<span class="note">還沒有點名紀錄</span>'}</p>
-    ${sets.length?`<h4>學生群組</h4><p>${sets.map(x=>`<span class="tagv">${esc(x.name)}</span>`).join('')}</p>`:''}
-    ${s.privNote||DUEF.some(([k])=>s[k])?`<h4>私密（不會印出、不會出現在簽到畫面）</h4><p>${[s.privNote?esc(s.privNote):''].concat(DUEF.filter(([k])=>s[k]).map(([k,n])=>esc(n+'：'+s[k]))).filter(Boolean).join('<br>')}</p>`:''}
-    <div class="bar" style="margin:14px 0 0"><button class="b" data-id="${esc(s.id)}" onclick="offSel='s:'+this.dataset.id;closeDlg();go('sched','off')">個人不排課時段${(D.offBy['s:'+s.id]||[]).length?'（'+D.offBy['s:'+s.id].length+' 格）':''}</button><span class="grow"></span><button class="b" onclick="closeDlg()">關閉</button></div>`);}
+// 舊的「學生檢視」對話框改成個案頁
+function stuCard(i){const s=D.students[i];if(s)stuOpen(s.id);}
 function setStu(i,k,v){D.students[i][k]=String(v).trim();changed();}
-function addStu(){D.students.push({id:uid('s'),cls:'',seat:'',name:'',caseMgr:'',note:''});changed();render();$('main').scrollTo(0,1e6);}
-function delStu(i){const s=D.students[i];if(!s||!confirm('確定刪除 '+stuLabel(s)+'？\n會從所屬組別移除，段考考場裡他的考評服務也會一起清掉。'))return;
+function addStu(){const s={id:uid('s'),cls:'',seat:'',name:'',caseMgr:'',note:''};D.students.push(s);changed();stuOpen(s.id);}
+function delStu(i){const s=D.students[i];if(!s||!confirm('刪除 '+stuLabel(s)+'？\n組別和段考的考評服務也會一起清掉。'))return;
   const before=JSON.stringify(D);snapshot('刪除 '+stuLabel(s)+' 之前');stuChk.delete(s.id);
-  D.groups.forEach(g=>{g.students=g.students.filter(id=>id!==s.id);});D.students.splice(i,1);D.gone=(D.gone||[]).concat([s.id]).slice(-500);delete D.offBy['s:'+s.id];D.sets.forEach(x=>{x.students=x.students.filter(id=>id!==s.id);});changed();render();undoToast(stuLabel(s),before);}
+  D.groups.forEach(g=>{g.students=g.students.filter(id=>id!==s.id);});D.students.splice(i,1);D.gone=(D.gone||[]).concat([s.id]).slice(-500);delete D.offBy['s:'+s.id];D.sets.forEach(x=>{x.students=x.students.filter(id=>id!==s.id);});changed();
+  if(page==='stu'&&sub==='case')go('stu');else render();undoToast(stuLabel(s),before);}
 function setTea(i,k,v){const t=D.teachers[i];t[k]=String(v).trim();
-  if(k==='name'&&!(t.off||[]).length&&D.offPool&&D.offPool[t.name]){t.off=D.offPool[t.name].slice();toast('帶入 '+t.name+' 先前匯入的不排課時段 '+t.off.length+' 格');}
+  if(k==='name'&&!(t.off||[]).length&&D.offPool&&D.offPool[t.name]){t.off=D.offPool[t.name].slice();toast('帶入 '+t.name+' 的不排課 '+t.off.length+' 格');}
   changed();if(k==='role')render();}
-function addTeacher(){D.teachers.push({id:uid('t'),name:'新老師',role:'普通班',off:[],note:''});changed();render();$('main').scrollTo(0,1e6);}
+function addTeacher(){D.teachers.push({id:uid('t'),name:'新老師',role:'普通班',off:[],note:''});changed();render();const a=document.querySelectorAll('#page table.ed')[0];if(a){const r=a.querySelector('tbody tr:last-child input');if(r){r.focus();r.select();}}}
 // 刪老師：他有個管學生時先問誰接手，不要默默把個管清空
 function delTeacher(i){const t=D.teachers[i];if(!t)return;const cs=D.students.filter(s=>s.caseMgr===t.id).sort(sortStu);
-  if(!cs.length){if(confirm('確定刪除 '+t.name+'？他負責的組別與任課設定會變成未指定。'))delTeaDo(t.id,'');return;}
+  if(!cs.length){if(confirm('刪除 '+t.name+'？他的組別和任課會變成未指定。'))delTeaDo(t.id,'');return;}
   const others=D.teachers.filter(x=>x.role==='資源班'&&x.id!==t.id);
-  openDlg(`<h3>刪除 ${esc(t.name)}</h3><p class="note">他是下面 ${cs.length} 位學生的個管老師。刪除之前，請選誰接手（他負責的組別與任課設定會變成未指定）：</p>
-    <p>${cs.map(s=>`<span class="tagv">${esc(stuLabel(s))}</span>`).join(' ')}</p>
-    <div class="bar"><label class="note" style="margin:0">接手的個管老師 <select id="delTo"><option value="">先不指定</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></label></div>
-    <div class="bar" style="margin:12px 0 0"><button class="b danger" data-id="${esc(t.id)}" onclick="const v=$('delTo').value;closeDlg();delTeaDo(this.dataset.id,v)">刪除</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  openDlg(`<h3>刪除 ${esc(t.name)}</h3><p class="lead">他是 ${cs.length} 位學生的個管。誰接手？</p>
+    <p class="chips">${cs.map(s=>`<span class="tagv">${esc(stuLabel(s))}</span>`).join(' ')}</p>
+    <div class="bar"><select id="delTo" aria-label="接手的個管老師"><option value="">先不指定</option>${others.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></div>
+    <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b danger" data-id="${esc(t.id)}" onclick="const v=$('delTo').value;closeDlg();delTeaDo(this.dataset.id,v)">刪除</button></div>`);}
 function delTeaDo(id,to){const i=D.teachers.findIndex(x=>x.id===id),t=D.teachers[i];if(!t)return;const before=JSON.stringify(D);snapshot('刪除 '+t.name+' 之前');
   D.groups.forEach(g=>{if(g.teacher===t.id)g.teacher='';});for(const k in D.classSubj)if(D.classSubj[k]===t.id)delete D.classSubj[k];
   D.students.forEach(s=>{if(s.caseMgr===t.id)s.caseMgr=to||'';});if(offSel==='t:'+t.id)offSel='*';if(view===t.id)view='';D.teachers.splice(i,1);changed();render();undoToast(t.name,before);}
-function delRoom(i){const r=D.rooms[i];if(!r||!confirm('確定刪除『'+r.name+'』？指定這間的課會改成自動安排。'))return;const before=JSON.stringify(D);snapshot('刪除 '+r.name+' 之前');
+function delRoom(i){const r=D.rooms[i];if(!r||!confirm('刪除「'+r.name+'」？指定這間的課會改成自動安排。'))return;const before=JSON.stringify(D);snapshot('刪除 '+r.name+' 之前');
   D.groups.forEach(g=>{if(g.room===r.id)g.room='';});D.rooms.splice(i,1);changed();render();undoToast(r.name,before);}
 function setPer(i,k,v){D.periods[i][k]=v;changed();}
 function movePer(i){if(i<1)return;const a=D.periods;[a[i-1],a[i]]=[a[i],a[i-1]];changed();render();}
-function delPer(i){if(D.periods.length<2)return;if(!confirm('確定刪除「'+D.periods[i].name+'」？排在這一節的課會變成還沒排。'))return;D.periods.splice(i,1);changed();render();}
+function delPer(i){if(D.periods.length<2)return;if(!confirm('刪除「'+D.periods[i].name+'」？這一節的課會變成沒排。'))return;D.periods.splice(i,1);changed();render();}
 // 每個對話框右上角都有 ✕；Esc 也會關（dialog 本來就支援）
-function openDlg(html,done){$('dlgBody').innerHTML='<button type="button" class="dlg-x" aria-label="關閉" onclick="closeDlg()">✕</button>'+html;dlgDone=done||null;if(!$('dlg').open)$('dlg').showModal();}
+function openDlg(html,done){document.getElementById('dlgBody').innerHTML='<button type="button" class="dlg-x" aria-label="關閉" onclick="closeDlg()">✕</button>'+html;dlgDone=done||null;if(!$('dlg').open)$('dlg').showModal();}
 function closeDlg(){$('dlg').close();}
 $('dlg').addEventListener('close',()=>{const f=dlgDone;dlgDone=null;if(f)f();});
-function pasteStu(){openDlg(`<h3>從 Excel 貼上名單</h3><p class="note">在 Excel 選取「班級、座號、姓名」複製後貼到下面。</p>
-  <details class="note"><summary>怎麼做？</summary>後面可以再多一欄<b>個管老師</b>、一欄<b>備註</b>。「701-13」或「701-13王小明」寫在同一格也可以；有標題列時會照標題找欄位（也認得「導師」欄）。每行一位，同班同名的會更新，不會重複新增；座號相同但名字不同的會另外新增，再列出來讓你確認。名冊裡沒有的個管老師會自動建成資源班老師。</details>
+function pasteStu(){openDlg(`<h3>貼上名單</h3><div class="lead">從 Excel 複製「班級、座號、姓名」貼上。${tip('可以多一欄個管老師、一欄備註。「701-13王小明」寫在同一格也可以；有標題列會照標題找欄位。同班同名的會更新；座號相同但名字不同的會另外新增並列出來。名冊沒有的個管會建成資源班老師。')}</div>
   <textarea id="pasteBox" placeholder="701&#9;03&#9;王小明&#10;701&#9;10&#9;陳小華"></textarea>
-  <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="pasteStuOk()">加入名冊</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="pasteStuOk()">加入</button></div>`);}
 function pasteStuOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上學生名單之前');const r=importStudents(D,txt);
-  changed();closeDlg();render();const msg='新增 '+r.add+' 人，更新 '+r.upd+' 人'+(r.cm?'，指定個管老師 '+r.cm+' 人':'')+(r.skip?'，略過 '+r.skip+' 行（看起來不是學生資料）':'');
+  changed();closeDlg();render();const msg='新增 '+r.add+' 人、更新 '+r.upd+' 人'+(r.cm?'、個管 '+r.cm+' 人':'')+(r.skip?'；略過 '+r.skip+' 行':'');
   if(r.conflict.length||r.newCM.length||r.noCM.length)stuImportDlg(msg,r);else toast(msg);}
 // 學生名單匯入後要人確認的：座號相同但姓名不同、新建的個管老師
-function stuImportHtml(r){return (r.conflict.length?`<h4>座號相同但姓名不同（可能是轉入或換座號），已另外新增，請確認是否要刪掉舊的</h4><ul class="plain">${r.conflict.map(c=>`<li data-old="${esc(c.old)}">${esc(c.text)} <button class="b sm danger" data-id="${esc(c.old)}" onclick="delOldStu(this)">刪掉舊的（${esc(c.oldName)}）</button></li>`).join('')}</ul>`:'')+
-  (r.newCM.length?`<h4>新建立的個管老師（資源班）</h4><p class="note">名冊裡原本沒有，已經新增為資源班老師：${r.newCM.map(esc).join('、')}。名字打錯的話，到「名冊 › 老師」改或刪掉。</p>`:'')+
+function stuImportHtml(r){return (r.conflict.length?`<h4>座號相同、姓名不同（已另外新增）</h4><ul class="plain">${r.conflict.map(c=>`<li data-old="${esc(c.old)}">${esc(c.text)} <button class="b sm danger" data-id="${esc(c.old)}" onclick="delOldStu(this)">刪掉舊的（${esc(c.oldName)}）</button></li>`).join('')}</ul>`:'')+
+  (r.newCM.length?`<h4>新增的資源班老師</h4><p>${r.newCM.map(esc).join('、')}</p>`:'')+
   (r.noCM.length?`<h4>找不到的個管老師</h4><p>${r.noCM.map(esc).join('、')}</p>`:'');}
-function stuImportDlg(msg,r){openDlg(`<h3>名單已帶入</h3><p class="note">${esc(msg)}</p>${stuImportHtml(r)}<div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);}
+function stuImportDlg(msg,r){openDlg(`<h3>名單已帶入</h3><p class="lead">${esc(msg)}</p>${stuImportHtml(r)}<div class="bar end"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);}
 // 從匯入結果直接刪掉舊的那位（不關掉對話框，可以一筆一筆處理）
 function delOldStu(btn){const id=btn.dataset.id,i=D.students.findIndex(s=>s.id===id),s=D.students[i];if(!s){btn.disabled=true;return;}
-  if(!confirm('刪掉名冊裡原本的 '+stuLabel(s)+'？\n他所屬的組別、不排課時段也會一起移除。'))return;snapshot('刪除 '+stuLabel(s)+' 之前');
+  if(!confirm('刪掉原本的 '+stuLabel(s)+'？'))return;snapshot('刪除 '+stuLabel(s)+' 之前');
   D.groups.forEach(g=>{g.students=g.students.filter(x=>x!==id);});D.students.splice(i,1);D.gone=(D.gone||[]).concat([id]).slice(-500);delete D.offBy['s:'+id];D.sets.forEach(x=>{x.students=x.students.filter(y=>y!==id);});
   changed();render();btn.disabled=true;btn.textContent='已刪除';}
 
 /* ───── 排課｜分組 ───── */
 function grpCard(g,i,byId,grs){const c=M.G[i];
   let h=`<div class="gc${g.on===false?' off':''}"><div class="hd"><input type="text" class="nm" value="${esc(g.name)}" placeholder="課名" onchange="setGrp(${i},'name',this.value)">
-      <label class="note" style="margin:0;white-space:nowrap"><input type="checkbox"${g.on!==false?' checked':''} onchange="setGrp(${i},'on',this.checked)"> 要排</label><button class="x" title="刪除這門課" aria-label="刪除 ${esc(g.name)}" onclick="delGroup(${i})">✕</button></div>
+      <label class="sm nw"><input type="checkbox"${g.on!==false?' checked':''} onchange="setGrp(${i},'on',this.checked)"> 要排</label><button class="x" title="刪除這門課" aria-label="刪除 ${esc(g.name)}" onclick="delGroup(${i})">✕</button></div>
     <div class="f"><span>科目</span><input type="text" list="subjList" value="${esc(g.subject)}" onchange="setGrp(${i},'subject',this.value)">
       <span>每週節數</span><input type="number" min="0" max="15" value="${g.per}" onchange="setGrp(${i},'per',+this.value)">
       <span>老師</span><select onchange="setGrp(${i},'teacher',this.value)">${tOpts(g.teacher,'res')}</select>
@@ -287,28 +430,26 @@ function grpCard(g,i,byId,grs){const c=M.G[i];
     <div class="sec">學生（${g.students.length} 人）</div><div>`+
       g.students.map(id=>byId[id]).filter(Boolean).sort(sortStu).map(s=>`<span class="stu">${esc(stuLabel(s))}<button class="x" title="從這門課拿掉" aria-label="從這門課拿掉 ${esc(s.name)}" data-id="${esc(s.id)}" onclick="togGS(${i},this.dataset.id);render()">✕</button></span>`).join('')+
       `<button class="b sm" onclick="pickStu(${i})">選學生</button></div>`;
-  if(c.need&&c.cls.length){h+=`<div class="sec">原班的${esc(g.subject)}任課老師</div>`+c.cls.map(cl=>`<div class="cs2"><span>${esc(cl)}</span><select data-k="${esc(cl+'|'+g.subject)}" onchange="setCS(this)">${tOpts(D.classSubj[cl+'|'+g.subject],'reg')}</select></div>`).join('');}
+  if(c.need&&c.cls.length){h+=`<div class="sec">原班${esc(g.subject)}老師</div>`+c.cls.map(cl=>`<div class="cs2"><span>${esc(cl)}</span><select data-k="${esc(cl+'|'+g.subject)}" onchange="setCS(this)">${tOpts(D.classSubj[cl+'|'+g.subject],'reg')}</select></div>`).join('');}
   const w=c.warn.filter(x=>x!=='還沒有學生');
-  h+=g.on===false?'':w.length?`<div class="st warn">${w.map(x=>'<div>'+esc(x)+'</div>').join('')}</div>`:`<div class="st">可以排的時段有 ${c.alist.length} 格，要排 ${c.per} 節${g.students.length?'':'；學生之後再編進來'}</div>`;
+  h+=g.on===false?'':w.length?`<div class="st warn">${w.map(x=>'<div>'+esc(x)+'</div>').join('')}</div>`:`<div class="st">可排 ${c.alist.length} 格・要排 ${c.per} 節</div>`;
   return h+'</div>';}
 function hoursOf(id){return D.groups.reduce((n,g)=>n+(g.teacher===id&&g.on!==false?g.per:0),0);}
 function renderGroups(){
   const subj=[...new Set(D.groups.map(g=>g.subject).concat(['國文','數學','英文']))],byId={};D.students.forEach(s=>{byId[s.id]=s;});
   let grs=[...new Set(D.students.map(s=>gradeOfCls(s.cls)))].filter(x=>GRADE[x]).sort();if(!grs.length)grs=[7,8,9];
   const list=D.teachers.filter(t=>t.role==='資源班'||D.groups.some(g=>g.teacher===t.id)),ids=new Set(list.map(t=>t.id)),lone=D.groups.map((g,i)=>i).filter(i=>!ids.has(D.groups[i].teacher));
-  let h=`<p class="guide">先填每位資源班老師的<b>基本鐘點</b>，再替他開課，把節數補到剛好。</p>
-  <details class="note"><summary>怎麼做？</summary>這時候課裡可以還沒有學生。開好課之後，到「任課老師」填各班原班老師、到「不排課時段」點時間，再到「學生編組」決定每位學生每一科去哪一門課，系統會把學生放進不衝堂的課。也可以按「貼上課程一覽表」把學校的表整張帶進來。</details>
-  <div class="bar"><button class="b" onclick="pasteCourses()">貼上課程一覽表</button><button class="b" onclick="pasteGroups()">貼上現成的分組表</button><span class="stat">共 <b>${D.groups.length}</b> 門課、每週 <b>${M.L.length}</b> 節</span></div>
+  let h=`<div class="bar"><button class="b" onclick="pasteCourses()">貼上課程一覽表</button><button class="b" onclick="pasteGroups()">貼上分組表</button>${tip('先填每位老師的基本鐘點，再替他開課，把節數補到剛好。課裡可以先沒有學生，之後到「② 編組」再放。')}<span class="grow"></span><span class="stat"><b>${D.groups.length}</b> 門課・每週 <b>${M.L.length}</b> 節</span></div>
   <datalist id="subjList">${subj.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
-  if(!list.length)h+=`<div class="probs">還沒有資源班老師。<button class="b sm" onclick="addTeacherHere('資源班');go('sched','groups')">新增一位資源班老師</button></div>`;
+  if(!list.length)h+=emptyBox('還沒有資源班老師。',`<button class="b sm" onclick="addTeacherHere('資源班');go('sched','groups')">新增老師</button>`);
   list.forEach(t=>{const ti=D.teachers.indexOf(t),n=hoursOf(t.id),hr=+t.hours||0,d=hr-n;
     h+=`<section class="tsec"><div class="thd"><b>${esc(t.name)}</b><label>基本鐘點 <input type="number" min="0" max="40" class="w2" value="${hr||''}" placeholder="未填" onchange="D.teachers[${ti}].hours=+this.value||0;changed();render()"> 節</label>
       <div class="hb"><i class="${hr&&d<0?'over':''}" style="width:${hr?Math.min(100,Math.round(n/hr*100)):n?100:0}%"></i></div>
-      <span class="hs ${!hr?'':d===0?'ok':'warn'}">已開 ${n} 節${!hr?'':d>0?'，還差 '+d+' 節':d<0?'，超出 '+(-d)+' 節（超鐘點）':'，剛好'}</span>
-      <button class="b sm pri" data-id="${esc(t.id)}" onclick="addGroup(this.dataset.id)">替他開一門課</button></div><div class="cards">`+
+      <span class="hs ${!hr?'':d===0?'ok':'warn'}">已開 ${n} 節${!hr?'':d>0?'・差 '+d:d<0?'・超出 '+(-d):'・剛好'}</span>
+      <button class="b sm" data-id="${esc(t.id)}" onclick="addGroup(this.dataset.id)">開課</button></div><div class="cards">`+
       D.groups.map((g,i)=>g.teacher===t.id?grpCard(g,i,byId,grs):'').join('')+`</div></section>`;});
-  if(lone.length)h+=`<section class="tsec"><div class="thd"><b>還沒指定老師的課</b><span class="hs warn">共 ${lone.reduce((n,i)=>n+D.groups[i].per,0)} 節，請在卡片上選老師</span></div><div class="cards">`+lone.map(i=>grpCard(D.groups[i],i,byId,grs)).join('')+`</div></section>`;
-  h+=`<div class="bar"><button class="b" onclick="addGroup('')">新增一門還沒指定老師的課</button></div>`;
+  if(lone.length)h+=`<section class="tsec"><div class="thd"><b>沒有老師的課</b><span class="hs warn">${lone.reduce((n,i)=>n+D.groups[i].per,0)} 節</span></div><div class="cards">`+lone.map(i=>grpCard(D.groups[i],i,byId,grs)).join('')+`</div></section>`;
+  h+=`<div class="bar"><button class="b sm" onclick="addGroup('')">新增一門課</button></div>`;
   $('page').innerHTML=h;
 }
 function setGrp(i,k,v){D.groups[i][k]=typeof v==='string'?v.trim():v;D=normalize(D);changed();render();}
@@ -320,46 +461,46 @@ function renderNeed(){
   const on=D.groups.filter(g=>g.on!==false),subs=[...new Set(on.map(g=>g.subject))],grs=[...new Set(D.students.map(s=>gradeOfCls(s.cls)))].filter(x=>GRADE[x]).sort();
   const pend=needList(D),pk=new Set(pend.map(n=>n.id+'|'+n.subject)),tn=g=>{const t=D.teachers.find(x=>x.id===g.teacher);return t?'｜'+t.name:'';};
   renderNeed.subs=subs;
-  let h=`<p class="guide">老師的課開好之後，在這裡決定<b>每位學生每一科要去哪一門課</b>。不確定就選「待安排」，按<b>自動編組</b>（或排課頁的一鍵排課）時，系統會把他放進同科目、同年級、放進去不會衝堂而且人數最平均的課。也可以直接指定。</p>`;
-  if(!subs.length){$('page').innerHTML=h+`<div class="probs">還沒有開課。請先到「老師開課」替老師開課，這裡就會列出各科目。</div>`;return;}
-  h+=`<div class="bar"><button class="b pri" onclick="autoPlace()">自動編組</button><button class="b" onclick="undo()">復原</button><select onchange="needG=this.value;render()"><option value="">全部年級</option>${grs.map(x=>`<option value="${x}"${String(x)===needG?' selected':''}>${GRADE[x]}</option>`).join('')}</select>
-    <span class="stat${pend.length?' bad':''}">待安排：<b>${new Set(pend.map(n=>n.id)).size}</b> 位學生的 ${pend.length} 個科目</span></div>
-  <div class="scroll"><table class="ed need"><tr><th>學生</th>${subs.map(x=>`<th>${esc(x)}</th>`).join('')}</tr>`;
-  D.students.forEach((s,i)=>{if(needG&&gradeOfCls(s.cls)!==+needG)return;
+  let h='';
+  if(!subs.length){$('page').innerHTML=emptyBox('還沒有開課。',`<button class="b sm" onclick="go('sched','groups')">去開課</button>`);return;}
+  h+=`<div class="bar"><button class="b pri" onclick="autoPlace()">自動編組</button><button class="b" onclick="undo()">復原</button><select aria-label="年級" onchange="needG=this.value;render()"><option value="">全部年級</option>${grs.map(x=>`<option value="${x}"${String(x)===needG?' selected':''}>${GRADE[x]}</option>`).join('')}</select>
+    ${tip('不確定就選「待安排」，自動編組會放進同科目、同年級、不衝堂、人數最平均的課。')}<span class="grow"></span><span class="stat${pend.length?' bad':''}">待安排 <b>${new Set(pend.map(n=>n.id)).size}</b> 人・${pend.length} 科</span></div>
+  <div class="card flush"><div class="scroll"><table class="ed need"><thead><tr><th>學生</th>${subs.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>`;
+  D.students.map((s,i)=>({s,i})).sort((a,b)=>sortStu(a.s,b.s)).forEach(({s,i})=>{if(needG&&gradeOfCls(s.cls)!==+needG)return;
     h+=`<tr><td class="nw"><b>${esc(stuLabel(s))}</b></td>`+subs.map((sj,j)=>{const cur=on.find(g=>g.subject===sj&&g.students.includes(s.id)),p=pk.has(s.id+'|'+sj),c=candidates(D,s,sj),rest=on.filter(g=>g.subject===sj&&!c.includes(g));
       const op=g=>`<option value="${esc(g.id)}"${g===cur?' selected':''}>${esc(g.name+tn(g))}（${g.students.length} 人）</option>`;
       return `<td><select class="${p?'pend':cur?'':'none'}" onchange="setNeed(${i},${j},this.value)"><option value="">不上</option><option value="?"${p?' selected':''}>待安排</option>${c.map(op).join('')}${rest.length?'<optgroup label="其他年級的課">'+rest.map(op).join('')+'</optgroup>':''}</select></td>`;}).join('')+'</tr>';});
-  $('page').innerHTML=h+'</table></div>';
+  $('page').innerHTML=h+'</tbody></table></div></div>';
 }
 function setNeed(i,j,v){const s=D.students[i],sj=renderNeed.subs[j];if(!s||sj==null)return;
   D.groups.forEach(g=>{if(g.subject===sj)g.students=g.students.filter(id=>id!==s.id);});s.needs=(s.needs||[]).filter(x=>x!==sj);
   if(v){s.needs.push(sj);const g=D.groups.find(x=>x.id===v);if(g)g.students.push(s.id);}changed();render();}
 function autoPlace(){if(!needList(D).length){toast('沒有待安排的學生');return;}pushUndo();const r=placeStudents(D);changed();render();
   const o=[];evaluate(M,ST.slot,o);const v=o.filter(x=>x.k!=='un').length;
-  toast('已把學生編進 '+r.placed+' 個科目的課'+(r.left.length?'；'+r.left.length+' 個科目找不到同科目同年級的課':'')+(v?'；課表有 '+v+' 個衝突，請到排課頁按一鍵排課修正':''));}
+  toast('編好 '+r.placed+' 科'+(r.left.length?'；'+r.left.length+' 科找不到課':'')+(v?'；課表有 '+v+' 個衝突':''));}
 
 /* ───── 排課｜AI 排課（現在用複製貼上；接上 API 之後只要換掉 aiCopy 到 aiOk 中間這一段）───── */
-function aiOpen(){openDlg(`<h3>用 AI 排課</h3><p class="note">系統把目前的老師、開課、不排課時段和待安排的學生整理成一段題目，<b>人名都換成代號</b>（S1、T1…），貼給 AI 請它排。AI 回覆的結果貼回來後，一樣會經過這裡的衝堂檢查，有問題再按一鍵排課修正。</p>
-  <div class="bar"><button class="b pri" onclick="aiCopy()">1. 複製題目</button><span class="note" style="margin:0">貼到 Claude 等 AI 對話</span></div>
-  <textarea id="aiBox" placeholder="2. 把 AI 回覆的整段文字貼在這裡"></textarea>
-  <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="aiOk()">3. 套用並檢查衝堂</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function aiCopy(){const t=aiPrompt(D);aiCopy.v=aiProblem(D).v;const fb=()=>{const b=$('aiBox');b.value=t;b.select();toast('沒辦法自動複製，請手動複製下面的文字，貼給 AI 後再把這格換成它的回覆');};
-  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>toast('題目已複製（'+t.length+' 字），人名都換成代號了'),fb);else fb();}
+function aiOpen(){openDlg(`<h3>用 AI 排課</h3><div class="lead">複製題目貼給 AI，再把回覆貼回來。${tip('人名都換成代號（S1、T1…）。貼回來的排法會先做衝堂檢查，比現在好才能套用。')}</div>
+  <div class="bar"><button class="b" onclick="aiCopy()">① 複製題目</button></div>
+  <textarea id="aiBox" placeholder="② 貼上 AI 的回覆"></textarea>
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="aiOk()">③ 檢查並套用</button></div>`);}
+function aiCopy(){const t=aiPrompt(D);aiCopy.v=aiProblem(D).v;const fb=()=>{const b=$('aiBox');b.value=t;b.select();toast('請手動複製下面的文字');};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>toast('已複製題目'),fb);else fb();}
 // 貼回來的排法和 Gemini 的一樣只是候選：在複本上檢查，比現在好才給套用（gmOffer 在檔案後面的 Gemini 區塊）
-function aiOk(){const txt=$('aiBox').value;if(!txt.trim()){toast('請先貼上 AI 的回覆');return;}
+function aiOk(){const txt=$('aiBox').value;if(!txt.trim()){toast('先貼上 AI 的回覆');return;}
   const v=aiCopy.v,id=GEMINI.logAdd({kind:'paste',model:'外部 AI',mode:'paste',prompt:'（複製出去的題目，版本 '+(v||'不明')+'）',reply:txt});
-  openDlg('<h3>AI 的排法</h3><div id="gmRes"></div><div class="bar" style="margin:12px 0 0"><button class="b" onclick="closeDlg()">關閉</button></div>');
+  openDlg('<h3>AI 的排法</h3><div id="gmRes"></div><div class="bar end"><button class="b" onclick="closeDlg()">關閉</button></div>');
   gmOffer(JSON.parse(JSON.stringify(D)),txt,v,true,id,$('gmRes'));}
-function delGroup(i){const g=D.groups[i];if(!g||!confirm('確定刪除「'+g.name+'」？'))return;const before=JSON.stringify(D);snapshot('刪除 '+g.name+' 之前');D.groups.splice(i,1);changed();render();undoToast(g.name,before);}
+function delGroup(i){const g=D.groups[i];if(!g||!confirm('刪除「'+g.name+'」？'))return;const before=JSON.stringify(D);snapshot('刪除 '+g.name+' 之前');D.groups.splice(i,1);changed();render();undoToast(g.name,before);}
 function setCS(el){if(el.value)D.classSubj[el.dataset.k]=el.value;else delete D.classSubj[el.dataset.k];changed();render();}
 // 把學生從課裡拿掉：如果他這一科已經沒有別的課，問是不上了、還是改成待安排。
 // 不問的話 needs 裡還有這一科，一鍵排課又會把他放回去
 function togGS(i,id){const g=D.groups[i],a=g.students,k=a.indexOf(id);if(k>=0){a.splice(k,1);askDrop([{id,subject:g.subject}]);}else a.push(id);changed();}
 function dropAsk(list){return list.filter(o=>{const s=D.students.find(x=>x.id===o.id);return s&&(s.needs||[]).includes(o.subject)&&!D.groups.some(g=>g.subject===o.subject&&g.students.includes(o.id));});}
 function askDrop(list){const L=dropAsk(list);if(!L.length)return;askDrop.L=L;
-  openDlg(`<h3>是不上這科了，還是改成待安排？</h3><p class="note">下面的學生這一科已經沒有在任何一門課裡。「待安排」的話，按一鍵排課或自動編組時會再幫他找一門課。</p>
-    <table class="ed" style="width:100%"><tr><th>學生</th><th>科目</th><th></th></tr>${L.map((o,j)=>{const s=D.students.find(x=>x.id===o.id);return `<tr><td>${esc(stuLabel(s))}</td><td>${esc(o.subject)}</td><td class="nw"><label><input type="radio" name="drop${j}" value="no" checked> 不上這科了</label>　<label><input type="radio" name="drop${j}" value="wait"> 改成待安排</label></td></tr>`;}).join('')}</table>
-    <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="askDropOk()">確定</button></div>`,render);}
+  openDlg(`<h3>不上這科，還是待安排？</h3><p class="lead">這些學生這一科已經不在任何一門課裡。</p>
+    <table class="ed" style="width:100%"><tr><th>學生</th><th>科目</th><th></th></tr>${L.map((o,j)=>{const s=D.students.find(x=>x.id===o.id);return `<tr><td>${esc(stuLabel(s))}</td><td>${esc(o.subject)}</td><td class="nw"><label><input type="radio" name="drop${j}" value="no" checked> 不上</label>　<label><input type="radio" name="drop${j}" value="wait"> 待安排</label></td></tr>`;}).join('')}</table>
+    <div class="bar end"><button class="b pri" onclick="askDropOk()">確定</button></div>`,render);}
 function askDropOk(){(askDrop.L||[]).forEach((o,j)=>{const r=document.querySelector('input[name="drop'+j+'"]:checked'),s=D.students.find(x=>x.id===o.id);
   if(s&&(!r||r.value==='no'))s.needs=(s.needs||[]).filter(x=>x!==o.subject);});askDrop.L=null;changed();closeDlg();}
 function pickStu(i){const g=D.groups[i],same={};
@@ -370,13 +511,13 @@ function pickStu(i){const g=D.groups[i],same={};
 // offSel：'*' 全校、'g:7' 年級、'x:id' 學生群組、'c:701' 班級、's:id' 學生個人、't:id' 老師
 function offTarget(){
   const k=offSel,id=k.slice(2),ob=n=>(D.offBy[n]=D.offBy[n]||[]);
-  if(k==='*')return {arr:D.blocked,name:'全校共同不排',hint:'所有年級、所有組別都不排的時段，例如全校週會。'};
-  if(k[0]==='g'&&GRADE[id])return {arr:ob(k),name:GRADE[id],hint:'這個年級的學生都不能被抽離的時段，例如社團、班會、彈性課程。各年級時間不一樣就分開點。',up:['*']};
-  if(k[0]==='c')return {arr:ob(k),name:id+' 班',hint:'只有這一班不能被抽離的時段。',up:['*','g:'+gradeOfCls(id)]};
-  if(k[0]==='k')return {arr:ob(k),name:id+' 班（不能鎖課）',hint:'這一班這些時段不能請教務處鎖課（例：導師時間、本土語、特色課程）。需要鎖課的抽離課會盡量避開；不用鎖課的課（例：社會技巧）仍然可以排。',up:['*','g:'+gradeOfCls(id),'c:'+id]};
-  if(k[0]==='s'){const s=D.students.find(x=>x.id===id);if(s)return {arr:ob(k),name:stuLabel(s),hint:'這位學生個人不能被抽離的時段，例如巡迴輔導、治療、校隊練習。',up:['*','g:'+gradeOfCls(s.cls),'c:'+s.cls].concat(D.sets.filter(x=>x.students.includes(id)).map(x=>'x:'+x.id))};}
-  if(k[0]==='x'){const x=D.sets.find(o=>o.id===id);if(x)return {arr:x.off,name:x.name,hint:'這一群學生共同不能被抽離的時段。有他們在的組別，這些時段都不會排。',set:x,up:['*']};}
-  if(k[0]==='t'){const t=D.teachers.find(o=>o.id===id);if(t)return {arr:t.off,name:t.name,hint:'格子裡的字是他現在已經排到的課。',tea:t,up:['*']};}
+  if(k==='*')return {arr:D.blocked,name:'全校共同不排',hint:'例：全校週會。'};
+  if(k[0]==='g'&&GRADE[id])return {arr:ob(k),name:GRADE[id],hint:'例：社團、班會。',up:['*']};
+  if(k[0]==='c')return {arr:ob(k),name:id+' 班',hint:'',up:['*','g:'+gradeOfCls(id)]};
+  if(k[0]==='k')return {arr:ob(k),name:id+' 班（不能鎖課）',hint:'不能鎖課的時段（例：導師時間）。社會技巧這類不鎖課的課仍可排。',up:['*','g:'+gradeOfCls(id),'c:'+id]};
+  if(k[0]==='s'){const s=D.students.find(x=>x.id===id);if(s)return {arr:ob(k),name:stuLabel(s),hint:'例：巡迴輔導、治療。',up:['*','g:'+gradeOfCls(s.cls),'c:'+s.cls].concat(D.sets.filter(x=>x.students.includes(id)).map(x=>'x:'+x.id))};}
+  if(k[0]==='x'){const x=D.sets.find(o=>o.id===id);if(x)return {arr:x.off,name:x.name,hint:'',set:x,up:['*']};}
+  if(k[0]==='t'){const t=D.teachers.find(o=>o.id===id);if(t)return {arr:t.off,name:t.name,hint:'格子裡是他已經排到的課。',tea:t,up:['*']};}
   offSel='*';return offTarget();
 }
 function offKeys(k){if(k==='*')return D.blocked;if(k[0]==='x'){const x=D.sets.find(o=>o.id===k.slice(2));return x?x.off:[];}if(k[0]==='t'){const t=D.teachers.find(o=>o.id===k.slice(2));return t?t.off:[];}return D.offBy[k]||[];}
@@ -398,112 +539,109 @@ function renderOff(){
   const up=new Set((T.up||[]).flatMap(offKeys)),grps=['全校','年級','學生群組','班級與個人','資源班老師','其他老師'];
   const cls=[...new Set(D.students.map(s=>String(s.cls)))].filter(Boolean).sort();
   const btn=o=>`<button class="${offSel===o.k?'on':''}" data-k="${esc(o.k)}" onclick="offSel=this.dataset.k;render()"><span>${esc(o.name)}${o.sub?` <small>${esc(o.sub)}</small>`:''}</span><small>${o.n?o.n+' 格':''}</small></button>`;
-  const extra={'學生群組':`<button class="add" onclick="addSet()">＋ 新增群組（例：技藝班）</button>`,
-    '班級與個人':`<select onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 選一個班級…</option>${cls.map(c=>`<option value="c:${esc(c)}">${esc(c)} 班</option>`).join('')}</select>
-      <select onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 班級不能鎖課的時段…</option>${cls.map(c=>`<option value="k:${esc(c)}">${esc(c)} 班</option>`).join('')}</select>
-      <select onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 選一位學生…</option>${D.students.slice().sort(sortStu).map(s=>`<option value="s:${esc(s.id)}">${esc(stuLabel(s))}</option>`).join('')}</select>`,
-    '資源班老師':`<button class="add" onclick="addTeacherHere('資源班')">＋ 新增資源班老師</button>`,'其他老師':`<button class="add" onclick="addTeacherHere('普通班')">＋ 新增原班任課老師</button>`};
-  let h=`<p class="guide">不排課的時段分成幾層，排課時會<b>全部疊在一起</b>避開：全校 → 年級（各年級社團時間不同就分開點）→ 學生群組（例：技藝班）→ 班級或個人 → 老師。點格子切換，點<b>星期</b>或<b>節次</b>可以整排切換。</p>
-  <div class="bar"><button class="b" onclick="pasteOff()">貼上不排課表（班級或老師）</button><span class="note" style="margin:0">教務處整理好的班級不排課、教師不排課可以整張貼進來</span></div>
-  <select class="tsel" onchange="offSel=this.value;render()">${grps.map(g=>{const li=items.filter(o=>o.grp===g);return li.length?`<optgroup label="${g}">${li.map(o=>`<option value="${esc(o.k)}"${o.k===offSel?' selected':''}>${esc(o.name)}${o.n?'（'+o.n+' 格）':''}</option>`).join('')}</optgroup>`:'';}).join('')}</select>
+  const extra={'學生群組':`<button class="add" onclick="addSet()">＋ 新增群組</button>`,
+    '班級與個人':`<select aria-label="班級" onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 班級…</option>${cls.map(c=>`<option value="c:${esc(c)}">${esc(c)} 班</option>`).join('')}</select>
+      <select aria-label="班級不能鎖課" onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 班級不能鎖課…</option>${cls.map(c=>`<option value="k:${esc(c)}">${esc(c)} 班</option>`).join('')}</select>
+      <select aria-label="學生" onchange="if(this.value){offSel=this.value;render()}"><option value="">＋ 學生…</option>${D.students.slice().sort(sortStu).map(s=>`<option value="s:${esc(s.id)}">${esc(stuLabel(s))}</option>`).join('')}</select>`,
+    '資源班老師':`<button class="add" onclick="addTeacherHere('資源班')">＋ 新增老師</button>`,'其他老師':`<button class="add" onclick="addTeacherHere('普通班')">＋ 新增任課老師</button>`};
+  let h=`<div class="bar"><button class="b" onclick="pasteOff()">貼上不排課表</button>${tip('排課時會把每一層疊在一起避開：全校、年級、學生群組、班級或個人、老師。點格子切換；點星期或節次整排切換。教務處的班級不排課、教師不排課可以整張貼上。')}</div>
+  <select class="tsel" aria-label="對象" onchange="offSel=this.value;render()">${grps.map(g=>{const li=items.filter(o=>o.grp===g);return li.length?`<optgroup label="${g}">${li.map(o=>`<option value="${esc(o.k)}"${o.k===offSel?' selected':''}>${esc(o.name)}${o.n?'（'+o.n+' 格）':''}</option>`).join('')}</optgroup>`:'';}).join('')}</select>
   <div class="offadd"><button class="b sm" onclick="addSet()">＋ 學生群組</button><button class="b sm" onclick="addTeacherHere('資源班')">＋ 資源班老師</button><button class="b sm" onclick="addTeacherHere('普通班')">＋ 任課老師</button>${extra['班級與個人']}</div>
   <div class="offwrap"><div class="tlist">`+grps.map(g=>`<div class="grp">${g}</div>`+items.filter(o=>o.grp===g).map(btn).join('')+(extra[g]||'')).join('')+`</div><div class="offmain">`;
   if(T.set)h+=`<div class="bar"><input type="text" class="nmin" value="${esc(T.set.name)}" onchange="offTarget().set.name=this.value.trim()||'學生群組';changed();render()"><button class="b sm" onclick="pickSet()">選學生（${T.set.students.length} 人）</button><button class="b sm danger" onclick="delSet()">刪除群組</button></div>
-    <p class="note">${esc(T.set.students.map(id=>D.students.find(s=>s.id===id)).filter(Boolean).sort(sortStu).map(stuLabel).join('、'))||'還沒有學生，請按「選學生」。'}</p>`;
+    <p class="hint">${esc(T.set.students.map(id=>D.students.find(s=>s.id===id)).filter(Boolean).sort(sortStu).map(stuLabel).join('、'))||'還沒有學生。'}</p>`;
   else if(T.tea)h+=`<div class="bar"><input type="text" class="nmin" value="${esc(T.tea.name)}" onchange="offTarget().tea.name=this.value.trim()||'老師';changed();render()"><select onchange="offTarget().tea.role=this.value;changed();render()">${ROLES.map(r=>`<option${r===T.tea.role?' selected':''}>${r}</option>`).join('')}</select></div>`;
   else h+=`<h3>${esc(T.name)}</h3>`;
-  h+=`<p class="note">${esc(T.hint)}${a.length?'　目前 '+a.length+' 格。':''}${up.size?'　灰色斜線是上一層已經不排的時段。':''}</p>
+  h+=`<p class="hint">${esc(T.hint)}${a.length?'　'+a.length+' 格':''}${up.size?'　灰色斜線＝上一層已不排':''}</p>
   <div class="scroll"><table class="grid"><tr><th onclick="togOff(allKeys())">全部</th>`+DAYS.map((d,di)=>`<th onclick="togOff(dayKeys(${di}))">週${d}</th>`).join('')+'</tr>';
   D.periods.forEach((p,pi)=>{h+=`<tr><th onclick="togOff(perKeys(${pi}))">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const k=di+'-'+p.id,on=a.includes(k);
     return `<td class="${on?'x':up.has(k)?'g':''}" data-k="${esc(k)}" onclick="togOff([this.dataset.k])">${on?'不排':esc((occ[di*M.NP+pi]||[]).join(' '))}</td>`;}).join('')+'</tr>';});
   const src=items.filter(o=>o.n&&o.k!==offSel);
-  h+=`</table></div><div class="bar" style="margin-top:12px">${src.length?`<select onchange="copyOff(this.value);this.value=''"><option value="">複製另一個的時段過來…</option>${src.map(o=>`<option value="${esc(o.k)}">${esc(o.name)}（${o.n} 格）</option>`).join('')}</select>`:''}
-    <button class="b sm" onclick="clearOff()">清空</button>${T.tea?`<input type="text" style="flex:1;min-width:160px" placeholder="備註，例：兼課只有週一、二到校" value="${esc(T.tea.note)}" onchange="offTarget().tea.note=this.value;save()">`:T.set?`<input type="text" style="flex:1;min-width:160px" placeholder="備註" value="${esc(T.set.note||'')}" onchange="offTarget().set.note=this.value;save()">`:''}</div></div></div>`;
+  h+=`</table></div><div class="bar" style="margin-top:12px">${src.length?`<select aria-label="複製時段" onchange="copyOff(this.value);this.value=''"><option value="">從別的對象複製…</option>${src.map(o=>`<option value="${esc(o.k)}">${esc(o.name)}（${o.n} 格）</option>`).join('')}</select>`:''}
+    <button class="b sm" onclick="clearOff()">清空</button>${T.tea?`<input type="text" style="flex:1;min-width:160px" placeholder="備註" value="${esc(T.tea.note)}" onchange="offTarget().tea.note=this.value;save()">`:T.set?`<input type="text" style="flex:1;min-width:160px" placeholder="備註" value="${esc(T.set.note||'')}" onchange="offTarget().set.note=this.value;save()">`:''}</div></div></div>`;
   $('page').innerHTML=h;
 }
 /* 班級不排課怎麼帶入：預設「不能排國英數」（要鎖課的抽離課不能排，社會技巧這類不鎖課的課照樣可以排，也可以固定在這些時段）；
    勾選的原因（例：社團、外出）才完全不能排，學生那一節不能離開原班 */
-function hardPick(p){setTimeout(()=>fillReasons(p));return `<div class="note" style="margin:6px 0"><b>班級不排課</b>的時段要怎麼處理？</div>
-  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="kw" checked onchange="fillReasons('${p}')"> 不能排國英數（要鎖課的抽離課）；社會技巧這類不鎖課的課可以排。下面勾選的原因才完全不能排</label>
-  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="all" onchange="fillReasons('${p}')"> 全部完全不能排：這些時段那一班的學生不能被抽離，任何課都不排</label>
-  <div id="${p}HR" class="note" style="margin:2px 0 6px 22px"></div>`;}
+function hardPick(p){setTimeout(()=>fillReasons(p));return `<fieldset class="opts"><legend>班級不排課的時段</legend>
+  <label><input type="radio" name="${p}HM" value="kw" checked onchange="fillReasons('${p}')"> 只擋國英數（勾選的原因才全擋）</label>
+  <label><input type="radio" name="${p}HM" value="all" onchange="fillReasons('${p}')"> 全部不能排</label>
+  <div id="${p}HR" class="hint"></div></fieldset>`;}
 // 從表裡找出班級不排課出現過的原因（原因只寫在每段第一列，往下沿用）
 function offReasons(text){const set=new Set();let why='';String(text||'').split(/\r?\n/).forEach(l=>{const c=l.split('\t').map(x=>x.trim());if(c[5])why=c[5];if(/^\d{3,4}(\.0)?$/.test(c[0])&&why)set.add(why);});return [...set];}
 function fillReasons(p){const box=$(p+'HR');if(!box)return;const r=document.querySelector('input[name="'+p+'HM"]:checked');if(!r||r.value==='all'){box.innerHTML='';return;}
   const src=p==='xl'?XL.filter(x=>x.type==='off'&&x.on).map(x=>x.tsv).join('\n'):($('pasteBox')?$('pasteBox').value:''),list=offReasons(src);
-  box.innerHTML=list.length?list.map(w=>`<label style="margin-right:12px;white-space:nowrap"><input type="checkbox" class="${p}HW" value="${esc(w)}"> ${esc(w)}</label>`).join('')+'<br>勾選的原因完全不能排；沒勾的只是不能排國英數。':'表裡的班級不排課沒有寫原因，先貼上表格就會列出來。';}
+  box.innerHTML=list.length?list.map(w=>`<label style="margin-right:12px;white-space:nowrap"><input type="checkbox" class="${p}HW" value="${esc(w)}"> ${esc(w)}</label>`).join(''):'貼上表格後會列出原因。';}
 function hardVal(p){const r=document.querySelector('input[name="'+p+'HM"]:checked');if(!r||r.value==='all')return '*';return [...document.querySelectorAll('input.'+p+'HW:checked')].map(x=>x.value);}
-function pasteOff(){openDlg(`<h3>貼上不排課表</h3><p class="note">從 Excel 複製這幾欄貼上：<b>名稱、起始星期、結束星期、首節、末節、（原因）</b>。名稱是三位數班級就當成班級，其他當成老師姓名。原因只寫在每一段的第一列也可以。</p>
-  ${hardPick('po')}
-  <label class="note"><input type="checkbox" id="poAdd"> 名冊裡沒有的老師也新增進來（不勾就略過，只帶入名冊裡有的老師）</label>
+function pasteOff(){openDlg(`<h3>貼上不排課表</h3><div class="lead">欄位：名稱、起始星期、結束星期、首節、末節、原因。${tip('名稱是三位數就當班級，其他當老師姓名。原因只寫在每段第一列也可以。')}</div>
   <textarea id="pasteBox" oninput="fillReasons('po')" placeholder="701&#9;2&#9;2&#9;7&#9;7&#9;社團時間&#10;王小華&#9;5&#9;5&#9;3&#9;3&#9;導師會報"></textarea>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteOffOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  ${hardPick('po')}
+  <label class="chk1"><input type="checkbox" id="poAdd"> 名冊沒有的老師也新增</label>
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="pasteOffOk()">帶入</button></div>`);}
 function pasteOffOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上不排課表之前');const r=importOff(D,txt,{hard:hardVal('po'),addTeachers:$('poAdd').checked});
-  if(!r.cls&&!r.tea){toast(r.skipT.length?'這些老師都不在名冊裡，沒有帶入。可以勾選「名冊裡沒有的老師也新增」':'沒有讀到資料，請確認是從 Excel 複製、而且有星期和節次');return;}
-  changed();closeDlg();render();toast('帶入班級 '+r.cls+' 列、老師 '+r.tea+' 列，共 '+r.cells+' 格'+(r.newT?'；新增 '+r.newT+' 位老師':'')+(r.skipT.length?'；略過 '+r.skipT.length+' 位不在名冊的老師':'')+(r.bad?'；'+r.bad+' 列看不懂':''));offWarn();}
+  if(!r.cls&&!r.tea){toast(r.skipT.length?'老師都不在名冊裡，沒有帶入':'沒有讀到資料');return;}
+  changed();closeDlg();render();toast('帶入 '+r.cells+' 格（班級 '+r.cls+' 列、老師 '+r.tea+' 列）'+(r.newT?'；新增老師 '+r.newT:'')+(r.skipT.length?'；略過 '+r.skipT.length+' 位老師':'')+(r.bad?'；'+r.bad+' 列看不懂':''));offWarn();}
 function dayKeys(d){return D.periods.map(p=>d+'-'+p.id);}
 function perKeys(p){return DAYS.map((x,d)=>d+'-'+D.periods[p].id);}
 function allKeys(){return DAYS.flatMap((x,d)=>dayKeys(d));}
-function offWarn(){const o=[];evaluate(M,ST.slot,o);const n=o.filter(x=>x.k==='off').length;if(n)toast('有 '+n+' 節已經排好的課落在不排課時段，請到排課頁調整');}
+function offWarn(){const o=[];evaluate(M,ST.slot,o);const n=o.filter(x=>x.k==='off').length;if(n)toast(n+' 節課落在不排課時段');}
 function togOff(keys){const a=offTarget().arr,all=keys.every(k=>a.includes(k));
   keys.forEach(k=>{const i=a.indexOf(k);if(all)a.splice(i,1);else if(i<0)a.push(k);});changed();render();if(!all)offWarn();}
 function clearOff(){offTarget().arr.length=0;changed();render();}
 function copyOff(k){if(!k)return;const a=offTarget().arr;offKeys(k).forEach(x=>{if(!a.includes(x))a.push(x);});changed();render();offWarn();}
 function addSet(){const x={id:uid('x'),name:'技藝班',students:[],off:[],note:''};D.sets.push(x);offSel='x:'+x.id;changed();render();}
-function delSet(){const x=offTarget().set;if(!x||!confirm('確定刪除「'+x.name+'」這個群組？'))return;D.sets=D.sets.filter(o=>o!==x);offSel='*';changed();render();}
+function delSet(){const x=offTarget().set;if(!x||!confirm('刪除群組「'+x.name+'」？'))return;D.sets=D.sets.filter(o=>o!==x);offSel='*';changed();render();}
 function pickSet(){const x=offTarget().set;if(!x)return;pickList(x.name+'的學生',x.students,{});}
-function addTeacherHere(role){const t={id:uid('t'),name:role==='資源班'?'新老師':'新任課老師',role,off:[],note:''};D.teachers.push(t);offSel='t:'+t.id;changed();render();toast('已新增，請在上方改成老師的名字');}
+function addTeacherHere(role){const t={id:uid('t'),name:role==='資源班'?'新老師':'新任課老師',role,off:[],note:''};D.teachers.push(t);offSel='t:'+t.id;changed();render();toast('已新增，請改名字');}
 // 共用的「勾選學生」對話框：arr 是要增減的學生 id 陣列
 // subject：是課的學生名單時傳科目，關掉時對拿掉的學生問「不上了還是待安排」
 function pickList(title,arr,same,subject){
   pickList.arr=arr;pickList.subj=subject||'';pickList.gone=[];const by={};D.students.slice().sort(sortStu).forEach(s=>{(by[s.cls]=by[s.cls]||[]).push(s);});
   let h=`<h3>${esc(title)}</h3><div class="pick">`;
   for(const c in by)h+=`<div class="cl">${esc(c)}</div>`+by[c].map(s=>`<label><input type="checkbox"${arr.includes(s.id)?' checked':''} data-id="${esc(s.id)}" onchange="pickTog(this.dataset.id)">${esc(s.name)}${same[s.id]?` <small>已在${esc(same[s.id])}</small>`:''}</label>`).join('');
-  if(!D.students.length)h+='<p class="note">名冊還沒有學生。</p>';
-  openDlg(h+`</div><div class="bar" style="margin:0"><button class="b pri" onclick="closeDlg()">完成</button></div>`,()=>{render();const sj=pickList.subj,g=pickList.gone.filter(id=>!pickList.arr.includes(id));if(sj&&g.length)askDrop(g.map(id=>({id,subject:sj})));});}
+  if(!D.students.length)h+='<p class="hint">還沒有學生。</p>';
+  openDlg(h+`</div><div class="bar end"><button class="b pri" onclick="closeDlg()">完成</button></div>`,()=>{render();const sj=pickList.subj,g=pickList.gone.filter(id=>!pickList.arr.includes(id));if(sj&&g.length)askDrop(g.map(id=>({id,subject:sj})));});}
 function pickTog(id){const a=pickList.arr,k=a.indexOf(id);if(k>=0){a.splice(k,1);pickList.gone.push(id);}else a.push(id);changed();}
 
-/* ───── 排課｜任課老師（班級 × 科目）───── */
-function renderTeach(){
+/* ───── 各班任課老師（班級 × 科目）：放在 設定 › 學校資料 › 老師與任課 ───── */
+function renderTeach(){$('page').innerHTML=teachHtml();}
+function teachHtml(){
   const need={},subs=[];M.G.forEach(g=>{if(!g.need||!g.per)return;   // 只有「抽離」要原班配合；不鎖課的課不用填任課老師
   if(!subs.includes(g.subject))subs.push(g.subject);g.cls.forEach(c=>{(need[c]=need[c]||{})[g.subject]=1;});});
   const cls=Object.keys(need).sort(),tot=cls.reduce((n,c)=>n+Object.keys(need[c]).length,0),done=cls.reduce((n,c)=>n+Object.keys(need[c]).filter(sj=>D.classSubj[c+'|'+sj]).length,0);
-  let h=`<div class="bar"><button class="b" onclick="pasteTL()">貼上任課老師名單</button><button class="b" onclick="go('roster','data')">上傳學校的 Excel</button></div><p class="guide">抽離課要和原班同一科同時上，所以要知道<b>每個班這一科是哪位老師</b>，他不排課的時段才會被算進去。直接打老師的名字就好：名冊裡沒有的會自動新增，之後再到「不排課時段」點他的時間。</p>`;
-  if(!cls.length){$('page').innerHTML=h+`<div class="probs">還沒有抽離課的組別。請先到「老師開課」建立組別、放進學生，這裡就會列出需要填的班級與科目。</div>`;return;}
-  h+=`<div class="bar"><span class="stat">已填 <b>${done}</b> / ${tot} 格</span></div><datalist id="tnames">${D.teachers.filter(t=>t.role!=='資源班').map(t=>`<option value="${esc(t.name)}">`).join('')}</datalist>
-  <div class="scroll"><table class="ed"><tr><th>班級</th>${subs.map(s=>`<th>${esc(s)}</th>`).join('')}</tr>`+
-  cls.map(c=>`<tr><td><b>${esc(c)}</b></td>`+subs.map(sj=>need[c][sj]?`<td><input type="text" class="w5${D.classSubj[c+'|'+sj]?'':' miss'}" list="tnames" data-k="${esc(c+'|'+sj)}" value="${esc((D.teachers.find(t=>t.id===D.classSubj[c+'|'+sj])||{}).name||'')}" placeholder="老師姓名" onchange="setCSName(this)"></td>`:'<td class="dim">不需要</td>').join('')+'</tr>').join('')+`</table></div>`;
-  $('page').innerHTML=h;
+  let h='';
+  if(!cls.length)return emptyBox('還沒有抽離課，不用填。',`<button class="b sm" onclick="go('sched','groups')">去開課</button>`);
+  h+=`<div class="bar"><button class="b" onclick="pasteTL()">貼上任課名單</button><span class="grow"></span><span class="stat">已填 <b>${done}</b> / ${tot}</span></div><datalist id="tnames">${D.teachers.filter(t=>t.role!=='資源班').map(t=>`<option value="${esc(t.name)}">`).join('')}</datalist>
+  <div class="card flush"><div class="scroll"><table class="ed"><thead><tr><th>班級</th>${subs.map(s=>`<th>${esc(s)}</th>`).join('')}</tr></thead><tbody>`+
+  cls.map(c=>`<tr><td><b>${esc(c)}</b></td>`+subs.map(sj=>need[c][sj]?`<td><input type="text" class="w5${D.classSubj[c+'|'+sj]?'':' miss'}" list="tnames" data-k="${esc(c+'|'+sj)}" aria-label="${esc(c+' '+sj)}" value="${esc((D.teachers.find(t=>t.id===D.classSubj[c+'|'+sj])||{}).name||'')}" placeholder="姓名" onchange="setCSName(this)"></td>`:'<td class="dim">—</td>').join('')+'</tr>').join('')+`</tbody></table></div></div>`;
+  return h;
 }
 function setCSName(el){const k=el.dataset.k,name=el.value.trim();
   if(!name){delete D.classSubj[k];changed();render();return;}
-  let t=teaByName(D,name);if(!t){t=newTeacher(D,name,'普通班');toast('已把 '+name+' 加進老師名冊');}
+  let t=teaByName(D,name);if(!t){t=newTeacher(D,name,'普通班');toast('已新增老師 '+name);}
   D.classSubj[k]=t.id;changed();
   const all=[...document.querySelectorAll('#page input[data-k]')],i=all.indexOf(el);render();const nx=document.querySelectorAll('#page input[data-k]')[i+1];if(nx)nx.focus();}
 
 /* ───── 排課｜貼上課程一覽表（每一組各自的節數、老師、學生一次帶入）───── */
-function pasteCourses(){openDlg(`<h3>貼上課程一覽表</h3><p class="note">從 Excel 的「課程領域分組及節數一覽表」整張複製貼上。欄位依序是：<b>領域、年級、組別、抽離或外加、學生名單、節數、人數、人次、授課教師</b>。</p>
-  <details class="note"><summary>怎麼做？</summary>每一組的節數照表上的來，所以同科目不同組可以不一樣（例：數學 7A 3 節、7B 4 節）。組名相同的課會更新，不會重複建立；表上有名字對不到名冊時，原本在課裡的學生會先留著並列出來。學生名單遮名的（704林○哲）會用班級和姓名頭尾對回名冊，所以要先有名冊。授課教師寫兩位的，第一位當授課老師。右邊的教師鐘點表如果一起貼，會帶入基本鐘點。</details>
+function pasteCourses(){openDlg(`<h3>貼上課程一覽表</h3><div class="lead">「課程領域分組及節數一覽表」整張複製貼上。${tip('欄位：領域、年級、組別、抽離或外加、學生名單、節數、人數、人次、授課教師。每組節數照表上的；組名相同的會更新。遮名的學生（704林○哲）會對回名冊，所以要先有名冊。授課教師寫兩位時用第一位。右邊的教師鐘點表一起貼會帶入基本鐘點。')}</div>
   <textarea id="pasteBox" placeholder="國文&#9;7&#9;A&#9;抽離&#9;704林○哲、704黃○侖&#9;3&#9;2&#9;6&#9;王老師"></textarea>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteCoursesOk()">帶入課程</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="pasteCoursesOk()">帶入</button></div>`);}
 function pasteCoursesOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上課程一覽表之前');const r=importCourseTable(D,txt);
-  if(!r.added&&!r.updated){toast('沒有讀到任何一門課，請確認是從 Excel 複製（欄位之間是 Tab）、而且有節數');return;}
+  if(!r.added&&!r.updated){toast('沒有讀到課程，請從 Excel 複製');return;}
   D=normalize(D);changed();render();
-  const miss=[...new Set(r.miss)],msg='新增 '+r.added+' 門課、更新 '+r.updated+' 門，放進 '+r.members+' 位學生'+(r.hours?'，帶入 '+r.hours+' 位老師的基本鐘點':'');
-  if(miss.length||r.kept.length||r.coT.length)openDlg(`<h3>${miss.length?`已帶入，但有 ${miss.length} 位學生對不到名冊`:'已帶入，有幾件事請確認'}</h3><p class="note">${esc(msg)}。</p>${miss.length?`<p class="note">下面這些在名冊裡找不到，或同班有兩位符合，請到「名冊」新增後，再到「學生編組」放進課裡：</p><p>${miss.map(m=>`<span class="tagv">${esc(m)}</span>`).join(' ')}</p>`:''}${courseNoteHtml(r)}<div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);
+  const miss=[...new Set(r.miss)],msg='新增 '+r.added+' 門、更新 '+r.updated+' 門、放進 '+r.members+' 人'+(r.hours?'、鐘點 '+r.hours+' 位':'');
+  if(miss.length||r.kept.length||r.coT.length)openDlg(`<h3>已帶入，請確認</h3><p class="lead">${esc(msg)}</p>${miss.length?`<h4>名冊找不到的學生</h4><p class="chips">${miss.map(m=>`<span class="tagv">${esc(m)}</span>`).join(' ')}</p>`:''}${courseNoteHtml(r)}<div class="bar end"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);
   else{closeDlg();toast(msg);}
   offWarn();}
 // 課程一覽表重貼時留下來的學生、一格寫了兩位老師的課
-function courseNoteHtml(r){return (r.kept.length?`<h4>表上沒找到、先留在課裡的學生</h4><p class="note">這幾門課表上有名字對不到名冊，所以原本在課裡的學生先不移除。確定不上了，再到「學生編組」改成不上：</p><ul class="plain">${r.kept.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:'')+
-  (r.coT.length?`<h4>一門課寫了兩位老師</h4><p class="note">系統只能指定一位授課老師，用的是第一位；要換人請在「老師開課」的卡片上改：</p><ul class="plain">${r.coT.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:'');}
+function courseNoteHtml(r){return (r.kept.length?`<h4>先留在課裡的學生</h4><ul class="plain">${r.kept.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:'')+
+  (r.coT.length?`<h4>寫了兩位老師（用第一位）</h4><ul class="plain">${r.coT.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>`:'');}
 
 /* ───── 排課｜貼上分組表 ───── */
-function pasteGroups(){openDlg(`<h3>貼上分組表</h3><p class="note">從 Excel 或 Google 試算表複製整張分組表貼上。每位學生一格「班級-座號姓名」（例 <b>701-13王小明</b>），後面幾格依序是各科的組別代號（例 7C、7B、空白＝不抽）。一列可以並排好幾位學生。</p>
-  <div class="bar"><span class="note" style="margin:0">各欄科目</span><input type="text" id="pgSubj" style="flex:1;min-width:0" value="國文,英文,數學,特需"></div>
-  <div class="bar"><span class="note" style="margin:0">每週節數</span><input type="text" id="pgPer" style="flex:1;min-width:0" value="5,3,4,1"></div>
+function pasteGroups(){openDlg(`<h3>貼上分組表</h3><div class="lead">從試算表整張複製貼上。${tip('每位學生一格「班級-座號姓名」（例 701-13王小明），後面依序是各科的組別代號（例 7C；空白＝不抽）。請從試算表複製，從 PDF 複製會吃掉空格。')}</div>
+  <div class="form"><label for="pgSubj">各欄科目</label><input type="text" id="pgSubj" value="國文,英文,數學,特需"><label for="pgPer">每週節數</label><input type="text" id="pgPer" value="5,3,4,1"></div>
   <textarea id="pasteBox" placeholder="701-13王小明&#9;7C&#9;7C&#9;7C&#10;702-03陳小華&#9;7B&#9;7B&#9;7A"></textarea>
-  <p class="note">請從試算表複製（欄位之間是 Tab），空白的格子才對得上科目。直接從 PDF 複製會把空格吃掉。</p>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteGroupsOk()">建立學生與組別</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="pasteGroupsOk()">建立</button></div>`);}
 function pasteGroupsOk(){
   const subj=$('pgSubj').value.split(/[,，、\s]+/).filter(Boolean),per=$('pgPer').value.split(/[,，、\s]+/).map(Number),RE=/^(\d{3,4})\s*[-－–]\s*(\d{1,2})?\s*(\S.*)$/;
   let nS=0,nG=0,nM=0,bad=0;
@@ -517,7 +655,7 @@ function pasteGroupsOk(){
       if(!g){g={id:uid('g'),name:gname,subject:sj,teacher:'',per:per[i]>0?per[i]:3,students:[],mode:'抽離',room:'',on:true};D.groups.push(g);nG++;}
       if(!g.students.includes(cur.id)){g.students.push(cur.id);nM++;}});
     if(!any)bad++;});
-  D=normalize(D);changed();closeDlg();render();toast('新增 '+nS+' 位學生、'+nG+' 組，放進組別的學生共 '+nM+' 筆'+(bad?'；略過 '+bad+' 行':''));}
+  D=normalize(D);changed();closeDlg();render();toast('新增 '+nS+' 位學生、'+nG+' 組、'+nM+' 筆'+(bad?'；略過 '+bad+' 行':''));}
 
 /* ───── 排課｜排課板 ───── */
 function chipHtml(l,errs){const g=M.G[M.L[l].g],r=ROOM[l],names=g.stu.map(i=>stuLabel(D.students[i])).join('、');
@@ -530,34 +668,36 @@ function renderBoard(){
   const placed=[...ST.slot].filter(s=>s>=0).length,total=M.L.length,gv=view.slice(0,2)==='g:'?+view.slice(2):0,ti=view&&!gv?M.tIdx[view]:-1;
   const show=shownL,gOff=gv?new Set(D.offBy[view]||[]):null,gname=gv?GRADE[gv]:'';
   const at={},un=[];M.L.forEach((x,l)=>{if(!show(l))return;const s=ST.slot[l];if(s<0)un.push(l);else(at[s]=at[s]||[]).push(l);});
-  let h=preCheck()+`<p class="guide">按<b>一鍵試排</b>，系統會先排出每位老師的課，再把「待安排」的學生編進不衝堂的課，最後確認老師、學生、教室都不撞。排出來的是<b>草稿</b>，會和正式課表並排比較，滿意了再按<b>確定採用</b>。可以直接拖曳調整（或點一下組別、再點要放的格子）；動過的會<b>固定</b>住，按重排時不會被移走。</p>
-  <div class="bar">${solveBtns(gv,gname)}<span class="vsep"></span><button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><span class="vsep"></span><button class="b" onclick="aiOpen()">用 AI 排</button>
-    <span class="stat">已排 <b>${placed}</b> / ${total} 節</span><span class="stat${out.length?' bad':''}">問題 <b>${out.length}</b></span><span class="grow"></span>
-    <select onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select><button class="b danger" onclick="clearAll()">清空排法</button></div>`;
-  if(!total)h+=`<div class="probs">還沒有要排的組，請先到「老師開課」建立。</div>`;
-  else if(!out.length&&!warns.length&&placed===total)h+=`<div class="probs ok">全部排好了，沒有衝突。</div>`;
+  let h=preCheck()+`<div class="bar">${solveBtns(gv,gname)}<button class="b" onclick="undo()">復原</button>
+    <select aria-label="檢視" onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select>
+    <details class="menu"><summary class="b">更多</summary><div class="menubox"><button class="b" onclick="unpinAll()">解除全部固定</button><button class="b" onclick="aiOpen()">用 AI 排</button><button class="b danger" onclick="clearAll()">清空排法</button></div></details>
+    ${tip('一鍵試排會先排出草稿，和正式課表並排比較，滿意再按「確定採用」。可以拖曳調整，或點一下組別再點格子；動過的會固定，重排時不會被移走。連點兩下切換固定。')}
+    <span class="grow"></span><span class="stat">已排 <b>${placed}</b> / ${total}</span><span class="stat${out.length?' bad':''}">問題 <b>${out.length}</b></span></div>`;
+  if(!total)h+=emptyBox('還沒有要排的課。',`<button class="b sm" onclick="go('sched','groups')">去開課</button>`);
+  else if(!out.length&&!warns.length&&placed===total)h+=`<div class="probs ok">全部排好，沒有衝突。</div>`;
   else if(out.length||warns.length)h+=`<div class="probs">`+warns.map(w=>`<div>${esc(w)}</div>`).join('')+[...msg].map(([m,e])=>`<div class="err${e.k==='un'?'':' go'}" data-l="${e.l}" onclick="pickL(+this.dataset.l)">${esc(m)}${e.n>1?'（'+e.n+' 節）':''}</div>`).join('')+`</div>`;
   if(total){const A=M.flex?assignLocks(M,ST.slot):null,bad=CK.filter(([k])=>cnt[k]);
-    h+=bad.length||A&&A.open.length?`<div class="chk"><b>衝堂檢查</b>`+bad.map(([k,n])=>`<span class="bad">${n} ${cnt[k]}</span>`).join('')+(A&&A.open.length?`<span class="mid" title="有學生被抽離、但原班鎖不到任何主科的班級節次。詳細在「課表輸出 › 鎖課表」">鎖不到課 ${A.open.length}／${A.pulled}</span>`:'')+`<small>每次調整都會重新檢查；點上面的紅字會跳到那一節</small></div>`:`<div class="chk"><span class="ok">衝堂檢查全數通過</span></div>`;}
+    h+=bad.length||A&&A.open.length?`<div class="chk"><b>衝堂</b>`+bad.map(([k,n])=>`<span class="bad">${n} ${cnt[k]}</span>`).join('')+(A&&A.open.length?`<span class="mid" title="原班鎖不到主科的班級節次，詳細在「④ 輸出 › 鎖課表」">鎖不到課 ${A.open.length}／${A.pulled}</span>`:'')+`</div>`:`<div class="chk"><span class="ok">衝堂檢查通過</span></div>`;}
   if(selL>=0&&selL<M.L.length){const g=M.G[M.L[selL].g],s=ST.slot[selL],fx=ST.rfix[selL];
     h+=`<div class="selbar"><b>${esc(g.name)}</b><span>${s>=0?esc(M.sn(s)):'還沒排'}</span><label>教室 <select onchange="setLRoom(this.value)"><option value="-1">自動${s>=0&&fx<0&&ROOM[selL]>=0?'（'+esc(D.rooms[ROOM[selL]].name)+'）':''}</option>${D.rooms.map((r,i)=>`<option value="${i}"${i===fx?' selected':''}>${esc(r.name)}</option>`).join('')}</select></label>
-      ${s>=0?`<button class="b sm" onclick="togPin()">${ST.pin[selL]?'解除固定':'固定在這一節'}</button><button class="b sm" onclick="moveLesson(selL,-1)">拿下來</button>`:''}<span class="note" style="margin:0">點要放的格子可以移動；綠色是不會衝堂的位置</span><span class="grow"></span><button class="b sm" onclick="selL=-1;render()">取消選取</button></div>`;}
-  h+=`<div class="tray" data-s="-1">${un.length?'還沒排：'+un.map(l=>chipHtml(l,errs)).join(''):(placed<total?'':'拖到這裡可以把一節拿下來')}</div>
+      ${s>=0?`<button class="b sm" onclick="togPin()">${ST.pin[selL]?'解除固定':'固定'}</button><button class="b sm" onclick="moveLesson(selL,-1)">拿下來</button>`:''}<span class="hint">點格子移動；綠色不衝堂</span><span class="grow"></span><button class="b sm" onclick="selL=-1;render()">取消</button></div>`;}
+  h+=`<div class="tray" data-s="-1">${un.length?'還沒排：'+un.map(l=>chipHtml(l,errs)).join(''):(placed<total?'':'拖到這裡拿下來')}</div>
   <div class="scroll"><table class="board"><tr><th class="ph2"></th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`;
   D.periods.forEach((p,pi)=>{h+=`<tr class="${p.extra?'ex':''}"><th class="ph2">${esc(p.name)}<small>${esc(p.start)}</small></th>`+DAYS.map((d,di)=>{const s=di*M.NP+pi,blk=M.blocked[s]||(ti>=0&&M.off[ti][s])||(gOff&&gOff.has(M.s2key(s)));
     return `<td class="${blk?'blk':''}" data-s="${s}">${(at[s]||[]).sort((a,b)=>colorOf(M.G[M.L[a].g])-colorOf(M.G[M.L[b].g])).map(l=>chipHtml(l,errs)).join('')}</td>`;}).join('')+'</tr>';});
-  h+=`</table></div><div class="legend">`+M.rts.map((t,i)=>`<span class="chip c${i%6}">${esc(M.T[t].name)}</span>`).join('')+`　粗框＝已固定（連點兩下可切換）　斜線＝不排課　紅框＝有衝突，滑鼠停在上面看原因</div>`;
+  h+=`</table></div><div class="legend">`+M.rts.map((t,i)=>`<span class="chip c${i%6}">${esc(M.T[t].name)}</span>`).join('')+`<span class="hint">粗框＝固定・斜線＝不排課・紅框＝衝突</span></div>`;
   const rows=M.G.filter(g=>g.per).map(g=>({g,slack:g.alist.length-g.per})).sort((a,b)=>a.slack-b.slack);
-  if(rows.length)h+=`<h3>哪一組最難排</h3><p class="note">「可排時段」是扣掉這一組所有相關老師的不排課時段之後剩下的格數，越少越難排，排不進去時先看這幾組。</p>
-  <div class="scroll"><table class="ed"><tr><th>組別</th><th>老師</th><th>每週節數</th><th>可排時段</th><th>一起算進去的原班老師</th></tr>`+rows.map(({g})=>`<tr><td>${esc(g.name)}</td><td>${esc(g.t>=0?M.T[g.t].name:'')}</td><td>${g.per}</td><td>${g.alist.length} 格</td><td class="dim">${esc([...new Set(g.locks.filter(k=>k.t>=0).map(k=>M.T[k.t].name))].join('、'))}</td></tr>`).join('')+`</table></div>`;
+  if(rows.length)h+=`<details class="more"><summary>哪一組最難排</summary><p class="hint">可排時段＝扣掉相關老師不排課後剩下的格數，越少越難排。</p>
+  <div class="scroll"><table class="ed"><thead><tr><th>組別</th><th>老師</th><th>每週</th><th>可排時段</th><th>原班老師</th></tr></thead><tbody>`+rows.map(({g})=>`<tr><td>${esc(g.name)}</td><td>${esc(g.t>=0?M.T[g.t].name:'')}</td><td>${g.per}</td><td>${g.alist.length} 格</td><td class="dim">${esc([...new Set(g.locks.filter(k=>k.t>=0).map(k=>M.T[k.t].name))].join('、'))}</td></tr>`).join('')+`</tbody></table></div></details>`;
   $('page').innerHTML=h;
   if(selL>=0)markCells(selL);
 }
 // 排課前的檢查：任課老師填了幾格、不排課時段匯入了沒、還有多少待安排；每一項都可以點過去
 function preCheck(){const need=new Set();M.G.forEach(g=>{if(g.need&&g.per)g.cls.forEach(c=>need.add(c+'|'+g.subject));});
   const cs=[...need].filter(k=>D.classSubj[k]).length,off=D.teachers.some(t=>t.role!=='資源班'&&t.off.length)||Object.keys(D.offBy).some(k=>/^[ck]:/.test(k)&&D.offBy[k].length),pn=needList(D);
-  const it=(ok,txt,f)=>`<button type="button" class="b sm${ok?'':' warn'}" onclick="${f}">${ok?'✓':'!'} ${txt}</button>`;
-  return `<div class="bar precheck"><span class="note" style="margin:0">排課前先確認：</span>${it(cs===need.size,'任課老師 '+cs+'/'+need.size,"go('sched','teach')")}${it(off,'不排課時段'+(off?'已匯入':'還沒匯入'),"go('sched','off')")}${it(!pn.length,'待安排 '+pn.length,"go('sched','need')")}</div>`;}
+  const it=(ok,txt,f)=>`<button type="button" class="chipb${ok?' ok':' warn'}" onclick="${f}">${ok?'✓':'!'} ${txt}</button>`;
+  if(cs===need.size&&off&&!pn.length)return '';
+  return `<div class="bar precheck">${it(cs===need.size,'任課老師 '+cs+'/'+need.size,"go('set','tea')")}${it(off,'不排課時段'+(off?'':'未匯入'),"go('set','off')")}${it(!pn.length,'待安排 '+pn.length,"go('sched','need')")}</div>`;}
 // 排課板的組別可以用鍵盤：Tab 選到，Enter 或空白鍵等於點一下
 $('page').addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const c=e.target.closest&&e.target.closest('.chip[data-l]');if(!c||page!=='sched'||sub!=='board')return;e.preventDefault();const l=c.dataset.l;c.click();const n=document.querySelector('#page .chip[data-l="'+l+'"]');if(n)n.focus();});
 function pickL(l){if(!(l>=0))return;selL=l;if(view&&!shownL(l))view='';render();const c=document.querySelector('#page .chip[data-l="'+l+'"]');if(c&&c.scrollIntoView)c.scrollIntoView({block:'center',inline:'center'});}
@@ -578,7 +718,7 @@ function moveLesson(l,s){if(ST.slot[l]===s){selL=-1;render();return;}pushUndo();
 // 目前的檢視（某個年級或某位老師）包含哪些節
 function shownL(l){if(!view)return true;const g=M.G[M.L[l].g];if(view.slice(0,2)==='g:')return g.grades.includes(+view.slice(2));const ti=M.tIdx[view];return ti==null||g.t===ti||g.locks.some(k=>k.t===ti);}
 function runSolve(all){
-  if(!M.L.length){toast('還沒有要排的組，請先到「老師開課」建立');return;}
+  if(!M.L.length){toast('還沒有要排的課');return;}
   const part=view.slice(0,2)==='g:';if(all&&ST.pin.some((x,l)=>x&&(!part||shownL(l)))&&!confirm('重排會連已經固定的也一起重排，確定嗎？'))return;
   pushUndo();snapshot('一鍵排課之前');busyOn('正在排課，通常 5–20 秒，請不要關閉頁面');
   setTimeout(()=>{try{if(all)ST.pin.forEach((x,l)=>{if(!part||shownL(l))ST.pin[l]=0;});D.settings.seed=(D.settings.seed||1)+1;const sv=()=>{const R=solve(M,ST,{seed:D.settings.seed,only:part?shownL:null});setST({slot:R.slot,pin:R.pin,rfix:ST.rfix});};
@@ -620,14 +760,16 @@ function tShort(){const o={},nm=t=>normName(M.T[t].name).replace(/（.*?）|\(.*
 function renderOut(){
   const modes=[['master','總課表'],['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['lockraw','鎖課清單（教務處格式）'],['homeroom','給導師的班級抽離表'],['regular','給任課老師的抽離名單'],['card','學生個人課表'],['student','學生抽離一覽'],['cm','個管個案一覽'],['group','組別總表']];
   const placed=[...ST.slot].filter(s=>s>=0).length;
-  let h=`<p class="guide">排好之後，在這裡印出或複製各種表。<b>鎖課表</b>是給教務處的：列出每個班哪幾節必須排哪一科，原班才會和資源班同時上同一科。</p>
-  <div class="bar">`+modes.map(([k,n])=>`<button class="b${outMode===k?' pri':''}" onclick="outMode='${k}';render()">${n}</button>`).join('')+`<span class="grow"></span><button class="b" onclick="copyOut()">複製</button><button class="b" onclick="window.print()">列印</button></div>`;
-  const dateIn=`<label class="note" style="margin:0">實施日期 <input type="text" class="w8" value="${esc(D.settings.dates||'')}" placeholder="115.09.02-116.01.20" onchange="D.settings.dates=this.value.trim();save();render()"></label>`;
-  if(outMode==='master')h+=`<div class="bar">${dateIn}<span class="note" style="margin:0">欄是教室；每格寫科目、組別和老師的姓，印成黑白也分得出老師。列印時會自動用橫式。教室名稱取最後一個字當欄名。</span></div>`;
-  if(outMode==='homeroom'||outMode==='regular')h+=`<div class="bar">${dateIn}<span class="note" style="margin:0">一班（一位老師）一頁。</span></div>`;
-  if(outMode==='card')h+=`<div class="bar"><label class="note" style="margin:0">課表名稱 <input type="text" class="w8" value="${esc(D.settings.cardTitle||'資源班課表')}" onchange="D.settings.cardTitle=this.value.trim();save();render()"></label>
-    <select onchange="outG=this.value;render()"><option value="">全部年級</option>${[...new Set(D.students.map(x=>gradeOfCls(x.cls)))].filter(x=>GRADE[x]).sort().map(x=>`<option value="${x}"${String(x)===outG?' selected':''}>${GRADE[x]}</option>`).join('')}</select><span class="note" style="margin:0">一位學生一頁</span></div>`;
-  if(!placed){$('page').innerHTML=h+`<div class="probs">還沒有排法，請先到「排課表」按一鍵排課。</div>`;return;}
+  const OG=[['課表',['master','teacher','card']],['給教務處',['lock','lockraw']],['給老師',['homeroom','regular','cm']],['一覽',['student','group']]],mn=k=>(modes.find(x=>x[0]===k)||[0,''])[1];
+  let h=`<div class="bar"><select class="big" aria-label="要印的表" onchange="outMode=this.value;render()">${OG.map(([g,ks])=>`<optgroup label="${g}">${ks.map(k=>`<option value="${k}"${outMode===k?' selected':''}>${mn(k)}</option>`).join('')}</optgroup>`).join('')}</select>
+    ${outMode==='lock'?tip('鎖課表給教務處：列出每班哪幾節必須排哪一科，原班才會和資源班同時上同一科。'):outMode==='master'?tip('欄是教室，每格寫科目、組別和老師的姓，黑白印也分得出老師。列印自動用橫式。'):''}
+    <span class="grow"></span><button class="b" onclick="copyOut()">複製</button><button class="b pri" onclick="window.print()">印出</button></div>`;
+  const dateIn=`<label class="inl">實施日期 <input type="text" class="w8" value="${esc(D.settings.dates||'')}" placeholder="115.09.02-116.01.20" onchange="D.settings.dates=this.value.trim();save();render()"></label>`;
+  if(outMode==='master')h+=`<div class="bar">${dateIn}</div>`;
+  if(outMode==='homeroom'||outMode==='regular')h+=`<div class="bar">${dateIn}<span class="hint">一${outMode==='homeroom'?'班':'位老師'}一頁</span></div>`;
+  if(outMode==='card')h+=`<div class="bar"><label class="inl">標題 <input type="text" class="w8" value="${esc(D.settings.cardTitle||'資源班課表')}" onchange="D.settings.cardTitle=this.value.trim();save();render()"></label>
+    <select aria-label="年級" onchange="outG=this.value;render()"><option value="">全部年級</option>${[...new Set(D.students.map(x=>gradeOfCls(x.cls)))].filter(x=>GRADE[x]).sort().map(x=>`<option value="${x}"${String(x)===outG?' selected':''}>${GRADE[x]}</option>`).join('')}</select><span class="hint">一人一頁</span></div>`;
+  if(!placed){$('page').innerHTML=h+emptyBox('還沒有課表。',`<button class="b sm" onclick="go('sched','board')">去排課</button>`);return;}
   const T=esc(D.title||'資源班'),dt=D.settings.dates?`<p class="dt">實施日期：${esc(D.settings.dates)}</p>`:'';let b='';
   const cmName=s=>{const t=D.teachers.find(x=>x.id===s.caseMgr);return t?t.name:'';};
   const roomOf=l=>ROOM[l]>=0&&D.rooms[ROOM[l]]?D.rooms[ROOM[l]].name:'';
@@ -713,7 +855,7 @@ function renderOut(){
   $('page').innerHTML=h+`<div id="outArea">${b}</div>`;
 }
 function copyOut(){const el=$('outArea');if(!el)return;const r=document.createRange();r.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(r);
-  let ok=false;try{ok=document.execCommand('copy');}catch(e){}s.removeAllRanges();toast(ok?'已複製，可以貼到 Word 或 LINE':'複製失敗，請手動選取後複製');}
+  let ok=false;try{ok=document.execCommand('copy');}catch(e){}s.removeAllRanges();toast(ok?'已複製':'複製失敗，請手動選取');}
 
 /* ───── 名冊｜學期初匯入、資料與備份：讓學校自己把每學期的資料帶進來 ───── */
 const SNKEY='resource-class-snap',LBKEY='resource-class-lastbackup';
@@ -750,7 +892,7 @@ async function snapInit(){
     await snapTx('readwrite',st=>{st.clear();a.forEach(x=>st.put(x));});
     try{localStorage.removeItem(SNKEY);}catch(e){}SNAPS=a;}
   catch(e){snapDB=null;snapLS=true;snapLSWrite(snaps().slice());}
-  if(page==='roster'&&sub==='data')render();}
+  if(page==='set'&&sub==='data')render();}
 // 清除所有自動保留的版本（公用電腦模式、清除這台電腦上的資料）
 function snapWipe(){SNAPS=[];try{localStorage.removeItem(SNKEY);}catch(e){}
   if(snapDB)snapTx('readwrite',st=>{st.clear();}).catch(()=>{});else if(window.indexedDB)try{indexedDB.deleteDatabase('rc-snap');}catch(e){}}
@@ -776,7 +918,7 @@ function sheetType(rows){
   return '';
 }
 async function readXls(inp){const fs=[...inp.files];inp.value='';if(!fs.length)return;busyOn('正在讀取 Excel…');
-  try{await needXLSX();}catch(e){busyOff();toast('讀 Excel 的元件下載失敗，請確認有網路；或改用各頁的「貼上」');return;}
+  try{await needXLSX();}catch(e){busyOff();toast('讀 Excel 的元件下載失敗，請確認網路，或改用「貼上」');return;}
   XL=[];let skip=0;
   try{for(const f of fs){const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
     wb.SheetNames.forEach((n,i)=>{const w=wb.Workbook&&wb.Workbook.Sheets&&wb.Workbook.Sheets[i];if(w&&w.Hidden){skip++;return;}
@@ -788,9 +930,9 @@ async function readXls(inp){const fs=[...inp.files];inp.value='';if(!fs.length)r
       XL.push({file:f.name,sheet:n,type:t,on:true,n:rows.length,tsv});});}}
   catch(e){toast('有檔案讀不出來：'+(e.message||e));}
   finally{busyOff();}
-  XL.skip=skip;if(!XL.length)toast('這些檔案裡沒有認得的工作表（學生名單、任課老師名單、課程一覽表、不排課時段、手排鎖課）');render();}
-function xlImport(){const on=XL.filter(x=>x.on);if(!on.length){toast('請先勾選要匯入的工作表');return;}
-  if(!confirm('要匯入勾選的 '+on.length+' 張工作表嗎？\n匯入前會自動保留一份目前的資料，匯錯了可以回到舊版本。'))return;
+  XL.skip=skip;if(!XL.length)toast('沒有認得的工作表');render();}
+function xlImport(){const on=XL.filter(x=>x.on);if(!on.length){toast('先勾選工作表');return;}
+  if(!confirm('匯入 '+on.length+' 張工作表？\n匯入前會自動保留一份，可以回到舊版本。'))return;
   // 學生名單先讀：個管老師會先建成資源班老師，課程一覽表後面用 normName 對回同一位，不會重複
   snapshot('匯入 Excel 之前');const order=['stu','tl','course','off','lock'],out=[],SR={conflict:[],newCM:[],noCM:[]},CR={kept:[],coT:[]};
   // 資料輸入和資料輸出是同一份鎖課，兩張都勾時只讀一張
@@ -803,82 +945,87 @@ function xlImport(){const on=XL.filter(x=>x.on);if(!on.length){toast('請先勾�
     if(t==='off'){const r=importOff(D,x.tsv,{hard:hardVal('xl'),addTeachers:$('xlAdd')&&$('xlAdd').checked});out.push(nm+'：班級 '+r.cls+' 列、老師 '+r.tea+' 列，新增 '+r.cells+' 格（已經有的不會重複加）'+(r.skipT.length?'；不在名冊、略過的老師 '+r.skipT.length+' 位':''));}}));
   D=normalize(D);XL=[];changed();render();
   SR.newCM=[...new Set(SR.newCM)];SR.noCM=[...new Set(SR.noCM)];
-  openDlg(`<h3>匯入完成</h3><ul class="plain">${out.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>${stuImportHtml(SR)}${courseNoteHtml(CR)}<p class="note">如果匯錯了，到「名冊 › 資料與備份」的「自動保留的版本」回到匯入之前。</p><div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);offWarn();}
+  openDlg(`<h3>匯入完成</h3><ul class="plain">${out.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>${stuImportHtml(SR)}${courseNoteHtml(CR)}<p class="hint">匯錯了可以到「設定 › 資料與備份」回到匯入之前。</p><div class="bar end"><button class="b pri" onclick="closeDlg()">知道了</button></div>`);offWarn();}
 
-function pasteTL(){openDlg(`<h3>貼上任課老師名單</h3><p class="note">兩種格式都可以：</p><ol class="note"><li>教務處的<b>教師名單</b>：一列是班級（701、702…），下面每一列是一科（國語文、英語文、數學、理化）和各班的老師。七、八、九年級可以一起貼。</li><li>一列一筆：<b>班級、科目、老師</b>。</li></ol>
-  <p class="note">名冊裡沒有的老師會自動新增；同一班同一科已經有老師的會換成新的。</p>
+function pasteTL(){openDlg(`<h3>貼上任課名單</h3><div class="lead">教務處的教師名單，或一列一筆「班級、科目、老師」。${tip('教師名單：一列是班級（701、702…），下面每列是一科和各班老師，七八九年級可以一起貼。名冊沒有的老師會自動新增；同班同科已有老師的會換成新的。')}</div>
   <textarea id="pasteBox" placeholder="&#9;701&#9;702&#9;703&#10;國語文&#9;王老師&#9;李老師&#9;陳老師&#10;英語文&#9;…"></textarea>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteTLOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="pasteTLOk()">帶入</button></div>`);}
 function pasteTLOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上任課老師名單之前');const r=importTeacherList(D,txt);
-  if(!r.set){toast('沒有讀到任課老師，請確認是從 Excel 複製（欄位之間是 Tab）');return;}
-  changed();closeDlg();render();toast(r.classes+' 個班、'+r.set+' 格任課老師'+(r.changed?'，'+r.changed+' 格換了老師':'')+(r.newT.length?'，新增 '+r.newT.length+' 位老師':''));}
-function pasteLocks(){openDlg(`<h3>貼上手排鎖課</h3><p class="note">已經手排好的鎖課可以帶進來，排課時會盡量沿用，配鎖課時優先照手排的老師。兩種都可以：</p><ol class="note"><li>「特教鎖課需求」的<b>資料輸入</b>：整張選取（Ctrl+A）複製貼上，格子裡填的是老師名字。</li><li><b>資料輸出</b>：班級名稱、科目名稱、星期、首節、末節、教師姓名。</li></ol>
-  <p class="note">貼上後會整份換掉之前的手排鎖課。不想沿用時，到「學期初匯入」按清除。</p>
+  if(!r.set){toast('沒有讀到任課老師，請從 Excel 複製');return;}
+  changed();closeDlg();render();toast(r.classes+' 班、'+r.set+' 格'+(r.changed?'；換了 '+r.changed+' 格':'')+(r.newT.length?'；新增老師 '+r.newT.length:''));}
+function pasteLocks(){openDlg(`<h3>貼上手排鎖課</h3><div class="lead">「特教鎖課需求」的資料輸入（整張複製）或資料輸出。${tip('排課時會盡量沿用，配鎖課時優先照手排的老師。貼上後會整份換掉之前的手排鎖課。')}</div>
   <textarea id="pasteBox" placeholder="班級名稱&#9;科目名稱&#9;星期&#9;首節&#9;末節&#9;教師姓名&#10;701&#9;數學&#9;1&#9;4&#9;4&#9;王老師"></textarea>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteLocksOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
-function pasteLocksOk(){const txt=$('pasteBox').value;if(!txt.trim())return;const X=JSON.parse(JSON.stringify(D));if(!importLocks(X,txt).n){toast('沒有讀到鎖課：請確認貼的是資料輸入（格子裡是老師名字）或資料輸出');return;}
-  snapshot('貼上手排鎖課之前');const r=importLocks(D,txt);changed();closeDlg();render();toast('手排鎖課 '+r.n+' 節、'+r.cls+' 個班'+(r.newT.length?'；新增老師 '+r.newT.length+' 位':''));}
-function clearLocks(){if(!confirm('清除手排鎖課？之後排課和配鎖課就完全由系統決定。'))return;snapshot('清除手排鎖課之前');D.lockFix=[];changed();render();toast('已清除手排鎖課');}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="pasteLocksOk()">帶入</button></div>`);}
+function pasteLocksOk(){const txt=$('pasteBox').value;if(!txt.trim())return;const X=JSON.parse(JSON.stringify(D));if(!importLocks(X,txt).n){toast('沒有讀到鎖課');return;}
+  snapshot('貼上手排鎖課之前');const r=importLocks(D,txt);changed();closeDlg();render();toast('手排鎖課 '+r.n+' 節、'+r.cls+' 班'+(r.newT.length?'；新增老師 '+r.newT.length:''));}
+function clearLocks(){if(!confirm('清除手排鎖課？'))return;snapshot('清除手排鎖課之前');D.lockFix=[];changed();render();toast('已清除手排鎖課');}
 function pruneTeachers(){const used=new Set(Object.values(D.classSubj).concat(D.groups.map(g=>g.teacher),D.students.map(s=>s.caseMgr)));
   const a=D.teachers.filter(t=>t.role!=='資源班'&&!used.has(t.id)&&!t.off.length&&!t.note);
   if(!a.length){toast('沒有可以移除的老師');return;}
-  if(!confirm('這 '+a.length+' 位老師沒有任課、沒有開課、不是個管老師，也沒有不排課時段和備註：\n'+a.map(t=>t.name).join('、')+'\n\n要從名冊移除嗎？（會先自動保留一份）'))return;
+  if(!confirm('這 '+a.length+' 位老師沒有用到：\n'+a.map(t=>t.name).join('、')+'\n\n移除嗎？（會先自動保留一份）'))return;
   snapshot('移除沒用到的老師之前');const ids=new Set(a.map(t=>t.id));D.teachers=D.teachers.filter(t=>!ids.has(t.id));changed();render();toast('已移除 '+a.length+' 位');}
 
 function startTerm(){const v=id=>$(id)&&$(id).checked,o={clearAssign:v('ntAssign'),clearGroups:v('ntGroups'),clearCS:v('ntCS'),clearClassOff:v('ntCOff'),clearTeaOff:v('ntTOff'),promote:v('ntUp'),title:$('ntTitle').value.trim()};
   const what=[o.promote&&'升年級（九年級學生移出名冊；全校課表、各班導師也會清掉）',o.clearAssign&&'清空排課結果',o.clearGroups&&'清空所有課程',o.clearCS&&'清空任課老師',o.clearClassOff&&'清空班級不排課',o.clearTeaOff&&'清空所有老師的不排課'].filter(Boolean);
-  if(!confirm('開始新學期：\n'+(what.length?what.map(x=>'・'+x).join('\n'):'只改學期名稱')+'\n\n目前的資料會先自動保留一份；也建議先按「下載備份檔」存一份在電腦裡。確定嗎？'))return;
-  snapshot('開始新學期之前');const r=newTerm(D,o);D=normalize(D);undoStack=[];changed();$('title').value=D.title;paintSchool();render();
-  toast('已開始新學期'+(o.promote?'：'+r.up+' 位學生升一個年級，'+r.grad+' 位畢業移出名冊。全校課表已清除，請讀入新學年的課表':''));}
+  if(!confirm('開始新學期：\n'+(what.length?what.map(x=>'・'+x).join('\n'):'只改學期名稱')+'\n\n會先自動保留一份。確定嗎？'))return;
+  snapshot('開始新學期之前');const r=newTerm(D,o);D=normalize(D);undoStack=[];changed();paintSchool();render();
+  toast('已開始新學期'+(o.promote?'：升級 '+r.up+' 人、畢業 '+r.grad+' 人；請讀入新的全校課表':''));}
 
+/* ───── 設定 › 學校資料 › ① 匯入 Excel：上傳學校的表＋資料清單 ───── */
 function renderData(){
   const need=new Set();M.G.forEach(g=>{if(g.need)g.cls.forEach(c=>need.add(c+'|'+g.subject));});
   const csN=[...need].filter(k=>D.classSubj[k]).length,res=D.teachers.filter(t=>t.role==='資源班'),cOff=Object.keys(D.offBy).filter(k=>(k[0]==='c'||k[0]==='k')&&D.offBy[k].length).length;
   const tOff=D.teachers.filter(t=>t.role!=='資源班'&&t.off.length).length,rOff=res.filter(t=>t.off.length).length,cm=D.students.filter(s=>s.caseMgr).length;
-  const st=(ok,t)=>`<span class="${ok?'ok':'warn'}">${t}</span>`;
+  const st=(ok,t)=>`<span class="${ok?'ok':'warn'}">${ok?'✓':'!'} ${t}</span>`;
   const rows=[
     ['學生名冊',st(D.students.length,D.students.length+' 位'),'個管學生一覽表',`<button class="b sm" onclick="pasteStu()">貼上</button>`],
-    ['個管老師',st(cm===D.students.length&&cm,cm+' / '+D.students.length+' 位已指定'),'個管學生一覽表',`<button class="b sm" onclick="go('roster','stu')">名冊</button>`],
-    ['資源班老師與基本鐘點',st(res.length&&res.every(t=>t.hours),res.length+' 位，'+res.filter(t=>t.hours).length+' 位有基本鐘點'),'課程一覽表右側的鐘點表',`<button class="b sm" onclick="go('sched','groups')">老師開課</button>`],
-    ['課程（分組、節數、學生）',st(D.groups.length,D.groups.length+' 門課'),'課程領域分組及節數一覽表',`<button class="b sm" onclick="pasteCourses()">貼上</button>`],
-    ['各班任課老師',st(!need.size||csN===need.size,need.size?csN+' / '+need.size+' 格':'還沒有抽離課'),'特教鎖課需求 › 教師名單',`<button class="b sm" onclick="pasteTL()">貼上</button>`],
-    ['班級不排課、不能鎖課',st(cOff,cOff+' 個班有設定'),'特教鎖課需求 › 班級不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
-    ['任課老師不排課',st(tOff,tOff+' 位有設定'),'特教鎖課需求 › 教師不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
-    ['手排鎖課（選填）',st(1,(D.lockFix||[]).length?D.lockFix.length+' 節，排課時盡量沿用':'沒有，系統自己配'),'特教鎖課需求 › 資料輸入或資料輸出',`<button class="b sm" onclick="pasteLocks()">貼上</button>${(D.lockFix||[]).length?`<button class="b sm" onclick="clearLocks()">清除</button>`:''}`],
-    ['資源班老師個人不排課',st(rOff===res.length&&res.length,rOff+' / '+res.length+' 位有設定'),'各位老師自己點',`<button class="b sm" onclick="go('sched','off')">不排課時段</button>`],
-    ['年級共同時段（社團等）',st(Object.keys(D.offBy).some(k=>k[0]==='g'&&D.offBy[k].length),Object.keys(D.offBy).filter(k=>k[0]==='g'&&D.offBy[k].length).map(k=>GRADE[k.slice(2)]).join('、')||'沒有設定'),'教學組',`<button class="b sm" onclick="offSel='g:7';go('sched','off')">不排課時段</button>`],
-    ['鎖課方式與上限',st(1,D.settings.lockMode==='flex'?'彈性鎖課'+(D.settings.lockCap?'（'+esc(Object.keys(D.settings.lockCap).map(k=>k+D.settings.lockCap[k]).join(' '))+'）':''):'同一科同時上'),'和教學組確認',`<button class="b sm" onclick="go('roster','env')">規則</button>`]];
-  let h=`<p class="guide">每學期照下面的順序，把學校本來就有的表格帶進來，就能自己排課，不需要找人幫忙：<b>①</b> 視需要到「資料與備份」按「開始新學期」<b>②</b> 上傳學校的 Excel（或在各列按「貼上」）<b>③</b> 補上資源班老師自己的不排課時段 <b>④</b> 到「排課」按一鍵排課。</p>
-  <h3>上傳學校的 Excel</h3><p class="note">可以一次選好幾個檔案。系統會自己認出裡面的<b>學生名單、任課老師名單（教師名單）、課程一覽表、班級不排課、教師不排課、手排鎖課（資料輸入或資料輸出）</b>，其他工作表會略過。Google 試算表請先按「檔案 › 下載 › Microsoft Excel」。檔案只在這台電腦的瀏覽器裡讀，不會上傳到任何地方。</p>
-  <div class="bar"><input type="file" id="xlsIn" accept=".xlsx,.xls,.xlsm,.csv,.ods" multiple style="display:none" onchange="readXls(this)"><button class="b pri" onclick="$('xlsIn').click()">選擇 Excel 檔</button></div>`;
-  if(XL.length)h+=`<div class="xlbox"><table class="ed"><tr><th></th><th>檔案</th><th>工作表</th><th>認成</th><th>列數</th></tr>${XL.map((x,i)=>`<tr><td><input type="checkbox"${x.on?' checked':''} onchange="XL[${i}].on=this.checked"></td><td class="dim">${esc(x.file)}</td><td>${esc(x.sheet)}</td><td><b>${XLT[x.type]}</b></td><td class="dim">${x.n}</td></tr>`).join('')}</table>
-    ${XL.skip?`<p class="note">另外有 ${XL.skip} 張工作表看不出是哪一種，已略過。</p>`:''}
-    ${XL.some(x=>x.type==='off')?`${hardPick('xl')}<label class="note"><input type="checkbox" id="xlAdd"> 教師不排課裡名冊沒有的老師也新增（不勾就只帶入名冊裡有的老師）</label>`:''}
-    <div class="bar"><button class="b pri" onclick="xlImport()">匯入勾選的工作表</button><button class="b" onclick="XL=[];render()">取消</button></div></div>`;
-  h+=`<h3>資料清單</h3><div class="scroll"><table class="ed chklist"><tr><th>資料</th><th>目前</th><th>學校的哪一份表</th><th></th></tr>${rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="dim">${r[2]}</td><td class="nw">${r[3]}</td></tr>`).join('')}</table></div>
-  <p class="note">開始新學期、下載備份、從備份檔還原、回到自動保留的版本，都在 <a class="lk" onclick="go('roster','backup')">名冊 › 資料與備份</a>。</p>`;
+    ['個管老師',st(cm===D.students.length&&cm,cm+' / '+D.students.length),'個管學生一覽表',`<button class="b sm" onclick="go('stu')">學生</button>`],
+    ['資源班老師與鐘點',st(res.length&&res.every(t=>t.hours),res.length+' 位・'+res.filter(t=>t.hours).length+' 位有鐘點'),'課程一覽表右側',`<button class="b sm" onclick="go('sched','groups')">開課</button>`],
+    ['課程',st(D.groups.length,D.groups.length+' 門'),'課程領域分組及節數一覽表',`<button class="b sm" onclick="pasteCourses()">貼上</button>`],
+    ['各班任課老師',st(!need.size||csN===need.size,need.size?csN+' / '+need.size:'不需要'),'特教鎖課需求 › 教師名單',`<button class="b sm" onclick="pasteTL()">貼上</button>`],
+    ['班級不排課',st(cOff,cOff+' 班'),'特教鎖課需求 › 班級不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
+    ['任課老師不排課',st(tOff,tOff+' 位'),'特教鎖課需求 › 教師不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
+    ['手排鎖課（選填）',st(1,(D.lockFix||[]).length?D.lockFix.length+' 節':'沒有'),'特教鎖課需求 › 資料輸入或輸出',`<button class="b sm" onclick="pasteLocks()">貼上</button>${(D.lockFix||[]).length?`<button class="b sm" onclick="clearLocks()">清除</button>`:''}`],
+    ['資源班老師不排課',st(rOff===res.length&&res.length,rOff+' / '+res.length),'老師自己點',`<button class="b sm" onclick="go('set','off')">點選</button>`],
+    ['年級共同時段',st(Object.keys(D.offBy).some(k=>k[0]==='g'&&D.offBy[k].length),Object.keys(D.offBy).filter(k=>k[0]==='g'&&D.offBy[k].length).map(k=>GRADE[k.slice(2)]).join('、')||'沒有'),'教學組',`<button class="b sm" onclick="offSel='g:7';go('set','off')">點選</button>`],
+    ['鎖課方式',st(1,D.settings.lockMode==='flex'?'彈性'+(D.settings.lockCap?'（'+esc(Object.keys(D.settings.lockCap).map(k=>k+D.settings.lockCap[k]).join(' '))+'）':''):'同一科同時上'),'和教學組確認',`<button class="b sm" onclick="go('set','rules')">規則</button>`]];
+  let h=`<section class="card">${secH(1,'上傳學校的 Excel',tip('可以一次選好幾個檔。會認出學生名單、教師名單、課程一覽表、班級不排課、教師不排課、手排鎖課，其他工作表略過。Google 試算表請先下載成 Excel。檔案只在這台電腦讀，不會上傳。'))}
+  <div class="bar"><input type="file" id="xlsIn" accept=".xlsx,.xls,.xlsm,.csv,.ods" multiple style="display:none" onchange="readXls(this)"><button class="b pri" onclick="$('xlsIn').click()">選擇 Excel 檔</button>
+    <button class="b" onclick="go('set','data')">新學期</button></div>`;
+  if(XL.length)h+=`<div class="xlbox"><table class="ed"><thead><tr><th></th><th>檔案</th><th>工作表</th><th>認成</th><th>列數</th></tr></thead><tbody>${XL.map((x,i)=>`<tr><td><input type="checkbox" aria-label="匯入 ${esc(x.sheet)}"${x.on?' checked':''} onchange="XL[${i}].on=this.checked"></td><td class="dim">${esc(x.file)}</td><td>${esc(x.sheet)}</td><td><b>${XLT[x.type]}</b></td><td class="dim">${x.n}</td></tr>`).join('')}</tbody></table>
+    ${XL.skip?`<p class="hint">略過 ${XL.skip} 張認不出的工作表。</p>`:''}
+    ${XL.some(x=>x.type==='off')?`${hardPick('xl')}<label class="chk1"><input type="checkbox" id="xlAdd"> 名冊沒有的老師也新增</label>`:''}
+    <div class="bar end"><button class="b" onclick="XL=[];render()">取消</button><button class="b pri" onclick="xlImport()">匯入勾選的</button></div></div>`;
+  h+=`</section><section class="card flush">${secH(2,'資料清單')}<div class="scroll"><table class="ed chklist"><thead><tr><th>資料</th><th>目前</th><th>學校的表</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="dim">${r[2]}</td><td class="nw">${r[3]}</td></tr>`).join('')}</tbody></table></div></section>`;
   $('page').innerHTML=h;
 }
-/* ───── 名冊｜資料與備份：下載備份、還原、自動保留的版本、開始新學期、全部清空，集中在這一頁 ───── */
+/* ───── 設定 › 資料與備份：下載、還原、自動保留的版本、新學期、這台電腦、全部清空 ───── */
 function renderBackup(){
-  let h=`<p class="guide">這台電腦的資料怎麼保存、怎麼救回來，都在這一頁。</p>
-  <h3>備份與還原</h3><p class="note">${cloudState==='on'?'目前登入共用中，資料存在雲端，名單裡的老師都看得到同一份。':'目前資料只存在這台電腦的這個瀏覽器。換電腦或清除瀏覽器資料前，請先下載備份檔；想讓幾位老師共用同一份，可以設定學校自己的雲端。'}</p>
-  <div class="bar"><button class="b pri" onclick="exportJson()">下載備份檔</button><button class="b" onclick="$('imp').click()">從備份檔還原</button><button class="b" onclick="openShare(1)">共用與學校自己的雲端</button>${(()=>{const lb=+localStorage.getItem(LBKEY)||0;return `<span class="note" style="margin:0">${lb?'上次下載備份：'+fmtTime(lb):'還沒下載過備份檔'}</span>`;})()}</div>
-  <h3>開始新學期</h3><p class="note">勾選要清掉的部分，沒勾的會留著。學生、老師、教室、作息、個管老師、年級共同時段都會保留。</p>
+  const lb=+localStorage.getItem(LBKEY)||0,pc=typeof pcMode==='function'&&pcMode();
+  let h=`<section class="card">${secH(1,'備份與還原',tip('備份檔含學生姓名與特教資料。要存到隨身碟、雲端硬碟或寄出去，請用加密備份（密碼忘了就打不開）。'))}
+  <p class="hint">${cloudState==='on'?'資料存在雲端，共用的老師看得到同一份。':'資料只存在這台電腦。'}${lb?'上次備份 '+fmtTime(lb):'還沒備份過'}</p>
+  <div class="bar"><button class="b pri" onclick="exportJson()">下載備份</button><button class="b" onclick="exportEnc()">加密備份</button><button class="b" onclick="$('imp').click()">從備份還原</button></div></section>`;
+  const a=snaps();
+  h+=`<section class="card${a.length?' flush':''}">${secH(2,'自動保留的版本',tip('每天第一次修改，以及匯入、新學期、還原之前，都會在這台電腦留一份（最多 12 份）。'))}`+(a.length?`<div class="scroll"><table class="ed"><thead><tr><th>時間</th><th>說明</th><th>學生／課程</th><th></th></tr></thead><tbody>${a.map((x,i)=>{let n='';try{const o=JSON.parse(x.json);n=(o.students||[]).length+' 位／'+(o.groups||[]).length+' 門';}catch(e){}return `<tr><td class="num">${fmtTime(x.at)}</td><td>${esc(x.label)}</td><td class="dim">${n}</td><td><button class="b sm" onclick="restoreSnap(${i})">回到這版</button></td></tr>`;}).reverse().join('')}</tbody></table></div>`:'<p class="dim">還沒有。</p>')+`</section>`;
+  h+=`<section class="card">${secH(3,'開始新學期')}<details class="more"><summary>選要清掉的部分</summary>
   <div class="rules"><label>學期名稱 <input type="text" id="ntTitle" class="w12" value="${esc(D.title||'')}"></label>
-    <label><input type="checkbox" id="ntAssign" checked> 清空排課結果（課程留著，重新排）</label>
-    <label><input type="checkbox" id="ntGroups"> 清空所有課程（之後重新貼課程一覽表）</label>
+    <label><input type="checkbox" id="ntAssign" checked> 清空排課結果（課程留著）</label>
+    <label><input type="checkbox" id="ntGroups"> 清空所有課程</label>
     <label><input type="checkbox" id="ntCS"> 清空各班任課老師</label>
     <label><input type="checkbox" id="ntCOff"> 清空班級不排課、不能鎖課</label>
-    <label><input type="checkbox" id="ntTOff"> 清空所有老師的不排課時段</label>
-    <label><input type="checkbox" id="ntUp"> <b>新學年升年級</b>：七年級變八年級、八年級變九年級（701→801），九年級學生畢業移出名冊。班級號碼會變，所以課程、任課老師、班級不排課會一起清空</label></div>
-  <div class="bar"><button class="b pri" onclick="startTerm()">開始新學期</button><button class="b" onclick="exportJson()">先下載備份檔</button></div>
-  <h3>自動保留的版本</h3><p class="note">每天第一次修改，以及匯入、開始新學期、還原之前，都會在這台電腦自動留一份（最多 12 份）。改壞了可以回到之前的版本。</p>`;
-  const a=snaps();h+=a.length?`<div class="scroll"><table class="ed"><tr><th>時間</th><th>說明</th><th>學生／課程</th><th></th></tr>${a.map((x,i)=>{let n='';try{const o=JSON.parse(x.json);n=(o.students||[]).length+' 位／'+(o.groups||[]).length+' 門';}catch(e){}return `<tr><td>${fmtTime(x.at)}</td><td>${esc(x.label)}</td><td class="dim">${n}</td><td><button class="b sm" onclick="restoreSnap(${i})">回到這個版本</button></td></tr>`;}).reverse().join('')}</table></div>`:'<p class="note">還沒有。</p>';
-  h+=`<h3>全部清空</h3><p class="note">把名冊、分組、排法、段考考場與點名紀錄全部清掉，回到空白。清空前會自動保留一份。</p><div class="bar"><button class="b danger" onclick="resetAll()">全部清空</button></div>`;
+    <label><input type="checkbox" id="ntTOff"> 清空老師的不排課時段</label>
+    <span class="row"><label><input type="checkbox" id="ntUp"> <b>升年級</b>：701→801，九年級畢業移出</label>${tip('班級號碼會變，所以課程、任課老師、班級不排課會一起清空。學生、老師、教室、作息、個管都會保留。')}</span></div>
+  <div class="bar" style="margin-top:12px"><button class="b" onclick="exportJson()">先下載備份</button><button class="b pri" onclick="startTerm()">開始新學期</button></div></details></section>`;
+  h+=`<section class="card">${secH(4,'這台電腦')}<div class="rules"><span class="row"><label><input type="checkbox"${pc?' checked':''} onchange="setPcMode(this.checked);render()"> 學校的公用電腦</label>${tip('開啟後不再自動保留版本'+(PID()?'；登出時預設清除這台電腦上的資料':'')+'。')}</span></div>
+  <div class="bar" style="margin-top:12px"><button class="b" onclick="wipeAsk()">清除這台電腦的資料</button><span class="grow"></span><button class="b danger" onclick="resetAll()">全部清空</button></div></section>`;
   $('page').innerHTML=h;
 }
-
+/* ───── 設定 › 帳號與共用：cloud.js 的 renderShare 直接畫在頁面裡 ───── */
+function renderAccount(){$('page').innerHTML='<section class="card share" id="shareHost"></section>';shareEmbed=true;if(!shareOpen)shareOpen=true;try{renderShare();}catch(e){$('shareHost').innerHTML=emptyBox('共用設定讀不出來。');}}
+// 原本開對話框的「共用」按鈕（側欄、待辦）都改到這一頁
+if(typeof openShare==='function')openShare=function(x){shareOpen=x?2:true;if(page==='set'&&sub==='account')renderAccount();else go('set','account');};
+/* ───── 設定 › AI：gmSettings 畫在頁面裡 ───── */
+function renderAI(){$('page').innerHTML='<section class="card" id="aiHost"></section>';gmSettings();}
 /* ───── 備份與還原（名冊、排課、段考考場、通知單一起） ───── */
 function reloadExam(){const f=$('examFrame');if(f.getAttribute('src'))f.src='exam.html?embed&ver='+EXAM_V;}
 function backupObj(){const o=Object.assign({},D),g=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
@@ -965,7 +1112,7 @@ function resetAll(){if(isRO()){toast('你是檢視權限，不能清空');return
   if(cloudState==='on'&&!isAdmin()){toast('共用中只有主持人可以全部清空');return;}
   const t=String(D.title||'').trim(),pc=typeof pcMode==='function'&&pcMode();
   const w=prompt('全部清空會清掉目前的名冊、分組、排法、段考考場與點名紀錄'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。\n'+
-    '清空前會先自動保留一份，在「名冊 › 匯入與新學期 › 自動保留的版本」可以找回'+(pc?'（公用電腦模式只留到關掉分頁為止）':'')+'。\n\n'+
+    '清空前會先自動保留一份，在「設定 › 資料與備份」可以找回'+(pc?'（公用電腦模式只留到關掉分頁為止）':'')+'。\n\n'+
     '確定要清空，請輸入「清空」'+(t?'或學期名稱「'+t+'」':'')+'：','');
   if(w==null)return;if(w.trim()!=='清空'&&!(t&&w.trim()===t)){toast('輸入的字不對，沒有清空');return;}
   snapshot('全部清空之前');try{localStorage.removeItem(EXKEY);localStorage.removeItem(NKEY);}catch(e){}
@@ -975,7 +1122,7 @@ function resetAll(){if(isRO()){toast('你是檢視權限，不能清空');return
 window.addEventListener('storage',e=>{
   if(e.key===KEY){const o=load();if(!o||JSON.stringify(o)===JSON.stringify(D))return;D=normalize(o);rebuild();cloudPush();if(page!=='exam')render();}
   else if(e.key===AKEY){try{ATT=JSON.parse(e.newValue)||{};}catch(x){}if(page==='checkin'||page==='home')render();}
-  else if(e.key===EXKEY&&page!=='exam'&&(page==='home'||sub==='stu'))render();
+  else if(e.key===EXKEY&&page!=='exam'&&(page==='home'||page==='stu'))render();
 });
 
 /* ───── 全校課表：讀學校每班一頁的課程表 PDF（文字檔直接讀，掃描檔用文字辨識），得到各班各科老師 ───── */
@@ -1031,30 +1178,29 @@ function ttCell(c,subs){const arr=[].concat(subs).flatMap(s=>(c.subj[s]||[]).sli
 function renderTT(){const tt=D.tt||{},cls=Object.keys(tt).sort();
   const stuCls=[...new Set(D.students.map(s=>String(s.cls)).filter(c=>/^\d{3,4}$/.test(c)))].sort(),noTT=stuCls.filter(c=>!tt[c]);
   const unk=cls.reduce((a,c)=>a+Object.values(tt[c].subj).flat().filter(x=>x[2]).length,0);
-  let h=`<p class="guide">學期初拿到的<b>全校課表 PDF</b>（每班一頁、下面有「科目、老師、節數」統計的那種）直接選進來，系統會讀出每一班每一科的老師。文字 PDF 一下就讀完；掃描成圖片的 PDF 會用文字辨識，大約一頁一秒，第一次要先下載辨識資料。檔案只在這台電腦的瀏覽器裡讀，不會上傳。</p>
-  <div class="bar"><input type="file" id="ttIn" accept=".pdf" multiple style="display:none" onchange="readTT(this)"><button class="b pri" onclick="$('ttIn').click()"${TTJOB?' disabled':''}>選擇課表 PDF</button>
-  ${cls.length?`<button class="b" onclick="ttApplyCS()">用課表更新任課老師</button><button class="b" onclick="ttClear()">清除課表</button>`:''}<span class="note" style="margin:0">七、八、九年級的檔案可以一次選，重讀同一班會蓋掉舊的。</span></div>`;
+  let h=`<div class="bar"><input type="file" id="ttIn" accept=".pdf" multiple style="display:none" onchange="readTT(this)"><button class="b pri" onclick="$('ttIn').click()"${TTJOB?' disabled':''}>選擇課表 PDF</button>
+  ${cls.length?`<button class="b" onclick="ttApplyCS()">更新任課老師</button><button class="b" onclick="ttClear()">清除課表</button>`:''}${tip('每班一頁、下面有「科目、老師、節數」統計的全校課表 PDF。掃描檔用文字辨識，約一頁一秒，第一次要下載辨識資料。可以一次選多個檔，重讀同一班會蓋掉舊的。檔案只在這台電腦讀。')}</div>`;
+  if(!cls.length&&!TTJOB)h+=emptyBox('還沒有全校課表。','');
   if(TTJOB)h+=`<div class="chk"><b>${esc(TTJOB.msg)}</b>${TTJOB.total?`<span class="mid">${TTJOB.done} / ${TTJOB.total} 頁</span>`:''}</div>`;
   if(cls.length){
-    h+=`<h3>各班老師 <span class="note" style="font-weight:normal">${cls.length} 個班${unk?`，<span class="warn">${unk} 個名字認不出來（橘色）</span>`:''}；點班級可以核對、修改</span></h3><div class="scroll"><table class="ed"><tr><th>班級</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}<th>其他</th><th></th></tr>`+
+    h+=secH(1,'各班老師',` <small>${cls.length} 班${unk?`・<span class="warn">${unk} 個待核對</span>`:''}</small>`)+`<div class="card flush"><div class="scroll"><table class="ed"><tr><th>班級</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}<th>其他</th><th></th></tr>`+
       cls.map(c=>{const o=tt[c],other=Object.keys(o.subj).filter(s=>!TT_MAIN.includes(s)),u=Object.values(o.subj).flat().filter(x=>x[2]).length;
-        return `<tr><td><button class="b sm${c[0]==='?'||o.guessCls?' warn':''}" data-c="${esc(c)}" onclick="ttEdit(this.dataset.c)">${esc(c)}</button></td>${TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join('')}<td class="dim">${other.length} 科${u?` <span class="warn">${u} 個待核對</span>`:''}</td><td class="dim">${esc(o.src||'')}</td></tr>`;}).join('')+`</table></div>`;
+        return `<tr><td><button class="b sm${c[0]==='?'||o.guessCls?' warn':''}" data-c="${esc(c)}" onclick="ttEdit(this.dataset.c)">${esc(c)}</button></td>${TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join('')}<td class="dim">${other.length} 科${u?` <span class="warn">${u} 個待核對</span>`:''}</td><td class="dim">${esc(o.src||'')}</td></tr>`;}).join('')+`</table></div></div>`;
     // 勾稽
     const diff=[];const tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
     cls.forEach(c=>[['國語文','國文'],['英語文','英文'],['數學','數學'],['理化','理化']].forEach(([a,b])=>{const k=c+'|'+canonSubj(D,b),x=(tt[c].subj[a]||[])[0];if(!x||x[2])return;const cur=D.classSubj[k]?tn(D.classSubj[k]):'';if(cur!==x[0])diff.push({c,s:b,cur,tt:x[0]});}));
-    h+=`<h3>和學生名單對照</h3><ul class="plain">
-      <li>${noTT.length?`<span class="warn">名冊裡有學生、但課表沒有的班級：${noTT.map(esc).join('、')}</span>`:`<span class="ok">名冊裡學生的 ${stuCls.length} 個班，課表都有。</span>`}</li>
-      <li>${diff.length?`<span class="warn">任課老師（國英數理）和課表不一樣的有 ${diff.length} 格：</span>${diff.slice(0,30).map(d=>esc(d.c+d.s+'：任課老師 '+(d.cur||'沒填')+'，課表 '+d.tt)).join('；')}${diff.length>30?'…':''}。按上面「用課表更新任課老師」可以一次改成課表的。`:'<span class="ok">任課老師（國英數理）和課表一致。</span>'}</li></ul>`;
+    h+=secH(2,'和名冊對照')+`<ul class="plain">
+      <li>${noTT.length?`<span class="warn">課表沒有的班級：${noTT.map(esc).join('、')}</span>`:`<span class="ok">✓ 名冊的 ${stuCls.length} 個班都有課表</span>`}</li>
+      <li>${diff.length?`<span class="warn">任課老師和課表不同 ${diff.length} 格：</span>${diff.slice(0,30).map(d=>esc(d.c+d.s+'：'+(d.cur||'沒填')+' → '+d.tt)).join('；')}${diff.length>30?'…':''}`:'<span class="ok">✓ 任課老師和課表一致</span>'}</li></ul>`;
     const S=D.students.slice().sort((a,b)=>String(a.cls).localeCompare(String(b.cls))||String(a.seat||'').localeCompare(String(b.seat||''),undefined,{numeric:true}));
-    h+=`<div class="scroll"><table class="ed"><tr><th>班級座號</th><th>姓名</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}</tr>`+S.map(s=>{const o=tt[String(s.cls)];
-      return `<tr><td>${esc(s.cls)}${s.seat?'-'+esc(String(s.seat).padStart(2,'0')):''}</td><td>${esc(s.name)}</td>${o?TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join(''):`<td colspan="${TT_COL.length}" class="warn">課表沒有這一班</td>`}</tr>`;}).join('')+`</table></div>
-      <p class="note">段考頁的「交卷名單」會用這裡的老師當批閱教師（作文、國文找國語文老師，社會找歷史、地理、公民老師，自然找生物、理化、地科老師）。</p>`;}
+    h+=`<details class="more"><summary>每位學生的任課老師${tip('段考的交卷名單會用這裡的老師當批閱教師。')}</summary><div class="scroll"><table class="ed"><tr><th>班級座號</th><th>姓名</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}</tr>`+S.map(s=>{const o=tt[String(s.cls)];
+      return `<tr><td>${esc(s.cls)}${s.seat?'-'+esc(String(s.seat).padStart(2,'0')):''}</td><td>${esc(s.name)}</td>${o?TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join(''):`<td colspan="${TT_COL.length}" class="warn">課表沒有這一班</td>`}</tr>`;}).join('')+`</table></div></details>`;}
   $('page').innerHTML=h;}
 function ttEdit(c){const o=D.tt[c];if(!o)return;const rows=Object.keys(o.subj).flatMap(s=>o.subj[s].map(x=>[s,x[0],x[1],x[2]]));
   openDlg(`<h3>核對課表：${esc(c)}</h3>${TTIMG[c]?`<img src="${TTIMG[c]}" style="width:100%;border:1px solid var(--line);border-radius:6px" alt="課表統計">`:`<p class="note">${esc(o.src||'')}</p>`}
-  <div class="bar"><label class="note" style="margin:0">班級 <input type="text" id="ttCls" class="w5" value="${esc(c[0]==='?'?'':c)}" placeholder="例：701"></label><span class="note" style="margin:0">橘色是認不出來的，對照上面的圖改成正確的名字；整列清空就會刪掉。</span></div>
+  <div class="bar"><label class="inl">班級 <input type="text" id="ttCls" class="w5" value="${esc(c[0]==='?'?'':c)}" placeholder="例：701"></label><span class="hint">橘色是認不出的；整列清空就刪掉</span></div>
   <div class="scroll" style="max-height:50vh"><table class="ed" id="ttRows"><tr><th>科目</th><th>老師</th><th>節數</th></tr>${rows.concat([['','','']]).map(r=>`<tr><td><input type="text" class="w8" value="${esc(r[0])}"></td><td><input type="text" class="w5${r[3]?' warn':''}" value="${esc(r[1])}"></td><td><input type="text" class="w3" value="${esc(r[2])}"></td></tr>`).join('')}</table></div>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="ttEditOk(${jsArg(c)})">儲存</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="ttEditOk(${jsArg(c)})">儲存</button></div>`);}
 function ttEditOk(c){const nc=$('ttCls').value.trim()||c,list=[];
   // 改成另一個已經有課表的班級，會蓋掉那一班：先問
   if(nc!==c&&D.tt[nc]&&!confirm(nc+' 已經有課表了（'+(D.tt[nc].src||'之前讀進來的')+'）。\n要用這一頁蓋掉 '+nc+' 原本的課表嗎？'))return;
@@ -1062,31 +1208,31 @@ function ttEditOk(c){const nc=$('ttCls').value.trim()||c,list=[];
   snapshot('修改課表之前');const src=D.tt[c].src;delete D.tt[c];if(TTIMG[c]){TTIMG[nc]=TTIMG[c];}ttStore(D,nc,list,src);changed();closeDlg();render();toast('已儲存 '+nc+' 的課表');}
 function ttApplyCS(){const tt=D.tt||{};let n=0;const list=[];
   Object.keys(tt).filter(c=>/^\d{3,4}$/.test(c)).forEach(c=>[['國語文','國文'],['英語文','英文'],['數學','數學'],['理化','理化']].forEach(([a,b])=>{const x=(tt[c].subj[a]||[])[0];if(!x||x[2])return;list.push([c,b,x[0]]);}));
-  if(!list.length){toast('課表裡沒有可以用的國英數理老師');return;}
-  if(!confirm('用課表裡的國英數理老師更新各班任課老師（'+list.length+' 格）？認不出來的名字不會用。'))return;
+  if(!list.length){toast('課表裡沒有可用的國英數理老師');return;}
+  if(!confirm('用課表更新各班國英數理老師（'+list.length+' 格）？'))return;
   snapshot('用課表更新任課老師之前');list.forEach(([c,b,name])=>{const t=findTeacher(D,name,'普通班'),k=c+'|'+canonSubj(D,b);if(D.classSubj[k]!==t.id){D.classSubj[k]=t.id;n++;}});
-  D=normalize(D);changed();render();toast('更新了 '+n+' 格任課老師');}
-function ttClear(){if(!confirm('清除讀進來的全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
+  D=normalize(D);changed();render();toast('更新 '+n+' 格');}
+function ttClear(){if(!confirm('清除全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
 
 /* ───── 個管分配建議：先看建議、勾選要改的，再套用 ───── */
 let CMR=null;
-function cmOpen(){const res=D.teachers.filter(t=>t.role==='資源班');if(!res.length){toast('先在「名冊 › 老師」新增資源班老師');return;}
-  openDlg(`<h3>建議個管分配</h3><p class="note">系統會依這幾個原則建議：已經有個管的盡量不換；有教到這位學生的老師優先；同年級、同班的學生盡量給同一位，個管要聯絡的導師比較少；人數平均。只是建議，勾選後才會改。</p>
-  <div class="scroll"><table class="ed"><tr><th>資源班老師</th><th>目前個管</th><th>最多帶幾位</th><th>不當個管</th></tr>${res.map(t=>`<tr><td>${esc(t.name)}</td><td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length} 位</td>
+function cmOpen(){const res=D.teachers.filter(t=>t.role==='資源班');if(!res.length){toast('先新增資源班老師');return;}
+  openDlg(`<h3>個管分配</h3><div class="lead">產生建議，勾選的才會改。${tip('原則：已有個管的盡量不換；有教到的老師優先；同年級、同班盡量給同一位；人數平均。')}</div>
+  <div class="scroll"><table class="ed"><tr><th>老師</th><th>目前</th><th>最多</th><th>不當個管</th></tr>${res.map(t=>`<tr><td>${esc(t.name)}</td><td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length} 位</td>
     <td><input type="number" min="0" max="60" class="w3" value="${+t.cmCap>0?t.cmCap:''}" placeholder="平均" onchange="cmSetT('${t.id}','cmCap',this.value)"></td>
     <td><input type="checkbox"${t.noCM?' checked':''} onchange="cmSetT('${t.id}','noCM',this.checked)"></td></tr>`).join('')}</table></div>
-  <label class="note" style="display:block;margin:8px 0"><input type="checkbox" id="cmKeep" checked> 已經有個管的學生盡量不換（取消勾選＝全部重新分配）</label>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="cmRun()">產生建議</button><button class="b" onclick="closeDlg()">取消</button></div><div id="cmOut"></div>`);}
+  <label class="chk1"><input type="checkbox" id="cmKeep" checked> 已有個管的盡量不換</label>
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="cmRun()">產生建議</button></div><div id="cmOut"></div>`);}
 function cmSetT(id,k,v){const t=D.teachers.find(x=>x.id===id);if(!t)return;if(k==='cmCap'){if(+v>0)t.cmCap=+v;else delete t.cmCap;}else{if(v)t.noCM=true;else delete t.noCM;}changed();}
-function cmRun(){CMR=suggestCaseMgr(D,{keep:$('cmKeep').checked});const out=$('cmOut');if(!CMR.list.length){out.innerHTML='<p class="note">'+esc(CMR.note||'沒有學生')+'</p>';return;}
+function cmRun(){CMR=suggestCaseMgr(D,{keep:$('cmKeep').checked});const out=$('cmOut');if(!CMR.list.length){out.innerHTML='<p class="hint">'+esc(CMR.note||'沒有學生')+'</p>';return;}
   const ch=CMR.list.filter(x=>x.change);
-  out.innerHTML=`<h3>分配後每位老師</h3><div class="scroll"><table class="ed"><tr><th>老師</th><th>人數</th><th>年級</th><th>要聯絡的班級</th><th>有教到的</th></tr>${CMR.summary.map(s=>`<tr><td>${esc(s.name)}</td><td>${s.n}<span class="dim"> / ${s.capSet?'上限 ':'約 '}${s.cap}</span>${s.n>s.cap?' <span class="warn">超過</span>':''}</td><td>${s.grades.map(g=>g+' 年級').join('、')||'－'}</td><td>${s.classes} 班</td><td>${s.taught} 位</td></tr>`).join('')}</table></div>
-  <h3>要改的學生 <span class="note" style="font-weight:normal">${ch.length} 位${ch.length?'，勾選的才會改':''}</span></h3>`+
+  out.innerHTML=`<h4>分配後</h4><div class="scroll"><table class="ed"><tr><th>老師</th><th>人數</th><th>年級</th><th>要聯絡的班級</th><th>有教到的</th></tr>${CMR.summary.map(s=>`<tr><td>${esc(s.name)}</td><td>${s.n}<span class="dim"> / ${s.capSet?'上限 ':'約 '}${s.cap}</span>${s.n>s.cap?' <span class="warn">超過</span>':''}</td><td>${s.grades.map(g=>g+' 年級').join('、')||'－'}</td><td>${s.classes} 班</td><td>${s.taught} 位</td></tr>`).join('')}</table></div>
+  <h4>要改的學生 <small class="dim">${ch.length} 位</small></h4>`+
   (ch.length?`<div class="scroll" style="max-height:40vh"><table class="ed"><tr><th><input type="checkbox" checked onchange="document.querySelectorAll('.cmChk').forEach(c=>c.checked=this.checked)"></th><th>班級座號</th><th>姓名</th><th>目前</th><th>建議</th><th>理由</th></tr>${ch.map(x=>`<tr><td><input type="checkbox" class="cmChk" value="${esc(x.sid)}" checked></td><td>${esc(x.cls)}${x.seat?'-'+esc(String(x.seat).padStart(2,'0')):''}</td><td>${esc(x.name)}</td><td class="dim">${esc(x.fromName||'沒有')}</td><td><b>${esc(x.toName)}</b></td><td class="dim">${esc(x.why.join('、')||'平均人數')}</td></tr>`).join('')}</table></div>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="cmApply()">套用勾選的</button></div>`:'<p class="note">目前的分配已經符合原則，不需要改。</p>');}
+  <div class="bar end"><button class="b pri" onclick="cmApply()">套用勾選的</button></div>`:'<p class="hint">目前的分配不需要改。</p>');}
 function cmApply(){if(!CMR)return;const ids=new Set([...document.querySelectorAll('.cmChk:checked')].map(c=>c.value));if(!ids.size){toast('沒有勾選');return;}
   snapshot('個管分配之前');let n=0;CMR.list.forEach(x=>{if(!ids.has(x.sid))return;const s=D.students.find(y=>y.id===x.sid);if(s&&s.caseMgr!==x.to){s.caseMgr=x.to;n++;}});
-  CMR=null;changed();closeDlg();render();toast('已更新 '+n+' 位學生的個管老師；要退回可以到「匯入與新學期」的自動保留版本');}
+  CMR=null;changed();closeDlg();render();toast('已更新 '+n+' 位的個管');}
 /* ───── Gemini（AI 設定、AI 排課候選、用文字調整、說明問題、看圖核對全校課表）─────
    連線在 gemini.js、題目與檢查在 ai.js，伺服器端代理在 functions/ai.js，這裡只有畫面。
    原則：本機排課程式是裁判，AI 只提候選；送出前去識別化；第一次送出前給老師看內容；每次使用都記在這台瀏覽器。
@@ -1139,15 +1285,15 @@ async function gmAsk(kind,req,host,msg){
   catch(e){gmEnd();gmSetStatus(gmMsg(e),e.code!=='cancel');return null;}
 }
 
-/* ───── AI 設定：放在側邊欄，因為它是「這台瀏覽器」的設定，不屬於學校的名冊資料 ───── */
-function gmSettings(){openDlg('');const B=$('dlgBody'),c=GEMINI.cached(),mode=GEMINI.getMode(),signed=GEMINI.config&&typeof CLOUD!=='undefined'&&!!CLOUD&&!!CLOUD.user&&cloudState==='on';
+/* ───── AI 設定：在 設定 › AI 畫在頁面裡（#aiHost），其他地方叫出來時用對話框。是「這台瀏覽器」的設定，不屬於名冊資料 ───── */
+function gmSettings(){const host=page==='set'&&sub==='ai'&&!$('dlg').open?$('aiHost'):null;if(!host)openDlg('');else host.replaceChildren();const B=host||$('dlgBody'),c=GEMINI.cached(),mode=GEMINI.getMode(),signed=GEMINI.config&&typeof CLOUD!=='undefined'&&!!CLOUD&&!!CLOUD.user&&cloudState==='on';
   const cur=GEMINI.getModel(),def=c?GEMINI.defaultModel(c.list):'',add=new Set((c&&c.added)||[]);
   const radio=(v,label,sub)=>gmEl('label',{class:'gmmode'},gmEl('input',{type:'radio',name:'gmMode',value:v,checked:mode===v,onchange:()=>{GEMINI.setMode(v);gmSettings();}}),gmEl('b',null,label),gmEl('small',null,sub));
   const keyIn=gmEl('input',{type:'password',id:'gmKey',class:'gmkey',value:GEMINI.getKey(),placeholder:'貼上 Gemini API 金鑰',autocomplete:'off',spellcheck:'false'});
   const sel=gmEl('select',{id:'gmModel',disabled:!(c&&c.list.length),onchange:e=>{GEMINI.setModel(e.target.value);toast('改用 '+gmLabel(e.target.value));}},
     c&&c.list.length?c.list.map(m=>gmEl('option',{value:m.id,selected:m.id===cur},m.label+(m.id===def?'（建議）':'')+(m.preview?'（預覽版）':'')+(add.has(m.id)?'（新）':''))):gmEl('option',null,'先按「測試連線」，系統會查出可以用的模型'));
-  B.append(gmEl('h3',null,'AI 設定（Google Gemini）'),
-    gmEl('p',{class:'note'},'接上 Gemini 之後：排課頁可以請 AI 提一份候選排法（系統檢查過比現在好才給你選）、用文字加限制或調整、請 AI 用白話說明排不開的原因；全校課表頁可以請 AI 看圖核對認不出的老師。不接也沒關係，原本的功能都照常。'),
+  B.append(gmEl('h3',null,'Google Gemini'),
+    gmEl('p',{class:'hint'},'選用。可以請 AI 排課、用文字調整、說明問題、看圖核對課表。'),
     gmEl('h4',null,'1. 連線方式'),
     radio('proxy','學校的 AI 服務（建議）','登入雲端後使用，經過學校的 Firebase 伺服器呼叫 Google Vertex AI；瀏覽器裡沒有金鑰，每次使用都有稽核紀錄。'+(signed?'':'（現在沒有登入雲端，不能用）')),
     radio('browser','自己的金鑰（個人試用）','瀏覽器直接呼叫 Google，適合沒有雲端時自己試用。'),
@@ -1166,7 +1312,7 @@ function gmSettings(){openDlg('');const B=$('dlgBody'),c=GEMINI.cached(),mode=GE
     gmEl('label',{class:'note'},gmEl('input',{type:'checkbox',checked:GEMINI.namesOk(),onchange:e=>{GEMINI.setNamesOk(e.target.checked);}}),' 可以送出老師姓名（不勾的話，老師也換成代號 T1、T2…；看圖核對課表一定要勾，因為圖上就有名字）'),
     gmEl('ul',{class:'note gmul'},gmEl('li',null,'學生姓名一律換成代號（S1、S2…），不會送出。'),gmEl('li',null,'每一種功能第一次送出前，會先給你看完整內容。'),gmEl('li',null,'學校的 AI 服務在伺服器上會再換一次姓名，並記下誰、何時、用途、用量（不記內容）。')),
     gmEl('h4',null,'4. 這台瀏覽器的使用紀錄'),gmLogView(),
-    gmEl('div',{class:'bar',style:'margin:12px 0 0'},gmEl('button',{class:'b',onclick:()=>{if(!confirm('清除這個瀏覽器裡所有 Gemini 設定與使用紀錄？'))return;GEMINI.forget();gmSettings();toast('已清除');}},'全部清除'),gmEl('button',{class:'b',onclick:closeDlg},'關閉')));}
+    gmEl('div',{class:'bar',style:'margin:12px 0 0'},gmEl('button',{class:'b',onclick:()=>{if(!confirm('清除這個瀏覽器裡所有 Gemini 設定與使用紀錄？'))return;GEMINI.forget();gmSettings();toast('已清除');}},'全部清除'),host?null:gmEl('button',{class:'b',onclick:closeDlg},'關閉')));}
 // 使用紀錄：每次送了什麼、回了什麼、最後套用了什麼；套用過的可以回到那次之前
 function gmLogView(){const a=GEMINI.logList().slice().reverse();if(!a.length)return gmEl('p',{class:'note'},'還沒有使用紀錄。');
   return gmEl('ul',{class:'gmlog'},a.map(x=>{const det=(t,s)=>gmEl('details',null,gmEl('summary',null,t),gmEl('pre',{class:'gmpre'},s||'（沒有）'));
@@ -1193,7 +1339,7 @@ if(typeof aiOpen==='function'){const aiOpen0=aiOpen;aiOpen=function(){aiOpen0();
     gmEl('label',{class:'note'},gmEl('input',{type:'checkbox',id:'gmFix',checked:true}),' Gemini 排好的先保留，衝突的那幾節交給系統修'),
     gmBar('請 Gemini 排',gmSched),gmEl('div',{id:'gmRes'}),gmNotice('學生、老師都換成代號，不送姓名。')):gmNoReady('可以按一下直接請 AI 排，不用複製貼上');
   h.after(box,gmEl('h4',null,'或用複製貼上'));};}
-async function gmSched(){if(!M.L.length){toast('還沒有要排的組，請先到「老師開課」建立');return;}
+async function gmSched(){if(!M.L.length){toast('還沒有要排的課');return;}
   const D0=JSON.parse(JSON.stringify(D)),req=AI.schedRequest(D0,{names:GEMINI.namesOk()}),fix=$('gmFix')&&$('gmFix').checked,host=$('gmRes');host.replaceChildren();
   const r=await gmAsk('sched',req,host,'Gemini 排課中（題目 '+req.prompt.length+' 字）；pro 類的模型可能要想一兩分鐘…');if(!r)return;
   gmOffer(D0,r.json,req.v,fix,r.logId,host);}
@@ -1272,7 +1418,7 @@ async function gmExplainGo(){if(gmCtl)return;const out=[];evaluate(M,ST.slot,out
 /* ───── (c) 全校課表：文字辨識認不出的（橘色），把截下來的統計區圖片給 Gemini 看 ─────
    AI 只能從已知的老師名單裡挑、附把握程度，不准自己編名字；結果只是建議，打開班級核對、按儲存才寫入 */
 const gmTTTodo=()=>Object.keys(D.tt||{}).filter(c=>TTIMG[c]&&!TTSUG[c]&&(c[0]==='?'||D.tt[c].guessCls||Object.values(D.tt[c].subj).flat().some(x=>x[2])));
-const gmTTGate=()=>!gmReady()?'接上 Gemini（側邊欄「AI 設定」）可以請它看圖核對橘色的名字。':!GEMINI.namesOk()?'要請 AI 看圖核對，請先到「AI 設定」勾選「可以送出老師姓名」（圖上就有老師名字）。':'';
+const gmTTGate=()=>!gmReady()?'接上 Gemini（設定 › AI）可以請它看圖核對。':!GEMINI.namesOk()?'要請 AI 看圖核對，請先到「AI 設定」勾選「可以送出老師姓名」（圖上就有老師名字）。':'';
 if(typeof renderTT==='function'){const rt0=renderTT;renderTT=function(){rt0();const bar=document.querySelector('#page .bar');if(!bar)return;
   const todo=gmTTTodo(),ns=Object.keys(TTSUG).filter(c=>D.tt&&D.tt[c]).length,gate=gmTTGate();
   if(GMTT)bar.after(gmEl('div',{class:'chk'},gmEl('b',null,'Gemini 看圖中'),gmEl('span',{class:'mid'},GMTT.done+' / '+GMTT.total+' 班'),gmEl('button',{class:'b sm',onclick:()=>{GMTT.stop=1;if(gmTTCtl)gmTTCtl.abort();}},'停止')));
@@ -1285,8 +1431,8 @@ async function gmTTAll(){const todo=gmTTTodo();if(!todo.length||GMTT||gmTTGate()
   GMTT={done:0,total:todo.length};gmTTCtl=new AbortController();render();let err=null;
   for(const c of todo){if(GMTT.stop)break;   // 一班一班來：每分鐘有次數上限，一次全丟會被擋
     try{await gmTTOne(c,gmTTCtl.signal);}catch(e){if(e.code!=='safety'&&e.code!=='format'&&e.code!=='empty'){err=e;break;}}
-    GMTT.done++;if(page==='roster'&&sub==='tt'&&!$('dlg').open)render();}
-  const n=GMTT.done;GMTT=null;gmTTCtl=null;if(page==='roster'&&sub==='tt')render();
+    GMTT.done++;if(page==='set'&&sub==='tt'&&!$('dlg').open)render();}
+  const n=GMTT.done;GMTT=null;gmTTCtl=null;if(page==='set'&&sub==='tt')render();
   toast(err&&err.code!=='cancel'?'看到第 '+(n+1)+' 班時停下來：'+gmMsg(err):'AI 看完 '+n+' 班；標色的班級點進去核對，按儲存才會寫入');}
 if(typeof ttEdit==='function'){const te0=ttEdit;ttEdit=function(c){te0(c);if(!TTIMG[c])return;const bar=$('dlgBody').querySelector('.bar');if(!bar)return;
   const gate=gmTTGate();bar.append(gate?gmEl('span',{class:'note',style:'margin:0'},gate):gmEl('button',{class:'b sm gmgo',onclick:()=>gmTTAsk(c)},'請 AI 看圖'),
@@ -1621,7 +1767,7 @@ function draftCompare(){if(!hasDraft())return null;const A=toState(M,D),B=draftS
 // mode：'try' 試排（有草稿時從草稿出發）、'again' 重排（換亂數，固定的不動）、'all' 全部重排（連固定的也重排）
 function trySolve(mode){
   if(isRO()){toast('你是檢視權限，不能排課');return;}
-  if(!M.L.length){toast('還沒有要排的組，請先到「老師開課」建立');return;}
+  if(!M.L.length){toast('還沒有要排的課');return;}
   const part=view.slice(0,2)==='g:',gv=part?+view.slice(2):0,only=part?shownL:null,base=hasDraft()?draftState():toState(M,D);
   if(mode==='all'&&base.pin.some((x,l)=>x&&(!part||shownL(l)))&&!confirm('全部重排會連已經固定的也一起重排，確定嗎？\n排出來一樣先放在草稿，正式課表不會變。'))return;
   pushUndo();$('busy').style.display='flex';
@@ -1644,40 +1790,41 @@ function solveBtns(gv,gname){const d=hasDraft();
     `<button class="b" onclick="trySolve('all')" title="連固定的也一起重排，結果一樣先放在草稿">${gv?gname+'全部重排':'全部重排'}</button>`+(d?`<button class="b pri" onclick="confirmDraft()">確定採用</button>`:'');}
 
 function confirmDraft(){if(!hasDraft()||isRO())return;const d=D.sched.draft,c=draftCompare();
-  openDlg(`<h3>確定採用這份草稿</h3><p class="note">確定之後，總覽、課表輸出、點名都會改用這份課表。現在的正式課表會留在「已確定的版本」裡，之後可以拿回來。</p>
-    ${c.draft.probs>c.main.probs?`<p class="note warn">注意：這份草稿的衝突（${c.draft.probs} 個）比正式課表（${c.main.probs} 個）多。</p>`:''}
-    <div class="bar"><label class="note" style="margin:0">這一版的名稱 <input type="text" id="verName" class="w12" value="${esc(d.label)}"></label></div>
-    <div class="bar" style="margin:12px 0 0"><button class="b pri" onclick="confirmDraftOk()">確定採用</button><button class="b" onclick="closeDlg()">再想想</button></div>`);}
+  openDlg(`<h3>確定採用這份草稿</h3><p class="lead">各頁都會改用這份課表；現在的會留在「已確定的版本」。</p>
+    ${c.draft.probs>c.main.probs?`<p class="hint warn">草稿的衝突（${c.draft.probs}）比正式課表（${c.main.probs}）多。</p>`:''}
+    <div class="form"><label for="verName">名稱</label><input type="text" id="verName" class="w12" value="${esc(d.label)}"></div>
+    <div class="bar end"><button class="b" onclick="closeDlg()">再想想</button><button class="b pri" onclick="confirmDraftOk()">確定採用</button></div>`);}
 function confirmDraftOk(){if(!hasDraft())return;const box=schedBox(),d=box.draft,name=($('verName')&&$('verName').value.trim())||d.label;
   pushUndo();
   // 現在的正式課表如果不在版本清單裡（例如功能上線前排的、或之後手動改過），先留一份，確定之後還拿得回來
   const cur=packAssign(D.assign),last=box.vers[box.vers.length-1];
   if(placedOf(cur)&&(!last||JSON.stringify(last.a)!==JSON.stringify(cur)))box.vers.push({a:cur,label:'確定前的課表',at:Date.now()});
   D.assign=unpackAssign(d.a);box.vers.push({a:d.a,label:name,at:Date.now()});box.vers=box.vers.slice(-VERMAX);delete box.draft;draftST=null;
-  closeDlg();rebuild();save();render();toast('已確定採用「'+name+'」，各頁的課表都換成這一份了');}
-function discardDraft(){if(!hasDraft())return;if(!confirm('放棄這份草稿？正式課表不會變。（可以按「復原」救回來）'))return;
-  pushUndo();delete D.sched.draft;draftST=null;rebuild();save();render();toast('已放棄草稿，回到正式課表');}
+  closeDlg();rebuild();save();render();toast('已採用「'+name+'」');
+  try{if(typeof window.onScheduleConfirmed==='function')window.onScheduleConfirmed(name);}catch(e){}}
+function discardDraft(){if(!hasDraft())return;if(!confirm('放棄這份草稿？（可以按「復原」）'))return;
+  pushUndo();delete D.sched.draft;draftST=null;rebuild();save();render();toast('已放棄草稿');}
 function restoreVer(i){const v=schedBox().vers[i];if(!v||isRO())return;if(hasDraft()&&!confirm('現在的草稿會被換掉，確定嗎？'))return;
-  pushUndo();writeDraft(unpackAssign(v.a),'拿回：'+v.label);save();go('sched','board');toast('已把「'+v.label+'」放進草稿，比較過後按「確定採用」');}
+  pushUndo();writeDraft(unpackAssign(v.a),'拿回：'+v.label);save();go('sched','board');toast('「'+v.label+'」已放進草稿');}
 
 // 草稿提示：排課頁顯示比較與按鈕；其他頁只提醒一行，說明這一頁還是正式課表
 function draftBanner(){const P=$('page');if(!P||page==='exam')return;const board=page==='sched'&&sub==='board';
   if(board)verList(P);
   if(!hasDraft())return;const d=D.sched.draft,ro=isRO();
-  if(!board){P.insertAdjacentHTML('afterbegin',`<div class="draftline"><b>有一份試排草稿還沒確定</b><span>（${esc(d.label)}）這一頁顯示的仍是正式課表。</span><button class="b sm" onclick="go('sched','board')">去看草稿</button></div>`);return;}
+  if(!board){if(page!=='sched')return;P.insertAdjacentHTML('afterbegin',`<div class="draftline"><b>有草稿還沒確定</b><span>${esc(d.label)}</span><button class="b sm" onclick="go('sched','board')">去看</button></div>`);return;}
   const c=draftCompare(),noMain=!c.main.placed;
   const row=(n,f,low,fmt)=>{const a=f(c.main),b=f(c.draft),cls=noMain||a===b?'':(low?b<a:b>a)?'ok':'warn';return `<tr><td>${n}</td><td>${noMain?'<span class="dim">－</span>':fmt(a,c.main)}</td><td class="${cls}">${fmt(b,c.draft)}</td></tr>`;};
   const rows=[row('已排節數',x=>x.placed,false,v=>v+' / '+c.total),row('衝突',x=>x.probs,true,v=>v+' 個')];
   if(c.draft.locks)rows.push(row('原班鎖得到課',x=>x.locks?x.locks.pulled-x.locks.open:0,false,(v,x)=>x.locks?v+' / '+x.locks.pulled:'－'));
   rows.push(row('不理想程度<small>（越低越好）</small>',x=>x.soft,true,v=>String(v)));
   P.insertAdjacentHTML('afterbegin',`<div class="draft"><h4>試排草稿：${esc(d.label)}</h4>
-    <p class="note">還沒確定。總覽、課表輸出和點名仍然用正式課表；在下面拖曳、固定的都是這份草稿。${noMain?'目前還沒有正式課表。':`和正式課表比，<b>${c.moved}</b> 節換了時段（板上虛線框的）。`}</p>
+    <p class="hint">還沒確定，其他頁仍用正式課表。${noMain?'':`換了 <b>${c.moved}</b> 節（虛線框）。`}</p>
     <table class="ed cmp"><tr><th></th><th>正式課表</th><th>這份草稿</th></tr>${rows.join('')}</table>
-    ${ro?'':`<div class="bar" style="margin:10px 0 0"><button class="b pri" onclick="confirmDraft()">確定採用</button><button class="b" onclick="trySolve('again')">重排（固定的不動）</button><button class="b" onclick="discardDraft()">放棄草稿</button></div>`}</div>`);
+    ${ro?'':`<div class="bar" style="margin:10px 0 0"><button class="b pri" onclick="confirmDraft()">確定採用</button><button class="b" onclick="trySolve('again')">重排</button><button class="b" onclick="discardDraft()">放棄</button></div>`}</div>`);
   c.movedL.forEach(l=>{const el=P.querySelector('.chip[data-l="'+l+'"]');if(el)el.classList.add('moved');});}
 function verList(P){const v=(D.sched&&D.sched.vers)||[];if(!v.length)return;const cur=JSON.stringify(packAssign(D.assign)),ro=isRO();
-  P.insertAdjacentHTML('beforeend',`<h3>已確定的版本</h3><p class="note">每次按「確定採用」都會留一份（最多 ${VERMAX} 份，舊的自動刪掉）。拿回來會先放進草稿，比較過再確定。</p>
-    <div class="scroll"><table class="ed"><tr><th>確定的時間</th><th>名稱</th><th>已排</th><th></th></tr>${v.map((x,i)=>({x,i})).reverse().map(({x,i})=>`<tr><td>${fmtTime(x.at)}</td><td>${esc(x.label)}</td><td class="dim">${placedOf(x.a)} 節</td><td>${JSON.stringify(x.a)===cur?'<span class="note">目前的正式課表</span>':ro?'':`<button class="b sm" onclick="restoreVer(${i})">拿回來當草稿</button>`}</td></tr>`).join('')}</table></div>`);}
+  P.insertAdjacentHTML('beforeend',`<details class="more"><summary>已確定的版本（${v.length}）</summary><p class="hint">最多留 ${VERMAX} 份；拿回來會先放進草稿。</p>
+    <div class="scroll"><table class="ed"><tr><th>確定的時間</th><th>名稱</th><th>已排</th><th></th></tr>${v.map((x,i)=>({x,i})).reverse().map(({x,i})=>`<tr><td>${fmtTime(x.at)}</td><td>${esc(x.label)}</td><td class="dim">${placedOf(x.a)} 節</td><td>${JSON.stringify(x.a)===cur?'<span class="dim">目前使用</span>':ro?'':`<button class="b sm" onclick="restoreVer(${i})">拿回草稿</button>`}</td></tr>`).join('')}</table></div></details>`);}
 
 /* ───── 老師偏好的教室 ─────
    存在老師身上：t.prefRooms=[教室id,…]，依志願序。沒設定的老師不存這個欄位。分教室的順序見 core 的 assignRooms */
@@ -1690,8 +1837,8 @@ function addPref(ti,id){const t=D.teachers[ti];if(!t||!id)return;t.prefRooms=pre
 function delPref(ti,k){const t=D.teachers[ti];if(!t)return;const a=prefList(t);a.splice(k,1);t.prefRooms=a;prefList(t);changed();render();}
 function movePref(ti,k){const t=D.teachers[ti];if(!t)return;const a=prefList(t);if(k<1||k>=a.length)return;[a[k-1],a[k]]=[a[k],a[k-1]];t.prefRooms=a;changed();render();}
 function prefBox(){const res=D.teachers.map((t,i)=>({t,i})).filter(o=>o.t.role==='資源班');if(!res.length||!D.rooms.length)return '';
-  return `<h3>老師偏好的教室</h3><p class="note">例如王老師習慣在資源教室二上課，就替她選資源教室二；可以選好幾間，照順序當第一、第二志願。分教室時先照課程指定的教室，再照老師的偏好，接著是平常用的教室，備用教室最後。兩位老師想要同一間時，排課會盡量把他們排在不同節。</p>
-  <div class="scroll"><table class="ed"><tr><th>老師</th><th>偏好的教室（依順序）</th></tr>${res.map(o=>`<tr><td>${esc(o.t.name)}</td><td>${prefCell(o.i)}</td></tr>`).join('')}</table></div>`;}
+  return secH(2,'老師偏好的教室',tip('可以選好幾間，照順序當志願。分教室時先照課程指定的，再照老師偏好，接著平常用的，備用最後。兩位老師要同一間時會盡量排在不同節。'))+`
+  <div class="card flush"><div class="scroll"><table class="ed"><tr><th>老師</th><th>偏好的教室（依順序）</th></tr>${res.map(o=>`<tr><td>${esc(o.t.name)}</td><td>${prefCell(o.i)}</td></tr>`).join('')}</table></div></div>`;}
 // 排課板上滑鼠停在組別上：說明這一節在哪間教室、為什麼不是老師偏好的那間
 function roomNote(l){if(!ROOM||ST.slot[l]<0)return '';const r=ROOM[l];if(r==null)return '';if(r<0)return '\n教室：這一節沒有空的教室';
   const g=M.G[M.L[l].g],p=g.t>=0&&M.pref?M.pref[g.t]:[];let t='\n教室：'+D.rooms[r].name;
@@ -1739,16 +1886,18 @@ function cellInfo(l,s,before){const ok=canPlace(M,ST.slot,l,s),o=ST.slot[l];
 
 /* ───── 課程的固定時段：例如社會技巧固定在週五第 1 節。排課時這幾節直接放在那裡、固定不動 ───── */
 function fixOpen(i){const g=D.groups[i],cur=new Set(g.fixed||[]),reg=D.periods.filter(p=>g.mode==='外加'?p.extra:!p.extra);
-  openDlg(`<h3>固定時段：${esc(g.name)}</h3><p class="note">勾選這門課一定要排的時段（最多 ${g.per} 節）。排課時會直接放在那裡並固定，重排也不會動；剩下的節數照常自動排。班級不排課只擋國英數這類要鎖課的課，所以社會技巧可以固定在導師時間這類時段。</p>
+  openDlg(`<h3>固定時段：${esc(g.name)}</h3><div class="lead">最多 ${g.per} 節，重排也不會動。${tip('剩下的節數照常自動排。班級不排課只擋要鎖課的課，所以社會技巧可以固定在導師時間這類時段。')}</div>
   <div class="scroll"><table class="ed"><tr><th></th>${DAYS.map(d=>'<th>週'+d+'</th>').join('')}</tr>${reg.map(p=>'<tr><td>'+esc(p.name)+'</td>'+DAYS.map((d,di)=>{const k=di+'-'+p.id;return '<td class="c"><input type="checkbox" class="fixChk" value="'+esc(k)+'"'+(cur.has(k)?' checked':'')+' aria-label="週'+d+esc(p.name)+'"></td>';}).join('')+'</tr>').join('')}</table></div>
-  <div class="bar" style="margin:10px 0 0"><button class="b pri" onclick="fixOk(${i})">儲存</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="fixOk(${i})">儲存</button></div>`);}
 function fixOk(i){const g=D.groups[i],ks=[...document.querySelectorAll('.fixChk:checked')].map(c=>c.value);
-  if(ks.length>g.per){toast('這門課每週只有 '+g.per+' 節，最多勾 '+g.per+' 個時段');return;}
+  if(ks.length>g.per){toast('最多勾 '+g.per+' 個時段');return;}
   pushUndo();if(ks.length)g.fixed=ks;else delete g.fixed;
   const a=D.assign&&D.assign[g.id];if(a)a.forEach(e=>{if(e&&!ks.includes(e.s))e.pin=false;});   // 原本固定在別處的放開，讓系統重新安排
   closeDlg();changed();rebuild();render();toast(ks.length?'已設定 '+ks.length+' 個固定時段':'已取消固定時段');}
 
 /* ───── 啟動 ───── */
-D=normalize(load()||emptyData());if(D.settings.kSplitNote){delete D.settings.kSplitNote;setTimeout(()=>{localSave();toast('班級不排課改成「不能排國英數」：社會技巧這類不鎖課的課可以排進這些時段，也可以在「老師開課」設定固定時段。',{ms:9000});},1500);}rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();snapInit();
-(function(){const a=location.hash.slice(1).split('/');go(a[0]||'home',a[1]);})();
+D=normalize(load()||emptyData());if(D.settings.kSplitNote){delete D.settings.kSplitNote;setTimeout(()=>{localSave();toast('班級不排課改成只擋國英數；社會技巧可以排進這些時段。',{ms:9000});},1500);}rebuild();paintSchool();if(!load())localSave();snapInit();
+(function(){const a=location.hash.slice(1).split('/');if(a[2])try{stuCur=decodeURIComponent(a[2]);}catch(e){}go(a[0]||'home',a[1]);})();
 cloudInit();
+// teacher.js、extras.js 在 app.js 後面載入：都載完再畫一次，它們登記的頁面才會出現
+document.addEventListener('DOMContentLoaded',()=>{try{render();}catch(e){}});
