@@ -21,7 +21,8 @@ const C = require('./nx-core');
 if (!admin.apps.length) admin.initializeApp();
 const db = () => admin.firestore();
 const deps = { serverTime: () => admin.firestore.FieldValue.serverTimestamp() };
-const OPTS = { region: 'asia-east1', memory: '512MiB', timeoutSeconds: 300, maxInstances: 1 /* 一次一個，減少亂序 */ };
+// Firestore 觸發要和資料庫同一區：special-exam-rooms 的資料庫在 nam5（美國多區），所以放 us-central1。
+const OPTS = { region: 'us-central1', memory: '512MiB', timeoutSeconds: 300, maxInstances: 1 /* 一次一個，減少亂序 */ };
 
 async function link() {
   const s = await db().doc(C.LINK_DOC).get();

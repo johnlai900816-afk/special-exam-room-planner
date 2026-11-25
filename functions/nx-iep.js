@@ -101,7 +101,7 @@ const nxIepClose = onCall(OPTS, async (req) => {
   return { ok: true, tokens: toks.size, responses: mirrored.size };
 });
 
-const nxIepMirror = onDocumentWritten({ document: 'iepResp/{round}/r/{h}', region: 'asia-east1' }, async (ev) => {
+const nxIepMirror = onDocumentWritten({ document: 'iepResp/{round}/r/{h}', region: 'us-central1' /* 和資料庫 nam5 同區 */ }, async (ev) => {
   const { round, h } = ev.params;
   const tok = await db().doc('iepTok/' + h).get();
   const path = mirrorPath(tok.exists ? tok.data() : null, round, h);
