@@ -1037,7 +1037,8 @@ function claimDecide(D,gid,tid,yes,at){const c=claimsOf(D,'pending').find(x=>x.g
 /* 每月超鐘點（印給教務處、人事核薪）。
    上課日：這個月的星期一到五，扣掉放假日（noClass）和學期起訖（D.settings.dates）以外的日子。
    算法：一週一週算。那一週在這個月裡的上課日，照課表把每天的節數加起來（實際上課節數），
-         減掉應授 × 上課日數 ÷ 5（放假的日子應授也跟著少），少於 0 算 0；這個月的超鐘點＝各週相加，取到小數一位。
+         減掉應授 × 上課日數 ÷ 5（放假的日子應授也跟著少），少於 0 算 0、最多算到每週超鐘點（月初月底不滿一週的不會多算）；
+         這個月的超鐘點＝各週相加，取到小數一位。
          一整週都上課時，就是「每週超鐘點」；放假那天的課不算。
    外加課預設不算進超鐘點（另列外加節數）；D.settings.otCountExtra 打開才算。沒填基本鐘點的老師不算超鐘點。 */
 function overtimeMonth(D,M,slot,ym){
@@ -1054,7 +1055,7 @@ function overtimeMonth(D,M,slot,ym){
   const cnt=!!D.settings.otCountExtra,weeks=[...new Set(days.map(x=>x.week))],r1=v=>Math.round(v*10)/10;
   const rows=D.teachers.filter(t=>t.role==='資源班'||reg[t.id]||ext[t.id]).map(t=>{const R=reg[t.id]||Z,X=ext[t.id]||Z,per=d=>R[d]+(cnt?X[d]:0),base=otN(t.hours),due=otDue(t);
     const weekly=[0,1,2,3,4].reduce((n,d)=>n+per(d),0),weekOT=base?Math.max(0,r1(weekly-due)):0;
-    const W=weeks.map(w=>{const ds=days.filter(x=>x.week===w),taught=ds.reduce((n,x)=>n+per(x.wd),0),share=due*ds.length/5;return {week:w,n:ds.length,taught,share:r1(share),ot:base?Math.max(0,r1(taught-share)):0};});
+    const W=weeks.map(w=>{const ds=days.filter(x=>x.week===w),taught=ds.reduce((n,x)=>n+per(x.wd),0),share=due*ds.length/5;return {week:w,n:ds.length,taught,share:r1(share),ot:base?Math.min(weekOT,Math.max(0,r1(taught-share))):0};});
     const note=[t.reduceNote?'減授 '+otN(t.reduce)+'（'+t.reduceNote+'）':otN(t.reduce)?'減授 '+otN(t.reduce):'',!base?'沒填基本鐘點':''].filter(Boolean);
     const extraMonth=days.reduce((n,x)=>n+X[x.wd],0);if(!cnt&&extraMonth)note.push('外加 '+extraMonth+' 節另計');
     return {id:t.id,name:t.name,base,reduce:otN(t.reduce),due,weekly,weekOT,days:days.length,month:r1(W.reduce((n,w)=>n+w.ot,0)),extraMonth,weeks:W,note:note.join('；')};});

@@ -215,11 +215,11 @@ function run(ok){
     ok(R.days.length===23&&R.weeks.length===5,'2026 年 12 月有 23 個上課日、5 週');
     ok(by(R,'r2').weekly===12&&by(R,'r2').weekOT===2&&by(R,'r2').due===10,'每週 12 節、應授 10：每週超 2 節');
     const w1=by(R,'r2').weeks[0],t1=P2[1]+P2[2]+P2[3]+P2[4];
-    ok(w1.n===4&&w1.taught===t1&&w1.ot===Math.max(0,Math.round((t1-8)*10)/10),'月初不滿一週：只算這個月的上課日，應授照比例 10×4÷5');
+    ok(w1.n===4&&w1.taught===t1&&w1.ot===Math.min(2,Math.max(0,Math.round((t1-8)*10)/10)),'月初不滿一週：只算這個月的上課日，應授照比例 10×4÷5');
     ok(by(R,'r2').weeks[1].ot===2&&by(R,'r2').weeks[1].n===5,'整週：就是每週超鐘點');
     D.settings.noClass=['2026-12-25'];R=C.overtimeMonth(D,M,S.slot,'2026-12');
     const w4=by(R,'r2').weeks[3];ok(R.days.length===22&&R.off.some(o=>o.date==='2026-12-25'&&o.why==='放假'),'放假日不算上課日');
-    ok(w4.n===4&&w4.taught===12-P2[4]&&w4.ot===Math.max(0,Math.round((12-P2[4]-8)*10)/10),'放假那天的課不算，應授也少一天');
+    ok(w4.n===4&&w4.taught===12-P2[4]&&w4.ot===Math.min(2,Math.max(0,Math.round((12-P2[4]-8)*10)/10)),'放假那天的課不算，應授也少一天');
     D.settings.noClass=['2026-12-24~2026-12-31'];R=C.overtimeMonth(D,M,S.slot,'2026-12');ok(R.days.length===17,'一段放假日');
     D.settings.noClass=[];D.settings.dates='115.09.01-115.12.18';R=C.overtimeMonth(D,M,S.slot,'2026-12');
     ok(R.days.length===14&&R.days[R.days.length-1].date==='2026-12-18'&&R.off.some(o=>o.why==='學期外'),'學期結束之後不算（實施日期用民國年也讀得懂）');
@@ -230,6 +230,7 @@ function run(ok){
     D.teachers[2].hours=0;const r3=by(C.overtimeMonth(D,M,S.slot,'2026-12'),'r3');ok(r3.month===0&&/沒填基本鐘點/.test(r3.note),'沒填基本鐘點：不算超鐘點');
     ok(C.overtimeMonth(D,M,S.slot,'2026-13x')===null,'月份寫錯回傳 null');
     const L=C.teacherLoad(D,M,S.slot,null).find(x=>x.id==='r1');ok(L.ot&&L.ot.extra===1&&L.ot.reg===L.per-1,'老師工作量也有應授、超鐘點、外加課');
+    {const z=solved(d=>{d.teachers[1].hours=12;}),Z=C.toState(z.M,z.D);ok(C.overtimeMonth(z.D,z.M,Z.slot,'2026-12').rows.find(r=>r.id==='r2').month===0,'剛好應授的老師：月初月底不滿一週也不會多出超鐘點');}
     ok(C.termRange('2026/9/1～2027/1/20').to==='2027-01-20'&&C.termRange('')===null,'學期起訖');
   }
 }

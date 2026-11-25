@@ -223,8 +223,9 @@ function renderHome(){
   if(probs)todo.push(['err','排課衝突 '+probs+' 個','排課表',"go('sched','board')"]);
   if(total&&placed<total)todo.push(['','還有 '+(total-placed)+' 節沒排','排課表',"go('sched','board')"]);
   if(warns)todo.push(['','開課提醒 '+warns+' 則','開課',"go('sched','groups')"]);
-  const pn=needList(D).length,hb=D.teachers.filter(t=>t.role==='資源班'&&t.hours&&t.hours!==hoursOf(t.id)).length;
-  if(hb)todo.push(['',hb+' 位老師鐘點不符','開課',"go('sched','groups')"]);
+  const pn=needList(D).length,hb=otSummary(D).rows.filter(r=>r.role==='資源班'&&(r.over||r.short)).length;
+  if(hb)todo.push(['',hb+' 位老師鐘點不足或超過上限','開課',"go('sched','groups')"]);
+  otTodo(todo);
   if(pn)todo.push(['',pnText(),'編組',"go('sched','need')"]);
   if(noG)todo.push(['',noG+' 位學生沒分組','編組',"go('sched','need')"]);
   if(noCM)todo.push(['',noCM+' 位學生沒有個管','個管分配',"stuReset();stuCM='-';go('stu')"]);
@@ -352,9 +353,9 @@ function renderTeaAll(){
   let h=secH(1,'老師',tip('除了資源班老師，也要加學生原班的任課老師，排課才知道他們哪些時段不行。身分是「資源班」的老師會成為段考監考。身分可以自己打，例如專輔、巡迴。'))+
   `<div class="bar"><button class="b pri" onclick="addTeacher()">新增老師</button><button class="b" onclick="pasteTL()">貼上任課名單</button><button class="b" onclick="pruneTeachers()">移除沒用到的</button><span class="grow"></span><span class="stat"><b>${D.teachers.length}</b> 位</span></div>
   <datalist id="roleList">${ROLES.map(r=>`<option value="${r}">`).join('')}</datalist>
-  <div class="card flush"><div class="scroll"><table class="ed"><thead><tr><th>姓名</th><th>身分</th><th>不排課</th><th>個案</th><th>開課、任課</th><th>偏好教室</th><th>備註</th><th></th></tr></thead><tbody>`;
+  <div class="card flush"><div class="scroll"><table class="ed tea"><thead><tr><th>姓名</th><th>身分</th><th>基本</th><th>減授</th><th>應授</th><th>超鐘點上限</th><th>不排課</th><th>個案</th><th>開課、任課</th><th>偏好教室</th><th>備註</th><th></th></tr></thead><tbody>`;
   D.teachers.forEach((t,i)=>{h+=`<tr><td><input type="text" class="w5" value="${esc(t.name)}" onchange="setTea(${i},'name',this.value)"></td>
-    <td><input type="text" class="w5" list="roleList" aria-label="身分" value="${esc(t.role)}" onchange="setTea(${i},'role',this.value||'普通班')"></td>
+    <td><input type="text" class="w5" list="roleList" aria-label="身分" value="${esc(t.role)}" onchange="setTea(${i},'role',this.value||'普通班')"></td>${otTeaCells(t)}
     <td><button class="b sm" onclick="offSel='t:'+D.teachers[${i}].id;go('set','off')">${t.off.length?t.off.length+' 格':'設定'}</button></td>
     <td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length||''}</td>
     <td class="dim">${esc([...new Set(use[t.id]||[])].join('、'))}</td>
@@ -383,7 +384,7 @@ function renderRules(){
     ${D.settings.lockMode==='flex'?`<label>各科每週最多鎖 <input type="text" class="w8" value="${esc(Object.keys(D.settings.lockCap||{}).map(k=>k+D.settings.lockCap[k]).join(' '))}" placeholder="國文5 英文3 數學4" onchange="setLockCap(this.value)"></label>
     <label>只剩 1 節時留連堂的科目 <input type="text" class="w5" value="${esc(D.settings.lockDouble||'')}" placeholder="國文" onchange="D.settings.lockDouble=this.value.trim();changed()"></label>`:''}
     <label>遲到：上課超過 <input type="number" min="0" max="60" class="w2" value="${D.settings.grace>=0?D.settings.grace:5}" onchange="D.settings.grace=+this.value;save()"> 分鐘</label></div></div>`;
-  $('page').innerHTML=h;
+  $('page').innerHTML=secH(1,'排課')+h+otRulesHtml();
 }
 function setLockCap(v){const o={};String(v).replace(/([^\d\s,，、:：]+)\s*[:：]?\s*(\d+)/g,(m,k,n)=>{o[k]=+n;});D.settings.lockCap=o;changed();render();}
 // 舊的「學生檢視」對話框改成個案頁
@@ -436,7 +437,7 @@ function delOldStu(btn){const id=btn.dataset.id,i=D.students.findIndex(s=>s.id==
   changed();render();btn.disabled=true;btn.textContent='已刪除';}
 
 /* ───── 排課｜分組 ───── */
-function grpCard(g,i,byId,grs){const c=M.G[i];
+function grpCard(g,i,byId,grs,extra){const c=M.G[i];
   let h=`<div class="gc${g.on===false?' off':''}"><div class="hd"><input type="text" class="nm" value="${esc(g.name)}" placeholder="課名" onchange="setGrp(${i},'name',this.value)">
       <label class="sm nw"><input type="checkbox"${g.on!==false?' checked':''} onchange="setGrp(${i},'on',this.checked)"> 要排</label><button class="x" title="刪除這門課" aria-label="刪除 ${esc(g.name)}" onclick="delGroup(${i})">✕</button></div>
     <div class="f"><span>科目</span><input type="text" list="subjList" value="${esc(g.subject)}" onchange="setGrp(${i},'subject',this.value)">
@@ -452,7 +453,7 @@ function grpCard(g,i,byId,grs){const c=M.G[i];
   if(c.need&&c.cls.length){h+=`<div class="sec">原班${esc(g.subject)}老師</div>`+c.cls.map(cl=>`<div class="cs2"><span>${esc(cl)}</span><select data-k="${esc(cl+'|'+g.subject)}" onchange="setCS(this)">${tOpts(D.classSubj[cl+'|'+g.subject],'reg')}</select></div>`).join('');}
   const w=c.warn.filter(x=>x!=='還沒有學生');
   h+=g.on===false?'':w.length?`<div class="st warn">${w.map(x=>'<div>'+esc(x)+'</div>').join('')}</div>`:`<div class="st">可排 ${c.alist.length} 格・要排 ${c.per} 節</div>`;
-  return h+'</div>';}
+  return h+(extra||'')+'</div>';}
 function hoursOf(id){return D.groups.reduce((n,g)=>n+(g.teacher===id&&g.on!==false?g.per:0),0);}
 function renderGroups(){
   const subj=[...new Set(D.groups.map(g=>g.subject).concat(['國文','數學','英文']))],byId={};D.students.forEach(s=>{byId[s.id]=s;});
@@ -461,18 +462,99 @@ function renderGroups(){
   let h=`<div class="bar"><button class="b" onclick="pasteCourses()">貼上課程一覽表</button><button class="b" onclick="pasteGroups()">貼上分組表</button>${tip('先填每位老師的基本鐘點，再替他開課，把節數補到剛好。課裡可以先沒有學生，之後到「② 編組」再放。')}<span class="grow"></span><span class="stat"><b>${D.groups.length}</b> 門課・每週 <b>${M.L.length}</b> 節</span></div>
   <datalist id="subjList">${subj.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
   if(!list.length)h+=emptyBox('還沒有資源班老師。',`<button class="b sm" onclick="addTeacherHere('資源班');go('sched','groups')">新增老師</button>`);
-  list.forEach(t=>{const ti=D.teachers.indexOf(t),n=hoursOf(t.id),hr=+t.hours||0,d=hr-n;
+  const OS=otSummary(D),OR={};OS.rows.forEach(r=>{OR[r.id]=r;});h+=otSumHtml(OS);
+  list.forEach(t=>{const ti=D.teachers.indexOf(t),r=OR[t.id]||otRow(D,t,0,0),hr=r.base,due=r.due,n=r.counted;
     h+=`<section class="tsec"><div class="thd"><b>${esc(t.name)}</b><label>基本鐘點 <input type="number" min="0" max="40" class="w2" value="${hr||''}" placeholder="未填" onchange="D.teachers[${ti}].hours=+this.value||0;changed();render()"> 節</label>
-      <div class="hb"><i class="${hr&&d<0?'over':''}" style="width:${hr?Math.min(100,Math.round(n/hr*100)):n?100:0}%"></i></div>
-      <span class="hs ${!hr?'':d===0?'ok':'warn'}">已開 ${n} 節${!hr?'':d>0?'・差 '+d:d<0?'・超出 '+(-d):'・剛好'}</span>
+      <div class="hb"><i class="${r.over?'over':''}" style="width:${due?Math.min(100,Math.round(n/due*100)):n?100:0}%"></i></div>
+      <span class="hs ${otCls(r)}">${otText(r)}</span>
       <button class="b sm" data-id="${esc(t.id)}" onclick="addGroup(this.dataset.id)">開課</button></div><div class="cards">`+
       D.groups.map((g,i)=>g.teacher===t.id?grpCard(g,i,byId,grs):'').join('')+`</div></section>`;});
-  if(lone.length)h+=`<section class="tsec"><div class="thd"><b>沒有老師的課</b><span class="hs warn">${lone.reduce((n,i)=>n+D.groups[i].per,0)} 節</span></div><div class="cards">`+lone.map(i=>grpCard(D.groups[i],i,byId,grs)).join('')+`</div></section>`;
+  if(lone.length)h+=`<section class="tsec"><div class="thd"><b>沒有老師的課</b><span class="hs warn">${lone.reduce((n,i)=>n+D.groups[i].per,0)} 節</span></div><div class="cards">`+lone.map(i=>grpCard(D.groups[i],i,byId,grs,otClaimTag(D.groups[i]))).join('')+`</div></section>`;
   h+=`<div class="bar"><button class="b sm" onclick="addGroup('')">新增一門課</button></div>`;
   $('page').innerHTML=h;
 }
 function setGrp(i,k,v){D.groups[i][k]=typeof v==='string'?v.trim():v;D=normalize(D);changed();render();}
 function addGroup(tid){D.groups.push({id:uid('g'),name:'新的課',subject:'國文',teacher:tid||'',per:3,students:[],mode:'抽離',room:'',on:true,grade:''});changed();render();if(!tid)$('main').scrollTo(0,1e6);}
+/* ───── 超鐘點與認領（開課頁、老師與任課、排課規則、今天的待辦）─────
+   計算在 core.js（otSummary、otRow、suggestOvertime、claim*）。事件一律 data-ot（點）／data-otc（改值），在下面統一處理 */
+const otCls=r=>r.over?'bad':r.noHours?'':r.ot?'warn':r.short?'warn':'ok';
+function otText(r){const cnt=!!D.settings.otCountExtra,ex=r.extra&&!cnt?'（外加 '+r.extra+'）':'';
+  if(r.noHours)return '已開 '+r.open+' 節'+ex;
+  return '應授 '+r.due+(r.reduce?'（減 '+r.reduce+'）':'')+'・已開 '+r.open+ex+(r.ot?'・超鐘點 +'+r.ot+(r.over?'（上限 '+(r.otMax!=null&&(!r.cap||r.otMax<r.cap)?r.otMax:r.cap)+'）':''):r.short?'・差 '+r.short:'・剛好');}
+function otSumHtml(S){const pend=claimsPending(D),need=S.want;
+  return `<div class="otsum"><span>需要 <b>${need}</b> 節，應授合計 <b>${S.due}</b> 節，${S.short?`<b class="bad">缺 ${S.short} 節</b>`:'<b class="ok">足夠</b>'}</span>`+
+    (S.open.length?`<span class="tagv warn">待認領 ${S.open.length} 門</span>`:'')+
+    `<span class="grow"></span><button type="button" class="b sm" data-ot="sug">建議分配</button></div>`+(pend.length?otClaimCard(pend):'');}
+// 沒有老師的課：「待認領」與有幾位老師認領
+function otClaimTag(g){if(g.on===false||!(+g.per))return '';const n=claimsPending(D).filter(c=>c.gid===g.id).length;
+  return `<div class="st warn">待認領${n?'・'+n+' 位老師認領':''}</div>`;}
+// 認領待確認：一門課一列，認領的老師各一個「核准」；兩位以上認領時由管理者選
+function otClaimCard(pend){const by={};pend.forEach(c=>{(by[c.gid]=by[c.gid]||[]).push(c);});const S=otSummary(D),R={};S.rows.forEach(r=>{R[r.id]=r;});
+  return `<section class="card otclaim"><h4>認領待確認 <small class="dim">${Object.keys(by).length} 門</small></h4><ul class="plain otcl">`+Object.keys(by).map(gid=>{const g=D.groups.find(x=>x.id===gid);if(!g)return '';
+    return `<li><div class="otcg"><b>${esc(g.name)}</b><small class="dim">${esc(g.subject)}・${+g.per} 節${by[gid].length>1?'・'+by[gid].length+' 位認領，選一位':''}</small></div><div class="otcw">`+by[gid].map(c=>{const t=D.teachers.find(x=>x.id===c.tid),r=R[c.tid]||otRow(D,t,0,0);
+      const add=g.mode!=='外加'||D.settings.otCountExtra?+g.per:0,ot=r.base?Math.max(0,r.counted+add-r.due):0;
+      return `<div class="otct"><span>${esc(t.name)}<small class="dim">${r.base?'接了以後超鐘點 '+ot:'沒填基本鐘點'}</small></span><button type="button" class="b sm pri" data-ot="cok" data-g="${esc(gid)}" data-t="${esc(c.tid)}">核准</button><button type="button" class="b sm" data-ot="cno" data-g="${esc(gid)}" data-t="${esc(c.tid)}">不核准</button></div>`;}).join('')+`</div></li>`;}).join('')+`</ul></section>`;}
+let OTR=null,otOver=false;
+function otSugOpen(){OTR=suggestOvertime(D,{overflow:otOver});const R=OTR,tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
+  openDlg(`<h3>建議分配</h3><div class="lead">勾選的才會改。${tip('一定遵守：每週超鐘點不超過老師願意的節數和全校上限；不給老師不想教的科目；扣掉老師不排課的時段後排不下的不給。盡量做到：先補還沒滿應授的老師、超鐘點平均分、想教的科目與年級優先、同一位學生的課給同一位老師。老師的意願在「設定 › 學校資料 › 老師與任課」或老師自己的「我的設定」。')}</div>
+  <label class="chk1"><input type="checkbox" data-otc="over"${otOver?' checked':''}> 超過上限的老師，多出來的課也重新分</label>
+  <div class="dlgscroll">${R.list.length?`<div class="scroll"><table class="ed"><thead><tr><th><input type="checkbox" checked aria-label="全選" data-otc="all"></th><th>課</th><th>節數</th><th>原本</th><th>建議</th><th>理由</th></tr></thead><tbody>${R.list.map(x=>`<tr><td><input type="checkbox" class="otChk" value="${esc(x.gid)}" checked aria-label="${esc(x.name)}"></td><td>${esc(x.name)}<small class="dim"> ${esc(x.subject)}</small></td><td>${x.per}</td><td class="dim">${esc(x.fromName||'沒有')}</td><td><b>${esc(x.toName)}</b></td><td class="dim">${esc(x.why.join('、'))}</td></tr>`).join('')}</tbody></table></div>`:`<p class="hint">${R.left.length?'沒有老師可以接。':'沒有要分配的課。'}</p>`}
+  ${R.left.length?`<details class="more"><summary>分不出去 ${R.left.length} 門</summary><ul class="plain">${R.left.map(x=>`<li><b>${esc(x.name)}</b>（${x.per} 節）<small class="dim">${esc(x.why.join('；'))}</small></li>`).join('')}</ul></details>`:''}
+  <h4>分配後</h4><div class="scroll"><table class="ed"><thead><tr><th>老師</th><th>應授</th><th>分配後</th><th>超鐘點</th><th>上限</th></tr></thead><tbody>${R.rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.due}</td><td>${r.after}${r.extra?'<small class="dim">＋外加 '+r.extra+'</small>':''}</td><td${r.ot>r.limit?' class="bad"':''}>${r.ot?'+'+r.ot:'—'}</td><td class="dim">${r.limit||'不超'}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="bar end"><button type="button" class="b" data-ot="close">取消</button><button type="button" class="b pri" data-ot="sugApply"${R.list.length?'':' disabled'}>套用勾選的</button></div>`);}
+function otSugApply(){if(!OTR)return;const ids=new Set([...document.querySelectorAll('#dlg .otChk:checked')].map(c=>c.value));if(!ids.size){toast('沒有勾選');return;}
+  snapshot('建議分配之前');let n=0;
+  OTR.list.forEach(x=>{if(!ids.has(x.gid))return;const g=D.groups.find(y=>y.id===x.gid);if(!g)return;const free=!g.teacher||!D.teachers.some(t=>t.id===g.teacher);
+    if((x.from&&g.teacher===x.from)||(!x.from&&free)){g.teacher=x.to;n++;}});
+  OTR=null;changed();closeDlg();render();toast('已分配 '+n+' 門課');}
+function otDecide(gid,tid,yes){if(APPROLE==='teacher'||isRO())return;const g=D.groups.find(x=>x.id===gid),t=D.teachers.find(x=>x.id===tid);if(!g||!t)return;
+  if(yes)snapshot('核准認領之前');const r=claimDecide(D,gid,tid,yes);if(!r.ok){toast(r.why);render();return;}
+  changed();render();toast(yes?g.name+' 給 '+t.name:'不核准 '+t.name);}
+// 老師與任課：基本、減授（原因）、應授、超鐘點上限（願意超幾節）
+function otTeaCells(t){const id=esc(t.id),due=otDue(t);
+  return `<td><input type="number" min="0" max="40" class="w2" aria-label="${esc(t.name)} 基本鐘點" value="${+t.hours||''}" data-otc="t" data-id="${id}" data-k="hours"></td>
+    <td class="nw"><input type="number" min="0" max="40" class="w2" aria-label="${esc(t.name)} 減授節數" value="${+t.reduce||''}" data-otc="t" data-id="${id}" data-k="reduce"> <input type="text" class="w4" aria-label="${esc(t.name)} 減授原因" placeholder="原因" value="${esc(t.reduceNote||'')}" data-otc="t" data-id="${id}" data-k="reduceNote"></td>
+    <td class="dim">${+t.hours?due:''}</td>
+    <td><input type="number" min="0" max="20" class="w2" aria-label="${esc(t.name)} 每週最多超鐘點" value="${t.otMax!=null?t.otMax:''}" placeholder="—" data-otc="t" data-id="${id}" data-k="otMax"></td>`;}
+function otSetT(id,k,v){const t=D.teachers.find(x=>x.id===id);if(!t||isRO())return;
+  if(k==='reduceNote'){v=String(v).trim();if(v)t.reduceNote=v;else delete t.reduceNote;}
+  else if(k==='otMax'){if(String(v).trim()==='')delete t.otMax;else t.otMax=Math.max(0,Math.floor(+v||0));}
+  else if(k==='hours')t.hours=Math.max(0,+v||0);
+  else if(k==='reduce'){if(+v>0)t.reduce=+v;else delete t.reduce;}
+  D=normalize(D);changed();render();}
+// 排課規則：超鐘點上限、外加課算不算、放假日
+function otRulesHtml(){const S=D.settings,nc=S.noClass||[];
+  return `${secH(2,'超鐘點與放假日',tip('超鐘點＝已開（或已排）節數－應授；應授＝基本鐘點－減授。外加課預設另外列，不算超鐘點。放假日用在「統計 › 老師工作量」的每月超鐘點：上課日是星期一到五，扣掉放假日和實施日期以外的日子。'))}<div class="card"><div class="rules">
+    <label>每人每週超鐘點最多 <input type="number" min="0" max="20" class="w2" value="${S.otCap||''}" placeholder="不限" data-otc="cap"> 節</label>
+    <label><input type="checkbox"${S.otCountExtra?' checked':''} data-otc="cx"> 外加課算進超鐘點</label>
+    <label>實施日期 <input type="text" class="w8" value="${esc(S.dates||'')}" placeholder="115.09.02-116.01.20" data-otc="dates"></label></div>
+    <h4>放假日</h4><div class="chips">${nc.length?nc.map(x=>`<span class="tagv">${esc(x.replace('~',' ～ '))}<button type="button" class="x" aria-label="刪除 ${esc(x)}" data-ot="ncDel" data-v="${esc(x)}">✕</button></span>`).join(''):'<span class="dim">還沒有</span>'}</div>
+    <div class="bar"><input type="date" id="ncA" aria-label="放假開始"> ～ <input type="date" id="ncB" aria-label="放假結束（只放一天可以不填）"><button type="button" class="b sm" data-ot="ncAdd">加入</button></div></div>`;}
+// 今天的待辦：認領待確認、沒人認領的課
+function otTodo(todo){const pend=claimsPending(D),open=openCourses(D),claimed=new Set(pend.map(c=>c.gid)),none=open.filter(g=>!claimed.has(g.id));
+  if(pend.length)todo.push(['',new Set(pend.map(c=>c.gid)).size+' 門課有老師認領，待確認','開課',"go('sched','groups')"]);
+  if(none.length)todo.push(['','這 '+none.length+' 門要找兼代課老師','開課',"go('sched','groups')"]);}
+const OTACT={
+  sug:()=>otSugOpen(),
+  close:()=>closeDlg(),
+  sugApply:()=>otSugApply(),
+  cok:b=>otDecide(b.dataset.g,b.dataset.t,true),
+  cno:b=>otDecide(b.dataset.g,b.dataset.t,false),
+  ncDel:b=>{if(isRO())return;D.settings.noClass=(D.settings.noClass||[]).filter(x=>x!==b.dataset.v);D=normalize(D);save();render();},
+  ncAdd:()=>{if(isRO())return;const a=$('ncA').value,b=$('ncB').value;if(!a){toast('先選日期');return;}D.settings.noClass=(D.settings.noClass||[]).concat([b&&b!==a?a+'~'+b:a]);D=normalize(D);save();render();}
+};
+const OTCHG={
+  over:el=>{otOver=el.checked;otSugOpen();},
+  all:el=>{document.querySelectorAll('#dlg .otChk').forEach(c=>{c.checked=el.checked;});},
+  t:el=>otSetT(el.dataset.id,el.dataset.k,el.value),
+  cap:el=>{if(isRO())return;const v=Math.floor(+el.value||0);if(v>0)D.settings.otCap=v;else delete D.settings.otCap;save();render();},
+  cx:el=>{if(isRO())return;if(el.checked)D.settings.otCountExtra=true;else delete D.settings.otCountExtra;save();render();},
+  dates:el=>{if(isRO())return;D.settings.dates=el.value.trim();save();}
+};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-ot]');if(!b||b.disabled||!OTACT[b.dataset.ot])return;if(!b.closest('#page,#dlg'))return;
+  if(APPROLE==='teacher'&&b.dataset.ot!=='close')return;e.preventDefault();OTACT[b.dataset.ot](b);});
+document.addEventListener('change',e=>{const el=e.target.closest('[data-otc]');if(!el||!OTCHG[el.dataset.otc]||!el.closest('#page,#dlg'))return;if(APPROLE==='teacher')return;OTCHG[el.dataset.otc](el);});
+
 
 /* ───── 排課｜學生編組：每位學生每一科要去哪一門課 ───── */
 let needG='';

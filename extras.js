@@ -117,6 +117,14 @@ function css(){if(typeof document==='undefined'||document.getElementById('xx-css
 .xx-tl>li.sent::before{background:var(--ok,#2f7a5b);border-color:var(--ok,#2f7a5b)}
 .xx-tl .when{font-size:14px;color:var(--mute,#6b6f7a)}
 .xx-add{color:var(--ok,#2f7a5b)}.xx-del{color:var(--bad,#b3382d)}
+.xx-load .xx-meter{margin-top:4px;min-width:64px}
+.xx-otm{font-family:var(--kai,"標楷體",serif);color:#000;background:#fff}
+.xx-otm h2{font-size:16pt;text-align:center;line-height:1.4;margin:0 0 6px}
+.xx-otm .xx-otn{font-size:11pt;margin:0 0 6px}
+.xx-otm table.out th,.xx-otm table.out td{font-size:12pt;padding:6px 8px;border-color:#000;vertical-align:middle}
+.xx-otm .xx-otsg{display:flex;gap:40mm;margin-top:16mm;font-size:12pt}.xx-otm .xx-otsg span{flex:1;border-bottom:1px solid #000;padding-bottom:2mm}
+@media print{.xx[data-xx="load"] .xx-np,.xx[data-xx="load"] .xx-bar,.xx[data-xx="load"]>.xx-bar{display:none!important}
+  .xx[data-xx="load"] .xx-card{border:0;padding:0;margin:0;box-shadow:none;background:#fff}.xx[data-xx="load"] .xx-h{display:none}}
 .xx-svc{display:grid;grid-template-columns:84px 1fr;gap:8px 12px;align-items:start}
 .xx-svc>b{padding-top:9px;font-weight:600}
 .xx-subj{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
@@ -219,22 +227,43 @@ function handoverTodo(){const d=XD();if(!d||!C||role()==='teacher')return [];
   return n?[{t:'學年交接檢查：'+n+' 項',n:'設定',level:'warn',go:()=>nav('handover')}]:[];}
 
 /* ═════ 3. 老師工作量（統計） ═════ */
-const LD={k:'per',dir:-1};
+const LD={k:'per',dir:-1,ym:''};
 function loadPage(el){
   const d=XD(),o=official();if(!d||!o){mount(el,'load',empty('資料還沒載入。'));return;}
   const rows=C.teacherLoad(d,o.M,o.S.slot,examData());
   if(!rows.length){mount(el,'load',empty('還沒有資源班老師。',btn('老師名冊','go',{to:'tea'})),a=>{if(a==='go')nav('tea');});return;}
-  const cols=[['name','老師'],['hours','基本鐘點'],['per','已排'],['groups','課'],['cases','個管'],['proctor','監考'],['iep','IEP 會議']];
+  rows.forEach(r=>{const t=r.ot||{};r.reduce=t.reduce||0;r.due=t.due||0;r.otw=t.ot||0;r.extra=t.extra||0;r.fl=t.over?'over':t.short?'under':'';});
+  const cols=[['name','老師'],['hours','基本'],['reduce','減授'],['due','應授'],['per','已排'],['otw','每週超鐘點'],['extra','外加課'],['groups','課'],['cases','個管'],['proctor','監考'],['iep','IEP 會議']];
   const k=LD.k,dir=LD.dir;rows.sort((a,b)=>(k==='name'?String(a.name).localeCompare(String(b.name)):(a[k]-b[k]))*dir||String(a.name).localeCompare(String(b.name)));
-  const max=Math.max(1,...rows.map(r=>Math.max(r.per,r.hours))),over=rows.filter(r=>r.flag==='over').length,under=rows.filter(r=>r.flag==='under').length;
+  const max=Math.max(1,...rows.map(r=>Math.max(r.per,r.due))),over=rows.filter(r=>r.fl==='over').length,under=rows.filter(r=>r.fl==='under').length,cx=!!d.settings.otCountExtra;
   const th=([c,n])=>`<th${c==='name'?'':' class="n"'}><button type="button" data-xa="sort" data-k="${c}"${c===k?` aria-sort="${dir>0?'ascending':'descending'}"`:''}>${E(n)}</button></th>`;
-  const tr=r=>`<tr class="${r.flag}"><td>${E(r.name)}${r.flag==='over'?' '+chip('多 '+r.diff,'bad'):r.flag==='under'?' '+chip('少 '+(-r.diff),'warn'):''}</td><td class="n">${r.hours||'<span class="xx-dim">—</span>'}</td>
-    <td class="n"><span class="xx-num">${r.per}</span></td><td style="min-width:120px"><div class="xx-meter" title="${E(r.per+(r.hours?' / '+r.hours:'')+' 節')}"><i class="${r.flag}" style="width:${Math.round(r.per/max*100)}%"></i>${r.hours?`<b style="left:calc(${Math.round(r.hours/max*100)}% - 1px)"></b>`:''}</div></td>
+  const dash='<span class="xx-dim">—</span>';
+  const tr=r=>`<tr class="${r.fl}"><td>${E(r.name)}${r.fl==='over'?' '+chip('超過上限','bad'):r.fl==='under'?' '+chip('少 '+r.ot.short,'warn'):''}</td><td class="n">${r.hours||dash}</td>
+    <td class="n">${r.reduce||dash}${r.ot&&r.ot.reduceNote?`<small class="xx-dim"> ${E(r.ot.reduceNote)}</small>`:''}</td><td class="n">${r.hours?r.due:dash}</td>
+    <td class="n"><span class="xx-num">${r.per}</span><div class="xx-meter" title="${E(r.per+(r.due?' / '+r.due:'')+' 節')}"><i class="${r.fl}" style="width:${Math.round(r.per/max*100)}%"></i>${r.due?`<b style="left:calc(${Math.round(r.due/max*100)}% - 1px)"></b>`:''}</div></td>
+    <td class="n">${r.otw?`<span class="xx-num">+${r.otw}</span>`:dash}</td><td class="n">${r.extra||dash}</td>
     <td class="n">${r.groups}</td><td class="n">${r.cases}</td><td class="n">${r.proctor+(r.support?`<small class="xx-dim">＋${r.support}</small>`:'')}</td><td class="n">${r.iep}</td></tr>`;
-  const h=`<div class="xx-bar">${over?chip('超過 '+over+' 位','bad'):''}${under?chip('不足 '+under+' 位','warn'):''}${!over&&!under?chip('鐘點都剛好','ok'):''}</div>`+
-    card(0,'',`<div class="xx-scroll"><table class="xx-t"><thead><tr>${cols.slice(0,3).map(th).join('')}<th><span class="xx-dim">每週節數</span></th>${cols.slice(3).map(th).join('')}</tr></thead><tbody>${rows.map(tr).join('')}</tbody></table></div>`);
-  mount(el,'load',h,(a,b)=>{if(a==='sort'){const c=b.dataset.k;if(LD.k===c)LD.dir=-LD.dir;else{LD.k=c;LD.dir=c==='name'?1:-1;}loadPage(el);}});
+  if(!LD.ym)LD.ym=todayS().slice(0,7);
+  const h=`<div class="xx-bar">${over?chip('超過上限 '+over+' 位','bad'):''}${under?chip('不足 '+under+' 位','warn'):''}${!over&&!under?chip('鐘點都剛好','ok'):''}<span class="xx-grow"></span><label class="xx-dim"><input type="checkbox" data-xc="cx"${cx?' checked':''}${ro()?' disabled':''}> 外加課算進超鐘點</label></div>`+
+    card(0,'',`<div class="xx-scroll xx-load"><table class="xx-t"><thead><tr>${cols.map(th).join('')}</tr></thead><tbody>${rows.map(tr).join('')}</tbody></table></div>`).replace('xx-card','xx-card xx-np')+
+    otMonthCard(d,o);
+  mount(el,'load',h,(a,b)=>{
+    if(a==='sort'){const c=b.dataset.k;if(LD.k===c)LD.dir=-LD.dir;else{LD.k=c;LD.dir=c==='name'?1:-1;}loadPage(el);}
+    else if(a==='print'){if(root.print)root.print();}
+    else if(a==='c:cx'){if(ro())return;if(b.checked)d.settings.otCountExtra=true;else delete d.settings.otCountExtra;store();loadPage(el);}
+    else if(a==='c:ym'){if(/^d{4}-d{2}$/.test(b.value)){LD.ym=b.value;loadPage(el);}}});
 }
+// 每月超鐘點：印給教務處（A4 直式、黑白）。算法寫在 core.js 的 overtimeMonth
+function otMonthCard(d,o){const R=C.overtimeMonth(d,o.M,o.S.slot,LD.ym);if(!R)return '';
+  const y=+R.ym.slice(0,4),m=+R.ym.slice(5,7),rows=R.rows.filter(r=>r.base||r.weekly);
+  const hol=R.off.filter(x=>x.why==='放假').map(x=>md(x.date)),outT=R.off.filter(x=>x.why==='學期外').length;
+  const paper=`<div id="outArea"><div class="pg xx-otm"><h2>${E(d.title||'')}<br>${y-1911} 年 ${m} 月 超鐘點節數統計表</h2>
+    <p class="xx-otn">本月上課日 ${R.days.length} 天${hol.length?'（放假：'+E(hol.join('、'))+'）':''}${outT?'；學期外 '+outT+' 天不計':''}</p>
+    <table class="out"><thead><tr><th>教師</th><th>應授</th><th>每週超鐘點</th><th>本月上課日</th><th>本月超鐘點節數</th><th>備註</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td>${E(r.name)}</td><td class="c">${r.base?r.due:''}</td><td class="c">${r.base?r.weekOT:''}</td><td class="c">${r.days}</td><td class="c"><b>${r.base?r.month:''}</b></td><td>${E(r.note)}</td></tr>`).join('')}</tbody></table>
+    <p class="xx-otsg"><span>承辦人：</span><span>教務主任：</span></p></div></div>`;
+  return card(1,'每月超鐘點',`<div class="xx-bar xx-np"><input type="month" value="${E(R.ym)}" data-xc="ym" aria-label="月份">${btn('印出','print')}</div>
+    <details class="xx-np"><summary>怎麼算</summary><p class="xx-hint">上課日：星期一到五，扣掉放假日和實施日期以外的日子（放假日在 設定 › 排課規則）。每一週：這個月裡的上課日照課表的節數加起來，減掉「應授 × 上課日數 ÷ 5」，少於 0 算 0，最多算到每週超鐘點；本月是各週相加。整週都上課時就等於每週超鐘點。${d.settings.otCountExtra?'外加課算在內。':'外加課不算，寫在備註。'}</p></details>`+paper);}
 
 /* ═════ 4. 教室使用率（統計） ═════ */
 const RM={d:-1,p:'',room:''};

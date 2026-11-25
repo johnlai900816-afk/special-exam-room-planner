@@ -334,7 +334,15 @@ ul.plain2 li em{font-style:normal;color:var(--mute);display:inline-flex;align-it
 .thd .hb{flex:1;min-width:110px;height:6px;border-radius:var(--r-pill);background:var(--sunk);overflow:hidden}
 .thd .hb i{display:block;height:100%;border-radius:var(--r-pill);background:var(--blue)}
 .thd .hb i.over{background:var(--warn)}
-.thd .hs{font-size:var(--fs-sm);color:var(--ink2)}.thd .hs.warn{color:var(--warn)}.thd .hs.ok{color:var(--ok)}
+.thd .hs{font-size:var(--fs-sm);color:var(--ink2)}.thd .hs.warn{color:var(--warn)}.thd .hs.ok{color:var(--ok)}.thd .hs.bad{color:var(--bad);font-weight:700}
+/* 超鐘點：開課頁的摘要、認領待確認 */
+.otsum{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:10px 12px 10px 18px;margin:0 0 16px;font-size:var(--fs-sm);color:var(--ink2)}
+.otsum b{color:var(--ink);font-variant-numeric:tabular-nums}.otsum b.bad,td.bad{color:var(--bad)}.otsum b.ok{color:var(--ok)}
+.otclaim h4{margin:0 0 8px;font-size:var(--fs-lg)}
+.otcl>li{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}.otcl>li:first-child{border-top:0}
+.otcg{min-width:10em;display:flex;flex-direction:column}.otcw{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.otct{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.otct>span{flex:1;min-width:8em;display:flex;flex-direction:column}
+.dlgscroll{min-width:0}
 .need select{max-width:200px}
 .need select.pend{border-color:var(--warn);background:var(--warn-l);color:var(--warn)}
 .need select.none{color:var(--mute)}
