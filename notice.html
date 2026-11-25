@@ -6,13 +6,15 @@
 <title>特殊考場通知單生成器</title>
 <style>
 /* ---------- 通知單本體（尺寸照原 Word 檔：A4、邊界 1.27cm、標楷體） ---------- */
-.page{width:210mm;height:296.8mm;box-sizing:border-box;padding:12.7mm;position:relative;overflow:hidden;background:#fff;color:#000;
+/* 高度 296mm（比 A4 少一點），避免印表機把最後一點點擠到第二張 */
+.page{width:210mm;height:296mm;box-sizing:border-box;padding:12.7mm;position:relative;overflow:hidden;background:#fff;color:#000;
   font-family:"Times New Roman","標楷體","DFKai-SB","BiauKaiTC","BiauKai","Kaiti TC","AR PL UKai TW",serif;font-size:12pt;line-height:18pt;
   -webkit-print-color-adjust:exact;print-color-adjust:exact;font-kerning:none;text-autospace:normal}
 .page p{margin:0}
 .page .t1,.page .t2{text-align:center;font-weight:bold;font-size:18pt;line-height:36pt}
 .page .t1{margin-bottom:9pt}
-.page .label{position:absolute;left:15.9mm;top:5.7mm;width:43.2mm;height:16.7mm;box-sizing:border-box;border:.5pt solid #000;background:#fff;
+/* 左上角方框：原本離紙邊 5.7mm，多數印表機印不到（不可列印區約 5mm），往下移到 8mm */
+.page .label{position:absolute;left:15.9mm;top:8mm;width:43.2mm;height:16.7mm;box-sizing:border-box;border:.5pt solid #000;background:#fff;
   padding:1.27mm 2.54mm;font-family:"Times New Roman","新細明體","PMingLiU","Songti TC",serif;font-weight:bold;font-size:26pt;line-height:36pt;white-space:nowrap;overflow:hidden;text-align:left}
 .page .who{font-weight:bold;font-size:18pt;line-height:36pt}
 .page .who u{text-decoration-thickness:1pt;text-underline-offset:2pt}
@@ -36,6 +38,10 @@
 .page .notes p.n2{text-indent:15mm;margin-bottom:9pt}
 .page .notes u{text-underline-offset:2pt}
 .page .notes .bx{padding:1pt 0}
+/* 家長回條：虛線以下剪下交回 */
+.page .reply{margin-top:10pt;font-size:13pt;line-height:24pt}
+.page .reply .cut{border-top:1pt dashed #000;text-align:center;font-size:9pt;line-height:14pt;margin-bottom:4pt}
+.page .reply .ln{display:inline-block;width:32mm;border-bottom:.75pt solid #000}
 
 /* ---------- 操作介面 ---------- */
 *{box-sizing:border-box}
@@ -93,6 +99,25 @@ a.b{font:inherit;padding:6px 12px;border:1px solid #b6c0ca;border-radius:5px;bac
 dialog{border:1px solid #b6c0ca;border-radius:8px;padding:18px;width:min(520px,92vw)}
 dialog h3{margin:0 0 8px}
 #print{display:none}
+svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;flex:none}
+input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acc,#3451d1)}
+dialog .x{position:absolute;right:10px;top:10px;border:0;background:none;color:#66727f;cursor:pointer;padding:6px}
+dialog .dlgbtn{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+dialog p.lead{white-space:pre-line;line-height:1.7;margin:4px 0 0}
+button.b.dz{background:#b3261e;border-color:#b3261e;color:#fff}
+.phint{font-size:12px;color:#66727f}
+#ovf{display:none;width:100%;background:#fff4e5;color:#b25e09;border:1px solid #f5cf9a;border-radius:6px;padding:5px 9px;font-size:13px}
+/* 放在管理系統裡時，換成外殼的暖色系 */
+.warm body{--acc:#2f6a5b;background:#f6f2ea;color:#2a2620}
+.warm #side,.warm #bar{background:#fffdf8;border-color:#e6dfd2}
+.warm .tabs{border-color:#e6dfd2}.warm .tabs button{background:#efe9dc;border-color:#e6dfd2;color:#4d463c}
+.warm .tabs button.on{background:#fffdf8;color:#235044}
+.warm button.b{border-color:#d3c9b8;background:#fffdf8;color:#2a2620;border-radius:10px}.warm button.b:hover{background:#efe9dc}
+.warm button.b.pri,.warm #stuList button.on{background:#2f6a5b;border-color:#2f6a5b;color:#fff}.warm button.b.pri:hover{background:#235044}
+.warm input[type=text]:focus,.warm textarea:focus{outline-color:#2f6a5b}
+.warm .hint,.warm label.f,.warm table.g th{color:#857b6c}.warm .hint.lk{background:#e6f1ea;border-color:#c5dccd;color:#235044}
+.warm #lk{color:#2f6a5b}.warm #ed h3{color:#2a2620;border-color:#e6dfd2}
+.warm dialog{border:0;border-radius:18px 18px 18px 6px;background:#fffdf8;box-shadow:0 20px 60px rgba(42,38,32,.3)}
 @media (max-width:900px){#app{grid-template-columns:1fr;height:auto}#side{max-height:none}#ed{overflow:visible}#pv{overflow:visible}}
 @page{size:A4;margin:0}
 @media print{
@@ -105,6 +130,15 @@ dialog h3{margin:0 0 8px}
 </style>
 </head>
 <body>
+<!-- 圖示組（lucide 線條圖示） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+</svg>
 <div id="app">
   <div id="side">
     <header><h1>特殊考場通知單生成器</h1><small>資料只存在這台電腦的瀏覽器，不會上傳。</small></header>
@@ -117,14 +151,16 @@ dialog h3{margin:0 0 8px}
   </div>
   <div id="main">
     <div id="bar">
-      <button class="b" id="prev" title="上一位">◀</button>
+      <button class="b" id="prev" title="上一位" aria-label="上一位"><svg class="ic"><use href="#i-left"/></svg></button>
       <span class="who" id="cur"></span>
-      <button class="b" id="next" title="下一位">▶</button>
+      <button class="b" id="next" title="下一位" aria-label="下一位"><svg class="ic"><use href="#i-right"/></svg></button>
       <label class="chk"><input type="checkbox" id="showAll"> 預覽全部</label>
       <span id="lk"></span>
       <span class="sp"></span>
+      <span class="phint">列印時「縮放」請選「實際大小／100%」</span>
       <button class="b" id="printOne">只印這位</button>
-      <button class="b pri" id="printAll">列印全部／存成 PDF</button>
+      <button class="b pri" id="printAll"><svg class="ic"><use href="#i-printer"/></svg> 列印全部／存成 PDF</button>
+      <div id="ovf"></div>
     </div>
     <div id="pv"></div>
   </div>
@@ -132,13 +168,34 @@ dialog h3{margin:0 0 8px}
 <div id="print"></div>
 <div id="toast"></div>
 <dialog id="dlg"></dialog>
+<dialog id="ask"></dialog>
 
 <script>
 'use strict';
 const KEY='exam-notice-v1', PLANNER_KEY='special-exam-room-v1';
 const $=id=>document.getElementById(id);
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ic=n=>'<svg class="ic" aria-hidden="true"><use href="#i-'+n+'"/></svg>';
 let D, cur=0, tab='stu';
+// 確認／提醒視窗（取代瀏覽器內建的 confirm／alert）：按主要按鈕＝true
+function askBox(msg,o){o=o||{};return new Promise(res=>{const d=$('ask');let done=false;
+  const end=v=>{if(done)return;done=true;d.onclick=null;d.onclose=null;if(d.open)d.close();res(v);};
+  d.innerHTML='<button class="x" data-r="x" aria-label="關閉">'+ic('x')+'</button><h3>'+esc(o.title||'請確認')+'</h3><p class="lead">'+esc(msg)+'</p><div class="dlgbtn">'+
+    (o.alert?'':'<button class="b" data-r="0">取消</button>')+'<button class="b pri'+(o.danger?' dz':'')+'" data-r="1">'+esc(o.ok||'確定')+'</button></div>';
+  d.onclick=e=>{const b=e.target.closest('[data-r]');if(b)end(b.dataset.r==='1');};d.onclose=()=>end(false);d.showModal();});}
+const tellBox=(m,t)=>askBox(m,{alert:true,title:t||'提醒',ok:'知道了'});
+// 日期統一寫法（和排列機相同）：「12/01」＝「12/1」，排序照學年
+function normDate(s){const t=String(s==null?'':s).trim(),m=t.match(/^(?:(\d{2,4})\s*[\/.\-年]\s*)?(\d{1,2})\s*[\/.\-月]\s*(\d{1,2})\s*日?$/);
+  if(!m)return t;return (m[1]?(+m[1])+'/':'')+(+m[2])+'/'+(+m[3]);}
+function dateKey(s){const m=normDate(s).match(/^(?:(\d+)\/)?(\d+)\/(\d+)$/);if(!m)return 9e8;
+  let y=m[1]?+m[1]:0;if(y&&y<1000)y+=1911;const mo=+m[2],d=+m[3];return y?y*10000+mo*100+d:(mo>=8?0:1)*10000+mo*100+d;}
+// 共用名冊（管理系統）裡每位學生的個管老師
+const RKEY='resource-class-v1';let RC=null;
+function rosterCM(){if(RC)return RC;RC={byId:{},byCN:{}};try{const R=JSON.parse(localStorage.getItem(RKEY));if(R&&Array.isArray(R.students)){
+  const tn={};(R.teachers||[]).forEach(t=>{tn[t.id]=t.name||'';});
+  R.students.forEach(s=>{const n=tn[s.caseMgr];if(!n)return;RC.byId[s.id]=n;RC.byCN[String(s.cls)+'|'+String(s.name||'').replace(/\s+/g,'')]=n;});}}catch(e){}return RC;}
+function caseMgrOf(stu){const R=rosterCM(),n=(stu.pid&&R.byId[stu.pid])||R.byCN[String(stu.cls)+'|'+String(stu.name||'').replace(/\s+/g,'')]||'';
+  return n?(/老師$/.test(n)?n:n+'老師'):'';}
 
 function defaultData(){
   const P=(n,a,b)=>({n:String(n),d:[{s:a[0],e:a[1],subj:a[2]},{s:b[0],e:b[1],subj:b[2]}]});
@@ -226,8 +283,10 @@ function noticeHtml(stu){
   if(H.label)h+='<div class="label"><span class="sh">'+esc(H.label)+'</span></div>';
   h+='<p class="t1">'+esc(H.line1)+'</p><p class="t2">'+esc(H.line2)+'</p>';
   h+='<p class="who"><u>'+id+'</u>：</p>';
+  // 有共用名冊時，寫這位學生自己的個管老師；沒有才用共同的「學習中心導師」
+  const cm=caseMgrOf(stu);
   h+='<p class="intro">'+(H.stampOn?'<img class="stamp" src="'+esc(stampSrc)+'" alt="">':'')+
-     '請詳細閱讀通知單下方的<span class="big">【注意】</span>事項，同時<span class="dbl">注意考試地點和時間</span>，不要遲到，如有疑問，請找學習中心導師：'+esc(H.teachers)+'。</p>';
+     '請詳細閱讀通知單下方的<span class="big">【注意】</span>事項，同時<span class="dbl">注意考試地點和時間</span>，不要遲到，如有疑問，請找'+(cm?'個管老師：'+esc(cm):'學習中心導師：'+esc(H.teachers))+'。</p>';
   h+='<div class="gap1"></div><div class="gap2"></div>';
   h+='<table class="nt"><colgroup><col style="width:9.84mm"><col style="width:9.93mm"><col style="width:19.86mm"><col style="width:20.28mm"><col style="width:39.93mm"><col style="width:10mm"><col style="width:19.79mm"><col style="width:20.28mm"><col style="width:38.93mm"></colgroup>';
   h+='<tr><td class="name" colspan="9">學生姓名：<u>'+id+'</u></td></tr>';
@@ -250,8 +309,14 @@ function noticeHtml(stu){
   h+='</table>';
   const notes=String(stu.notes!=null?stu.notes:D.notes).split('\n').map(x=>x.trim()).filter(x=>x);
   h+='<div class="notes">'+notes.map((t,i)=>i===0?'<p style="margin-left:.5mm">注意：1、'+mark(t)+'</p>':'<p class="n2">'+(i+1)+'、'+mark(t)+'</p>').join('')+'</div>';
+  if(H.reply)h+='<div class="reply"><div class="cut">請沿虛線剪下，家長簽名後交回</div><p><b>家長回條</b>　已收到 <u>'+id+'</u> 的特殊考場通知單，並了解考試地點與時間。</p><p>家長簽名：<span class="ln"></span>　日期：<span class="ln"></span></p></div>';
   return h+'</div>';
 }
+// 內容超出一張 A4（例如注意事項太長、加了回條）：列出來提醒老師，免得印出來被切掉
+function overflowOf(root){return [...root.querySelectorAll('.page')].filter(p=>p.scrollHeight>p.clientHeight+1);}
+function checkOverflow(list){const box=document.createElement('div');box.style.cssText='position:absolute;left:-9999px;top:0;visibility:hidden';
+  box.innerHTML=list.map(noticeHtml).join('');document.body.appendChild(box);const bad=overflowOf(box).map(p=>[...box.children].indexOf(p));box.remove();
+  return bad.map(i=>stuId(list[i])||'（未命名）');}
 
 /* ---------- 預覽 ---------- */
 function renderPreview(){
@@ -261,7 +326,11 @@ function renderPreview(){
   pv.innerHTML=(all?D.students:[D.students[cur]]).map(noticeHtml).join('');
   $('cur').textContent=(cur+1)+' / '+D.students.length+'　'+stuId(D.students[cur]);
   fit();
+  clearTimeout(renderPreview.h);renderPreview.h=setTimeout(showOverflow,400); // 打字時不要每個字都量一次
 }
+function showOverflow(){const bad=D.students.length?checkOverflow(D.students):[],el=$('ovf');
+  el.style.display=bad.length?'block':'none';
+  el.innerHTML=bad.length?ic('alert')+' 有 '+bad.length+' 張通知單內容超出一張 A4，印出來最下面會被切掉：'+esc(bad.join('、'))+'。請縮短注意事項'+(D.head.reply?'，或取消家長回條':'')+'。':'';}
 function fit(){const pv=$('pv'),w=pv.clientWidth-36,pw=793.7;const z=Math.min(1,w/pw);pv.querySelectorAll('.page').forEach(p=>p.style.zoom=z);}
 window.addEventListener('resize',fit);
 
@@ -282,7 +351,7 @@ function edStu(){
   if(!s)return h;
   const i=cur;
   h+='<h3>這位學生</h3><div class="row"><label class="f" style="flex:.8">班級'+inp('students.'+i+'.cls',s.cls,'903','K')+'</label><label class="f" style="flex:.6">座號'+inp('students.'+i+'.seat',s.seat,'15','K')+'</label><label class="f" style="flex:1.4">姓名'+inp('students.'+i+'.name',s.name,'','K')+'</label></div>';
-  h+=s.pid?'<div class="hint lk">🔗 這位學生來自排列機：灰色字就是排列機排的地點與時間，會自動跟著更新，不用自己打。只有想改掉它時才需要填（填了會蓋過排列機）。姓名可以在這裡補成全名，之後同步不會被改掉。</div>'
+  h+=s.pid?'<div class="hint lk">'+ic('link')+' 這位學生來自排列機：灰色字就是排列機排的地點與時間，會自動跟著更新，不用自己打。只有想改掉它時才需要填（填了會蓋過排列機）。姓名可以在這裡補成全名，之後同步不會被改掉。</div>'
     :'<div class="hint">地點留白＝「'+esc(D.defLoc)+'」。只填跟一般同學不一樣的地方就好；時間有改會自動加框。地點要分兩行用 <code>/</code> 隔開。</div>';
   D.days.forEach((dy,d)=>{
     h+='<div class="day">'+esc(dy.date)+'（'+esc(dy.dow)+'）</div><table class="g"><tr><th></th><th>考試地點</th><th>灰底</th><th>開始</th><th>結束</th><th>科目改為</th></tr>';
@@ -302,13 +371,14 @@ function edStu(){
   h+='<div class="row" style="margin-top:14px"><button class="b" data-act="dup">複製這位</button><button class="b warn" data-act="del">刪除這位</button></div>';
   return h;
 }
-function stuListHtml(){return D.students.map((s,i)=>'<button data-sel="'+i+'"'+(i===cur?' class="on"':'')+(s.pid?' title="來自排列機"':'')+'>'+(s.pid?'🔗 ':'')+esc(stuId(s)||'（未命名）')+'</button>').join('');}
+function stuListHtml(){return D.students.map((s,i)=>'<button data-sel="'+i+'"'+(i===cur?' class="on"':'')+(s.pid?' title="來自排列機"':'')+'>'+(s.pid?ic('link')+' ':'')+esc(stuId(s)||'（未命名）')+'</button>').join('');}
 function edExam(){
   const H=D.head;
   let h='<h3>標題與文字</h3>';
   h+='<label class="f">標題第一行'+inp('head.line1',H.line1)+'</label><label class="f">標題第二行'+inp('head.line2',H.line2)+'</label>';
   h+='<div class="row"><label class="f">左上角方框（留白＝不顯示）'+inp('head.label',H.label)+'</label><label class="f">沒填地點時顯示'+inp('defLoc',D.defLoc)+'</label></div>';
-  h+='<label class="f">學習中心導師（會印在說明文字裡）'+inp('head.teachers',H.teachers,'王小明老師、陳小華老師')+'</label>';
+  h+='<label class="f">學習中心導師（會印在說明文字裡）'+inp('head.teachers',H.teachers,'王小明老師、陳小華老師')+'</label><div class="hint" style="margin-top:-4px">共用名冊裡有填「個管老師」的學生，會改印他自己的個管老師。</div>';
+  h+='<label class="chk" style="margin-bottom:8px"><input type="checkbox" data-k="head.reply" data-keep="1"'+(H.reply?' checked':'')+'> 最下面加「家長回條」（虛線剪下，家長簽名交回）</label>';
   h+='<h3>印章</h3><div class="row"><label class="chk"><input type="checkbox" data-k="head.stampOn" data-keep="1"'+(H.stampOn?' checked':'')+'> 顯示印章</label><button class="b" data-act="stamp">換一張印章圖</button>'+(H.stamp?'<button class="b" data-act="stampReset">改回原本的章</button>':'')+'</div><input type="file" id="stampFile" accept="image/*" hidden>';
   h+='<h3>日期</h3>';
   D.days.forEach((dy,d)=>{h+='<div class="row"><label class="f">第 '+(d+1)+' 天日期'+inp('days.'+d+'.date',dy.date,'10月14日')+'</label><label class="f" style="flex:.5">星期'+inp('days.'+d+'.dow',dy.dow,'三')+'</label></div>'+
@@ -326,7 +396,7 @@ function edExam(){
 function edData(){
   if(EMB){ // 在排列機裡：連動是自動的，備份與共用都在右上角「共用」
     const n=D.students.filter(s=>s.pid).length;
-    return '<h3>自動帶入</h3><div class="hint lk">🔗 日期、考科、時間、每位學生的考試地點與延長時間，都是從「排考場」自動帶過來的，排法一改這裡就跟著變。'+(n?'目前 '+n+' 位學生。':'')+'</div>'+
+    return '<h3>自動帶入</h3><div class="hint lk">'+ic('link')+' 日期、考科、時間、每位學生的考試地點與延長時間，都是從「排考場」自動帶過來的，排法一改這裡就跟著變。'+(n?'目前 '+n+' 位學生。':'')+'</div>'+
       '<div class="hint">你在這裡補的<b>全名、注意事項、導師姓名、手動改過的格子</b>會被保留；登入共用後，其他老師也會看到。</div>'+
       '<h3>整理</h3><div class="row"><button class="b" data-act="clearManual">清掉手動改過的格子（全部照排考場）</button></div>'+
       '<div class="row" style="margin-top:8px"><button class="b warn" data-act="reset">通知單全部重來</button></div>'+
@@ -362,10 +432,10 @@ $('ed').addEventListener('change',e=>{const el=e.target;
   if(el.id==='stampFile'&&el.files[0]){const f=el.files[0];if(f.size>600*1024){toast('圖檔太大，請用 600KB 以下的圖');return;}
     const r=new FileReader();r.onload=()=>{D.head.stamp=r.result;D.head.stampOn=true;save();renderEd();renderPreview();};r.readAsDataURL(f);}
   if(el.id==='plFile'&&el.files[0])readJson(el.files[0],o=>syncPlanner(o,false,'已從設定檔帶入'));
-  if(el.id==='impFile'&&el.files[0])readJson(el.files[0],o=>{if(!o.periods||!o.students||!o.head){alert('這不是通知單生成器的設定檔。\n如果是排列機的設定檔，請用上面的「選排列機設定檔」。');return;}D=normalize(o);cur=0;save();renderAll();toast('已匯入');});
+  if(el.id==='impFile'&&el.files[0])readJson(el.files[0],o=>{if(!o.periods||!o.students||!o.head){tellBox('這不是通知單生成器的設定檔。\n如果是排列機的設定檔，請用上面的「選排列機設定檔」。');return;}D=normalize(o);cur=0;save();renderAll();toast('已匯入');});
 });
-function readJson(f,cb){const r=new FileReader();r.onload=()=>{let o;try{o=JSON.parse(r.result);}catch(e){alert('檔案讀不懂，請確認是 .json 設定檔');return;}cb(o);};r.readAsText(f);}
-$('ed').addEventListener('click',e=>{
+function readJson(f,cb){const r=new FileReader();r.onload=()=>{let o;try{o=JSON.parse(r.result);}catch(e){tellBox('檔案讀不懂，請確認是 .json 設定檔');return;}cb(o);};r.readAsText(f);}
+$('ed').addEventListener('click',async e=>{
   const sel=e.target.closest('[data-sel]');
   if(sel){cur=+sel.dataset.sel;renderAll();return;}
   const a=e.target.closest('[data-act]');if(!a)return;
@@ -373,28 +443,28 @@ $('ed').addEventListener('click',e=>{
   const s=D.students[cur];
   if(act==='add'){D.students.push({cls:'',seat:'',name:'',a:{},c:{},pm:{},notes:null});cur=D.students.length-1;}
   else if(act==='dup'){const c=JSON.parse(JSON.stringify(s));c.name+='（複製）';delete c.pid;delete c.plName;c.c=Object.assign({},c.a,c.c);c.a={};D.students.splice(cur+1,0,c);cur++;}
-  else if(act==='del'){if(!confirm('確定刪除 '+stuId(s)+'？'))return;D.students.splice(cur,1);}
+  else if(act==='del'){if(!await askBox('確定刪除 '+stuId(s)+'？'))return;D.students.splice(cur,1);}
   else if(act==='sort'){const me=s;D.students.sort((x,y)=>String(x.cls).localeCompare(String(y.cls),'zh-Hant',{numeric:true})||String(x.seat).localeCompare(String(y.seat),'zh-Hant',{numeric:true}));cur=Math.max(0,D.students.indexOf(me));}
   else if(act==='resetNotes'){s.notes=null;}
   else if(act==='paste'){pasteDialog();return;}
   else if(act==='stamp'){$('stampFile').click();return;}
   else if(act==='stampReset'){D.head.stamp='';}
   else if(act==='plLocal'){const o=plannerData();
-    if(!o){alert('這個瀏覽器裡找不到排列機的資料。\n請先到「① 排考場」把考場排好，或改用排列機設定檔。');return;}
+    if(!o){tellBox('這個瀏覽器裡找不到排列機的資料。\n請先到「① 排考場」把考場排好，或改用排列機設定檔。');return;}
     D.link=true;syncPlanner(o,false,'已同步');return;}
-  else if(act==='clearManual'){if(!confirm('確定清掉所有「來自排列機的學生」手動改過的地點、時間、科目？\n姓名與注意事項會保留。'))return;D.students.forEach(x=>{if(x.pid){x.c={};x.pm={};}});}
+  else if(act==='clearManual'){if(!await askBox('確定清掉所有「來自排列機的學生」手動改過的地點、時間、科目？\n姓名與注意事項會保留。'))return;D.students.forEach(x=>{if(x.pid){x.c={};x.pm={};}});}
   else if(act==='plFile'){$('plFile').click();return;}
   else if(act==='imp'){$('impFile').click();return;}
   else if(act==='exp'){const b=new Blob([JSON.stringify(D,null,1)],{type:'application/json'}),x=document.createElement('a');x.href=URL.createObjectURL(b);x.download='通知單設定_'+D.head.line1+'.json';document.body.appendChild(x);x.click();setTimeout(()=>{URL.revokeObjectURL(x.href);x.remove();},500);return;}
-  else if(act==='clearStu'){if(!confirm('確定清空全部 '+D.students.length+' 位學生？考試設定會保留。'))return;D.students=[];cur=0;}
-  else if(act==='reset'){if(!confirm(EMB?'確定通知單全部重來？補過的全名、注意事項與手動修改都會被清掉。':'確定全部還原成範例？目前的名單與設定都會被清掉。'))return;D=normalize(defaultData());cur=0;if(EMB){save();if(!autoSync('已重新產生'))renderAll();return;}}
+  else if(act==='clearStu'){if(!await askBox('確定清空全部 '+D.students.length+' 位學生？考試設定會保留。'))return;D.students=[];cur=0;}
+  else if(act==='reset'){if(!await askBox(EMB?'確定通知單全部重來？補過的全名、注意事項與手動修改都會被清掉。':'確定全部還原成範例？目前的名單與設定都會被清掉。'))return;D=normalize(defaultData());cur=0;if(EMB){save();if(!autoSync('已重新產生'))renderAll();return;}}
   save();renderAll();
 });
 function pasteDialog(){
   const d=$('dlg');
-  d.innerHTML='<h3>貼上名單</h3><div class="hint">一行一位，寫法像 <code>903-15 楊明杰</code>、<code>903 15 楊明杰</code>，也可以直接從 Excel 複製「班級、座號、姓名」三欄貼上。<br>班級座號已經在名單裡的（例如排列機帶來的學生），只會把姓名換成你貼的全名，不會重複新增。</div><textarea id="pasteTa" rows="10" style="width:100%"></textarea><div class="row" style="margin-top:10px;justify-content:flex-end"><button class="b" id="pasteNo">取消</button><button class="b pri" id="pasteOk">加入</button></div>';
+  d.innerHTML='<button class="x" id="pasteX" aria-label="關閉">'+ic('x')+'</button><h3>貼上名單</h3><div class="hint">一行一位，寫法像 <code>903-15 楊明杰</code>、<code>903 15 楊明杰</code>，也可以直接從 Excel 複製「班級、座號、姓名」三欄貼上。<br>班級座號已經在名單裡的（例如排列機帶來的學生），只會把姓名換成你貼的全名，不會重複新增。</div><textarea id="pasteTa" rows="10" style="width:100%"></textarea><div class="row" style="margin-top:10px;justify-content:flex-end"><button class="b" id="pasteNo">取消</button><button class="b pri" id="pasteOk">加入</button></div>';
   d.showModal();
-  $('pasteNo').onclick=()=>d.close();
+  $('pasteNo').onclick=$('pasteX').onclick=()=>d.close();
   $('pasteOk').onclick=()=>{let n=0,u=0;
     $('pasteTa').value.split('\n').forEach(l=>{l=l.trim();if(!l)return;
       const m=l.match(/^(\d{3,4})\s*[-－\s,\t]\s*(\d{1,2})\s*[,\t\s]*\s*(.+)$/)||l.match(/^(\d{3,4})()\s*(.+)$/);
@@ -408,25 +478,31 @@ function pasteDialog(){
 const PLANNER_URL='./';
 const EMB=window.top!==window; // 放在排列機的「⑤ 學生通知單」分頁裡
 if(EMB)document.documentElement.classList.add('emb');
+// 排列機本身放在管理系統裡（暖色外觀）時，這一頁也跟著換成暖色
+try{if(EMB&&parent.document.body.classList.contains('embed'))document.documentElement.classList.add('warm');}catch(e){}
+// 名冊改了（例如換了個管老師）就重新讀
+window.addEventListener('storage',e=>{if(e.key===RKEY){RC=null;renderPreview();}});
 const GN={7:'七',8:'八',9:'九'};
 let linkMsg='';
 function plannerData(){try{const o=JSON.parse(localStorage.getItem(PLANNER_KEY));if(o&&o.students&&o.sessions&&o.rooms)return o;}catch(e){}return null;}
 function autoSync(msg){if(!D.link)return false;const o=plannerData();if(!o)return false;return syncPlanner(o,true,msg);}
 function syncPlanner(P,quiet,msg){
-  if(!P||!P.students||!P.sessions||!P.rooms){if(!quiet)alert('這不是排列機的設定檔。');return false;}
+  if(!P||!P.students||!P.sessions||!P.rooms){if(!quiet)tellBox('這不是排列機的設定檔。');return false;}
   const me=D.students[cur];
   const tm=String(P.title||'').match(/(\d+)\s*學年度\s*第\s*(\d)\s*學期.*?第\s*(\d)\s*次段考/);
   if(tm)D.head.line1=tm[1]+'學年度第'+tm[2]+'學期第'+tm[3]+'次段考';
-  const dates=[...new Set(P.sessions.map(s=>s.date))];
-  if(dates.length>2&&!quiet)alert('排列機裡有 '+dates.length+' 個考試日，通知單只放得下兩天，會帶入前兩天。');
+  // 日期統一寫法後再排序：「12/01」和「12/1」算同一天，先考的放第一天
+  const ndate=s=>normDate(s.date);
+  const dates=[...new Set(P.sessions.map(ndate))].sort((a,b)=>dateKey(a)-dateKey(b));
+  if(dates.length>2&&!quiet)tellBox('排列機裡有 '+dates.length+' 個考試日，通知單只放得下兩天，會帶入前兩天。');
   const pidx=s=>{const m=String(s.period).match(/\d+/);return m?D.periods.findIndex(p=>String(p.n)===m[0]):-1;};
-  dates.slice(0,2).forEach((dt,d)=>{const s=P.sessions.find(x=>x.date===dt),m=String(dt).match(/(\d+)\D+(\d+)/);
+  dates.slice(0,2).forEach((dt,d)=>{const s=P.sessions.find(x=>ndate(x)===dt),m=String(dt).match(/(\d+)\D+(\d+)$/);
     D.days[d].date=m?(+m[1])+'月'+(+m[2])+'日':dt;if(s.dow)D.days[d].dow=s.dow;});
   // 考科與時間：排列機有的節次以排列機為準；上次帶入、這次已不存在的改回自習
   const allG=[...new Set([].concat(...P.sessions.map(s=>s.grades||[])))].sort();
   if(!D.periods.some(p=>p.d.some(x=>x.pl)))D.periods.forEach(p=>p.d.forEach(x=>{if(x.s)x.subj='自習';})); // 第一次連動：先清掉範例考科
   D.periods.forEach(p=>p.d.forEach(x=>{if(x.pl)x.pl=2;}));
-  P.sessions.forEach(s=>{const d=dates.indexOf(s.date),i=pidx(s);if(d<0||d>1||i<0||s.makeup)return;
+  P.sessions.forEach(s=>{const d=dates.indexOf(ndate(s)),i=pidx(s);if(d<0||d>1||i<0||s.makeup)return;
     if(i>=D.amCount)D.days[d].pmMerge=false;
     const x=D.periods[i].d[d],g=s.grades||[],rest=allG.filter(y=>!g.includes(y));
     x.s=fmt(hm(s.start));x.e=fmt(hm(s.end));x.pl=1;
@@ -441,16 +517,24 @@ function syncPlanner(P,quiet,msg){
   D.students=D.students.filter(s=>!s.demo);
   const seen=new Set();let add=0,gone=0;
   const sameName=(a,b)=>a&&b&&(a===b||a.endsWith(b)||b.endsWith(a));
-  P.students.forEach(ps=>{if(ps.on===false)return;const cells={};
+  const waitR=P.rooms.find(r=>r.type==='wait'),gOf=c=>parseInt(String(c||'').trim()[0],10)||0;
+  P.students.forEach(ps=>{if(ps.on===false)return;const cells={},waits=[];
     for(const k in (P.assign||{})){const sep=k.lastIndexOf('|');if(k.slice(0,sep)!==ps.id)continue;
-      const subj=k.slice(sep+1),a=P.assign[k],s=sesById[a.ses],r=roomById[a.room];if(!s||!r)continue;
-      const d=dates.indexOf(s.date),i=pidx(s);if(d<0||d>1||i<0)continue;
+      // 排列機的鍵是「學生|科目」；同一科分兩節考時是「學生|科目@節次代號」，科目要把 @ 後面拿掉
+      const subj=k.slice(sep+1).replace(/@.*$/,''),a=P.assign[k],s=sesById[a.ses],r=roomById[a.room];if(!s||!r)continue;
+      if(s.makeup)waits.push({subj,s});
+      const d=dates.indexOf(ndate(s)),i=pidx(s);if(d<0||d>1||i<0)continue;
       const has=v=>{const sc=ps.sv&&ps.sv[v];return sc==='*'||(Array.isArray(sc)&&sc.includes(subj));};
       const c={loc:r.name},e=+s.extMin||0;
       if(has('ext')||has('pc'))c.shade=true;
       if(has('ext')&&e){if(s.extMode==='before')c.s=fmt(hm(s.start)-e);else c.e=fmt(hm(s.end)+e);}
       if(s.makeup)c.subj=subj+'(補考)';
       cells[d+'-'+i]=c;}
+    // 改到補考節的學生：正考那一節要待在自習等候教室（以前會印成「原班」，學生會走錯地方）
+    waits.forEach(w=>{const g=gOf(ps.cls);
+      P.sessions.filter(x=>x.subject===w.subj&&!x.makeup&&(!g||(x.grades||[]).includes(g))).forEach(x=>{const d=dates.indexOf(ndate(x)),i=pidx(x);
+        if(d<0||d>1||i<0||cells[d+'-'+i])return;
+        cells[d+'-'+i]={loc:waitR?waitR.name:'自習等候教室',subj:'自習/('+w.subj+'改補考)',shade:true};});});
     if(!Object.keys(cells).length)return;
     let st=D.students.find(x=>x.pid===ps.id&&!seen.has(x))||
            D.students.find(x=>!x.pid&&!seen.has(x)&&String(x.cls)===String(ps.cls)&&(!x.seat||!ps.seat||+x.seat===+ps.seat)&&sameName(x.name,ps.name));
@@ -487,7 +571,7 @@ $('prev').onclick=()=>{cur=(cur-1+D.students.length)%Math.max(1,D.students.lengt
 $('next').onclick=()=>{cur=(cur+1)%Math.max(1,D.students.length);renderAll();};
 $('showAll').onchange=renderPreview;
 
-function renderAll(){cur=Math.max(0,Math.min(cur,D.students.length-1));renderEd();renderPreview();$('lk').textContent=D.link&&linkMsg?'🔗 '+linkMsg:'';}
+function renderAll(){cur=Math.max(0,Math.min(cur,D.students.length-1));renderEd();renderPreview();$('lk').innerHTML=D.link&&linkMsg?ic('link')+' '+esc(linkMsg):'';}
 D=load();
 if(!autoSync())renderAll();
 </script>
