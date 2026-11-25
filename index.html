@@ -5,9 +5,13 @@
 <script>if(/[?&]v=/.test(location.search))location.replace('exam.html'+location.search+location.hash);</script>
 <title>資源班管理系統</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<script>/* 外觀：主題（自動／淺色／深色）、字放大；先套用，避免閃一下 */
+try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark')r.dataset.theme=t;if(localStorage.getItem('rc-big')==='1')r.classList.add('big');})(document.documentElement);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="app.css?v=16">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css?v=17">
 </head>
 <body>
 <aside class="side">
@@ -21,6 +25,10 @@
   </nav>
   <div class="grow"></div>
   <div id="cloud"></div>
+  <div id="prefs">
+    <div class="seg" role="group" aria-label="外觀"><button type="button" data-th="auto">自動</button><button type="button" data-th="light">淺色</button><button type="button" data-th="dark">深色</button></div>
+    <button type="button" class="b" id="fsBig" aria-pressed="false">字放大</button>
+  </div>
 </aside>
 <main id="main">
   <header class="ph">
@@ -35,6 +43,16 @@
 <input type="file" id="imp" accept=".json,application/json" style="display:none" onchange="importJson(this)">
 <div id="busy">排課中…</div>
 <div id="toast"></div>
+<script>/* 外觀設定的按鈕 */
+(function(){var r=document.documentElement,P=document.getElementById('prefs'),fb=document.getElementById('fsBig');
+  function get(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+  function put(k,v){try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(e){}}
+  function paint(){var t=r.dataset.theme||'auto';P.querySelectorAll('[data-th]').forEach(function(b){var on=b.dataset.th===t;b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);});fb.setAttribute('aria-pressed',r.classList.contains('big'));}
+  P.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+    if(b.dataset.th){var t=b.dataset.th;if(t==='auto'){delete r.dataset.theme;put('rc-theme',null);}else{r.dataset.theme=t;put('rc-theme',t);}}
+    else if(b===fb){var on=r.classList.toggle('big');put('rc-big',on?'1':null);}
+    paint();});
+  paint();})();</script>
 <script src="firebase-config.js"></script>
 <script src="school.js?v=16"></script>
 <script src="core.js?v=16"></script>
