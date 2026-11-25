@@ -108,6 +108,7 @@ function rToday(){const t=me();if(!t){pg(noMe());return;}
   h+=H('02','待辦')+(todo.length?'<ul class="tp-todo">'+todo.map(([a,b,f])=>'<li><button type="button" onclick="'+f+'"><span>'+esc(a)+'</span><em>'+esc(b)+' ›</em></button></li>').join('')+'</ul>':'<p class="tp-none">沒有待辦</p>');
   const up=TEACH.iepUpcoming(D,t.id,td).slice(0,5);
   if(up.length)h+=H('03','要開的會')+'<ul class="tp-todo">'+up.map(x=>'<li><button type="button" onclick="go(\'me_iep\',\'inv\')"><span>'+esc(x.f.label+' '+x.f.time)+'　'+esc(IEP.stuShow(IEP.stuOf(D,x.m.s),'cls'))+(x.m.room?'・'+esc(x.m.room):'')+'</span><em>'+esc(x.R.kind||'IEP')+'</em></button></li>').join('')+'</ul>';
+  const oc=openCourses(D).length;if(oc)h+=H(up.length?'04':'03','待認領','<small>有 '+oc+' 門課待認領</small>')+claimList(t,typeof isRO==='function'&&isRO());
   pg(h);}
 
 /* ── 我的學生 ── */
@@ -150,11 +151,12 @@ function rSet(){const t=me();if(!t){pg(noMe());return;}const ro=typeof isRO==='f
   let h=H('01','我的不排課時段','<small>'+off.size+' 節</small>')+'<div class="scroll"><table class="tp-off"><tr><th></th>'+DAYS.map(d=>'<th>'+d+'</th>').join('')+'</tr>'+
     reg.map(p=>'<tr><th>'+esc(p.name)+'<small>'+esc(p.start)+'</small></th>'+DAYS.map((d,di)=>{const k=di+'-'+p.id,on=off.has(k);
       return '<td><button type="button" class="'+(on?'on':'')+'" aria-pressed="'+on+'" aria-label="週'+d+esc(p.name)+(on?' 不排課':'')+'" data-k="'+esc(k)+'" onclick="tpOff(this.dataset.k)"'+(ro?' disabled':'')+'>'+(on?'不排':'')+'</button></td>';}).join('')+'</tr>').join('')+'</table></div>';
+  h+=H('02','超鐘點意願')+otCard(t,ro)+H('03','待認領','<small>'+openCourses(D).length+' 門</small>')+claimList(t,ro);
   let E=null;try{E=JSON.parse(localStorage.getItem(typeof EXKEY!=='undefined'?EXKEY:'special-exam-room-v1'));}catch(e){}
   const du=TEACH.proctorDuties(E,t.name);
-  h+=H('02','我的監考','<small>'+du.length+' 場</small>')+(du.length?'<ul class="tp-todo">'+du.map(x=>'<li><div><span>'+esc(x.date+(x.dow?'（'+x.dow+'）':'')+' '+x.period+' '+x.subject)+'</span><em>'+esc(x.room)+(x.sup?'・支援':'')+'</em></div></li>').join('')+'</ul>':'<p class="tp-none">'+(E?'沒有排到監考':'還沒有段考資料')+'</p>');
+  h+=H('04','我的監考','<small>'+du.length+' 場</small>')+(du.length?'<ul class="tp-todo">'+du.map(x=>'<li><div><span>'+esc(x.date+(x.dow?'（'+x.dow+'）':'')+' '+x.period+' '+x.subject)+'</span><em>'+esc(x.room)+(x.sup?'・支援':'')+'</em></div></li>').join('')+'</ul>':'<p class="tp-none">'+(E?'沒有排到監考':'還沒有段考資料')+'</p>');
   const r=document.documentElement,th=r.dataset.theme||'auto',big=r.classList.contains('big');
-  h+=H('03','外觀')+'<div class="bar"><div class="seg" role="group" aria-label="主題">'+[['auto','自動'],['light','淺色'],['dark','深色']].map(([k,n])=>'<button type="button" class="'+(th===k?'on':'')+'" aria-pressed="'+(th===k)+'" onclick="tpTheme(\''+k+'\')">'+n+'</button>').join('')+'</div>'+
+  h+=H('05','外觀')+'<div class="bar"><div class="seg" role="group" aria-label="主題">'+[['auto','自動'],['light','淺色'],['dark','深色']].map(([k,n])=>'<button type="button" class="'+(th===k?'on':'')+'" aria-pressed="'+(th===k)+'" onclick="tpTheme(\''+k+'\')">'+n+'</button>').join('')+'</div>'+
     '<button type="button" class="b" aria-pressed="'+big+'" onclick="tpBig()">'+(big?'字恢復':'字放大')+'</button></div>';
   pg(h);}
 root.tpOff=function(k){const t=me();if(!t||(typeof isRO==='function'&&isRO()))return;const a=t.off=t.off||[],i=a.indexOf(k);if(i>=0)a.splice(i,1);else a.push(k);changed();render();};
@@ -163,6 +165,39 @@ function pref(sel,fn){const b=document.querySelector(sel);if(b)b.click();else fn
 root.tpTheme=k=>pref('#prefs [data-th="'+k+'"]',()=>{const r=document.documentElement;try{if(k==='auto'){delete r.dataset.theme;localStorage.removeItem('rc-theme');}else{r.dataset.theme=k;localStorage.setItem('rc-theme',k);}}catch(e){}});
 root.tpBig=()=>pref('#fsBig',()=>{const on=document.documentElement.classList.toggle('big');try{if(on)localStorage.setItem('rc-big','1');else localStorage.removeItem('rc-big');}catch(e){}});
 
+
+/* ── 超鐘點意願與認領（我的設定、今天）：只改得到自己的資料；課只顯示名稱、科目、年級、節數、人數，不顯示學生姓名 ── */
+const GRS=()=>{const g=[...new Set(D.students.map(s=>String(gradeOfCls(s.cls))))].filter(x=>GRADE[x]).sort();return g.length?g:['7','8','9'];};
+const SUBJ=()=>[...new Set(D.groups.map(g=>g.subject).filter(Boolean).concat(['國文','數學','英文']))];
+function otCard(t,ro){const S=otSummary(D),r=S.rows.find(x=>x.id===t.id)||otRow(D,t,0,0),will=t.otMax>0,dis=ro?' disabled':'';
+  const chk=(k,v,lab)=>'<label class="tp-chk"><input type="checkbox" data-tpc="list" data-k="'+k+'" value="'+esc(v)+'"'+((t[k]||[]).includes(v)?' checked':'')+dis+'> '+esc(lab)+'</label>';
+  let h='<div class="tp-ot"><p class="tp-none">'+esc(otText(r))+'</p>'+
+    '<label class="tp-chk"><input type="checkbox" data-tpc="will"'+(will?' checked':'')+dis+'> 願意超鐘點</label>'+
+    (will?'<label class="tp-row2">每週最多 <input type="number" min="1" max="20" class="w2" value="'+(+t.otMax)+'" data-tpc="max"'+dis+'> 節'+(r.cap?'<small>（全校上限 '+r.cap+'）</small>':'')+'</label>':'')+
+    '<div class="tp-row2"><span>想教的科目</span>'+SUBJ().map(x=>chk('prefSubj',x,x)).join('')+'</div>'+
+    '<div class="tp-row2"><span>想教的年級</span>'+GRS().map(x=>chk('prefGrade',x,GRADE[x]||x)).join('')+'</div>'+
+    '<div class="tp-row2"><span>不想教</span>'+SUBJ().map(x=>chk('avoidSubj',x,x)).join('')+'</div></div>';
+  return h;}
+// 待認領的課：「我可以帶」送出認領；已送出的可以收回
+function claimList(t,ro){const open=openCourses(D);if(!open.length)return '<p class="tp-none">沒有待認領的課</p>';
+  const mine=claimsOf(D).filter(c=>c.tid===t.id);
+  return '<ul class="tp-todo">'+open.map(g=>{const c=mine.filter(x=>x.gid===g.id).pop(),gr=otGradeOf(D,g),st=c&&c.status;
+    return '<li><div><span><b>'+esc(g.name)+'</b><small class="tp-sub">'+esc([g.subject,gr?(GRADE[gr]||gr):'',(+g.per)+' 節',g.mode,(g.students||[]).length+' 人'].filter(Boolean).join('・'))+'</small></span>'+
+      (st==='pending'?'<em>等管理者確認</em><button type="button" class="b sm" data-tpa="unclaim" data-g="'+esc(g.id)+'"'+(ro?' disabled':'')+'>收回</button>':
+        (st==='no'?'<em>上次沒核准</em>':'')+'<button type="button" class="b sm pri" data-tpa="claim" data-g="'+esc(g.id)+'"'+(ro?' disabled':'')+'>我可以帶</button>')+'</div></li>';}).join('')+'</ul>';}
+function otSave(fn){const t=me();if(!t||(typeof isRO==='function'&&isRO()))return;fn(t);D=normalize(D);changed();render();}
+const TPC={
+  will:el=>otSave(t=>{t.otMax=el.checked?Math.max(1,+t.otMax||2):0;}),
+  max:el=>otSave(t=>{t.otMax=Math.max(0,Math.floor(+el.value||0));}),
+  list:el=>otSave(t=>{const k=el.dataset.k;if(!['prefSubj','prefGrade','avoidSubj'].includes(k))return;const a=(t[k]||[]).filter(x=>x!==el.value);if(el.checked)a.push(el.value);t[k]=a;})
+};
+const TPA={
+  claim:el=>otSave(t=>{const r=claimAdd(D,el.dataset.g,t.id,Date.now());toast(r.ok?'已送出，等管理者確認':r.why);}),
+  unclaim:el=>otSave(t=>{claimCancel(D,el.dataset.g,t.id);toast('已收回');})
+};
+const onMe=()=>typeof page!=='undefined'&&/^me_/.test(page)&&ROLE()==='teacher';
+document.getElementById('page').addEventListener('change',e=>{const el=e.target.closest('[data-tpc]');if(!el||!onMe()||!TPC[el.dataset.tpc])return;TPC[el.dataset.tpc](el);});
+document.getElementById('page').addEventListener('click',e=>{const el=e.target.closest('[data-tpa]');if(!el||el.disabled||!onMe()||!TPA[el.dataset.tpa])return;e.preventDefault();TPA[el.dataset.tpa](el);});
 /* ───── 登記頁面 ───── */
 PAGES.me_today={t:'今天',render:rToday};
 PAGES.me_stu={t:'我的學生',render:rStu};
