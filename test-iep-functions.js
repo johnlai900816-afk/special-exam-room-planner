@@ -27,6 +27,7 @@ const errOf=async p=>{try{await p;return null;}catch(e){return e.code||'?';}};
   const g=await api.getSurvey({k:kT},{ip:'1.2.3.4'});
   ok(g.name===I.salute(tea.name,'',true)&&g.keys.length===15&&g.resp===null,'拿得到公開內容：稱呼、15 個節次，還沒有回覆');
   ok(!('pk' in g)&&!('r' in g)&&!('by' in g),'不會回傳出席者代號、調查 id 等內部資料');
+  {const b=I.busyOf(D,R),d=I.publicDoc(D,R,tea,b);ok(!('busy' in g)&&!('busy' in d)&&!/上課|不排課|已有會議/.test(JSON.stringify(g)),'公開內容（發布的、Function 回傳的）都沒有「有課」「不排課」這類原因');}
   ok(!D.students.some(s=>JSON.stringify(g).includes(s.name)),'回傳內容沒有學生姓名');
   ok(await errOf(api.getSurvey({k:'short'},{}))==='invalid-argument','鑰匙格式不對直接拒絕');
   ok(await errOf(api.getSurvey({k:'A'.repeat(24)},{ip:'9.9.9.9'}))==='not-found','猜的鑰匙找不到');

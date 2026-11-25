@@ -334,7 +334,15 @@ ul.plain2 li em{font-style:normal;color:var(--mute);display:inline-flex;align-it
 .thd .hb{flex:1;min-width:110px;height:6px;border-radius:var(--r-pill);background:var(--sunk);overflow:hidden}
 .thd .hb i{display:block;height:100%;border-radius:var(--r-pill);background:var(--blue)}
 .thd .hb i.over{background:var(--warn)}
-.thd .hs{font-size:var(--fs-sm);color:var(--ink2)}.thd .hs.warn{color:var(--warn)}.thd .hs.ok{color:var(--ok)}
+.thd .hs{font-size:var(--fs-sm);color:var(--ink2)}.thd .hs.warn{color:var(--warn)}.thd .hs.ok{color:var(--ok)}.thd .hs.bad{color:var(--bad);font-weight:700}
+/* 超鐘點：開課頁的摘要、認領待確認 */
+.otsum{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:10px 12px 10px 18px;margin:0 0 16px;font-size:var(--fs-sm);color:var(--ink2)}
+.otsum b{color:var(--ink);font-variant-numeric:tabular-nums}.otsum b.bad,td.bad{color:var(--bad)}.otsum b.ok{color:var(--ok)}
+.otclaim h4{margin:0 0 8px;font-size:var(--fs-lg)}
+.otcl>li{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}.otcl>li:first-child{border-top:0}
+.otcg{min-width:10em;display:flex;flex-direction:column}.otcw{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.otct{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.otct>span{flex:1;min-width:8em;display:flex;flex-direction:column}
+.dlgscroll{min-width:0}
 .need select{max-width:200px}
 .need select.pend{border-color:var(--warn);background:var(--warn-l);color:var(--warn)}
 .need select.none{color:var(--mute)}
@@ -582,7 +590,7 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
 /* ===== 窄螢幕（手機、平板直放） ===== */
 @media (max-width:1080px){.cgrid{grid-template-columns:minmax(0,1fr)}.cols{grid-template-columns:minmax(0,1fr)}}
 .cgrid>.card{min-width:0;overflow-x:auto}.cgrid .form label,.cgrid select,.cgrid input{max-width:100%}
-@media (max-width:860px){
+@media (max-width:980px){
   body{display:block}
   .side{height:auto;position:sticky;top:0;z-index:20;flex-direction:row;flex-wrap:wrap;align-items:center;padding:10px 14px 0;gap:6px 10px;border-right:0;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px)}
   .brand{padding:0;flex:1;min-width:0}
@@ -627,6 +635,30 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
   .form{grid-template-columns:1fr;gap:4px}
   .form>label{margin-top:8px}
   .bar.bulk{border-radius:16px}
+}
+
+/* ===== 放大（字放大、瀏覽器 125～200%）與窄螢幕：只改畫面，不影響列印 ===== */
+@media screen{
+  input,select,textarea{max-width:100%}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))}
+  .gc,.card,.tsec,.colr,.cols>*,.stats>*,.cgrid>*,.iepcard,.xx-card{min-width:0}
+  .thd>b{min-width:0;overflow-wrap:anywhere}
+  table.ed td:first-child{white-space:nowrap}
+  /* 排課表：在卡片裡左右捲，節次那一欄固定在左邊 */
+  table.board{min-width:47.5rem}
+  table.board th.ph2{position:sticky;left:0;z-index:2;background:var(--bg)}
+  /* 對話框比畫面高時：內容捲動，按鈕列留在下面看得到 */
+  dialog{max-height:92vh;max-height:92dvh;max-width:calc(100vw - 16px);box-sizing:border-box;overscroll-behavior:contain}
+  dialog .bar.end{position:sticky;bottom:-26px;z-index:2;background:var(--card);margin:14px 0 0;padding:12px 0 6px;box-shadow:0 -1px 0 var(--line)}
+  .menubox{max-width:calc(100vw - 32px)}
+  /* 課表輸出：寬的表在預覽框裡左右捲，第一欄（節次）固定 */
+  #outArea table.mt tr>th:first-child,#outArea table.pt tr>th:first-child{position:sticky;left:0;z-index:1}
+}
+@media screen and (max-width:980px){
+  dialog .bar.end{bottom:-20px}
+  /* 段考頁（iframe）：版面不再是固定高度時，給它一個畫面高 */
+  #examFrame{flex:none;height:calc(100vh - 9rem);height:calc(100dvh - 9rem);min-height:24rem}
+  .menubox{left:auto;right:0}
 }
 
 /* ===== 列印 ===== */

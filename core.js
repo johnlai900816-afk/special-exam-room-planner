@@ -82,7 +82,7 @@ function normalize(D){
   ['classSubj','assign','settings','offBy'].forEach(k=>{if(!D[k]||typeof D[k]!=='object')D[k]={};});
   if(D.settings.regClash==null)D.settings.regClash=true;
   if(!D.settings.seed)D.settings.seed=1;
-  D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';t.hours=Math.max(0,+t.hours||0);if(t.prefRooms!=null&&!Array.isArray(t.prefRooms))delete t.prefRooms;});
+  D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';t.hours=Math.max(0,+t.hours||0);if(t.prefRooms!=null&&!Array.isArray(t.prefRooms))delete t.prefRooms;otNormT(t);});
   if(D.sched!=null&&(typeof D.sched!=='object'||Array.isArray(D.sched)))delete D.sched;   // 試排草稿與確定的版本（沒用過就不存）
   D.students.forEach(s=>{if(!Array.isArray(s.needs))s.needs=[];});
   // 備註拆成「公開提醒」（note，簽到時給學生看）和「個管私密備註」（privNote）。舊資料的備註不知道能不能給學生看，一律先搬到私密
@@ -92,6 +92,7 @@ function normalize(D){
   D.groups.forEach(g=>{if(!Array.isArray(g.students))g.students=[];g.per=Math.max(0,Math.min(15,+g.per||0));if(!g.mode)g.mode='抽離';if(g.on==null)g.on=true;g.grade=g.grade?String(g.grade):'';});
   if(D.title==null)D.title='';
   sanitizeIds(D);
+  otNormD(D);
   return D;
 }
 
@@ -124,6 +125,7 @@ function sanitizeIds(D){
   D.assign=rekey(D.assign,k=>r(mG,k));
   for(const k in D.assign){const a=D.assign[k];if(Array.isArray(a))a.forEach(e=>{if(e&&typeof e==='object'){if(e.s)e.s=slot(e.s);if(e.r!=null)e.r=r(mR,e.r);}});}
   if(D.contacts)D.contacts=rekey(D.contacts,k=>r(mS,k));
+  if(Array.isArray(D.claims))D.claims.forEach(c=>{if(c&&typeof c==='object'){c.gid=r(mG,c.gid);c.tid=r(mT,c.tid);}});
   const I=D.iep;if(I&&Array.isArray(I.rounds))I.rounds.forEach(R=>{if(R&&Array.isArray(R.meets))R.meets.forEach(m=>{if(!m)return;m.s=r(mS,m.s);if(Array.isArray(m.p))m.p.forEach(x=>{if(Array.isArray(x))x[0]=pk(x[0]);});});});
   if(I&&I.cfg&&Array.isArray(I.cfg.admin))I.cfg.admin.forEach(a=>{if(Array.isArray(a))a[0]=pk(a[0]);});
   return [mS,mT,mG,mR,mP,mX].reduce((n,m)=>n+m.size,0);
@@ -903,7 +905,163 @@ function suggestCaseMgr(D,opt){
   const summary=T.map(t=>{const m=byT[t.id];return {id:t.id,name:t.name,n:m.length,cap:cap[t.id],capSet:+t.cmCap>0,grades:[...new Set(m.map(grade))].sort(),classes:new Set(m.map(o=>String(o.cls))).size,taught:m.filter(o=>teach[o.id+'|'+t.id]).length};});
   return {list,summary};
 }
-const CORE={sanitizeIds,ID_RE,okId,suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash,promoteCls,packAssign,unpackAssign,schedStats,schedDiff};
+/* ───── 超鐘點：應授＝基本鐘點（hours）− 減授（reduce）；超過應授的節數是超鐘點 ─────
+   老師：reduce（減授節數）、reduceNote（減授原因，例：組長）、otMax（每週最多願意超幾節；0＝不願意，沒填＝還沒問）、
+         prefSubj、prefGrade（想教的科目、年級，可不填）、avoidSubj（不想教的科目）。
+   全校：D.settings.otCap（每人每週超鐘點上限；沒填＝不限）、otCountExtra（外加課算進超鐘點；預設不算，另列「外加課」）、
+         noClass（放假日：'YYYY-MM-DD' 或 'YYYY-MM-DD~YYYY-MM-DD'）。
+   認領：D.claims＝[{gid,tid,at,status:'pending'|'ok'|'no',dt}]：沒有老師的課，老師按「我可以帶」，管理者核准才指定。 */
+const otN=v=>{v=+v;return isFinite(v)&&v>0?Math.min(99,Math.round(v*10)/10):0;};
+const otList=v=>(Array.isArray(v)?v:typeof v==='string'?v.split(/[,，、;；\s]+/):[]).map(x=>String(x).trim().slice(0,20)).filter(Boolean).filter((x,i,a)=>a.indexOf(x)===i).slice(0,30);
+const otYmd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+// 一個日期：2026-10-10、2026/10/10、115.10.10（民國年）都可以；不對的回傳 ''
+function otDay(s){const m=String(s==null?'':s).trim().match(/^(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})$/);if(!m)return '';let y=+m[1];if(y<1000)y+=1911;
+  const d=new Date(y,+m[2]-1,+m[3]);return d.getFullYear()===y&&d.getMonth()===+m[2]-1&&d.getDate()===+m[3]?otYmd(d):'';}
+// 放假日清單：一天一筆，或「開始~結束」一段；排序、去掉重複和寫錯的
+function noClassNorm(v){const out=new Set();
+  (Array.isArray(v)?v:String(v==null?'':v).split(/[\n\r,，、;；]+/)).forEach(x=>{const p=String(x==null?'':x).replace(/\s+/g,'').split(/[~～至–—]/).filter(Boolean);
+    if(p.length===1){const a=otDay(p[0]);if(a)out.add(a);}
+    else if(p.length===2){let a=otDay(p[0]),b=otDay(p[1]);if(!a||!b)return;if(b<a)[a,b]=[b,a];out.add(a===b?a:a+'~'+b);}});
+  return [...out].sort().slice(0,200);}
+// 放假日展開成一天一天（只看 from～to 之間）
+function noClassSet(list,from,to){const set=new Set();(list||[]).forEach(x=>{const p=String(x).split('~'),a=otDay(p[0]),b=otDay(p[1]||p[0]);if(!a||!b)return;
+  const d=new Date(+a.slice(0,4),+a.slice(5,7)-1,+a.slice(8,10));for(let i=0;i<400;i++){const s=otYmd(d);if(s>b)break;if((!from||s>=from)&&(!to||s<=to))set.add(s);d.setDate(d.getDate()+1);}});
+  return set;}
+// 學期起訖：D.settings.dates（例：115.09.02-116.01.20、2026/9/2～2027/1/20）。讀不出來回傳 null
+function termRange(str){const a=[];String(str==null?'':str).replace(/(\d{2,4})[./-](\d{1,2})[./-](\d{1,2})/g,(m)=>{const d=otDay(m);if(d)a.push(d);return m;});
+  if(!a.length)return null;return {from:a[0],to:a.length>1?a[a.length-1]:''};}
+function otNormT(t){
+  if(t.reduce!=null){t.reduce=otN(t.reduce);if(!t.reduce)delete t.reduce;}
+  if(t.reduceNote!=null){t.reduceNote=String(t.reduceNote).trim().slice(0,40);if(!t.reduceNote)delete t.reduceNote;}
+  if(t.otMax!=null){const v=Math.floor(otN(t.otMax));if(t.otMax===''||t.otMax==null)delete t.otMax;else t.otMax=v;}
+  ['prefSubj','prefGrade','avoidSubj'].forEach(k=>{if(t[k]!=null){t[k]=otList(t[k]);if(!t[k].length)delete t[k];}});}
+function otNormD(D){const S=D.settings;
+  if(S.otCap!=null){S.otCap=Math.floor(otN(S.otCap));if(!S.otCap)delete S.otCap;}
+  if(S.otCountExtra!=null){if(S.otCountExtra)S.otCountExtra=true;else delete S.otCountExtra;}
+  if(S.noClass!=null){S.noClass=noClassNorm(S.noClass);if(!S.noClass.length)delete S.noClass;}
+  if(D.claims!=null){D.claims=(Array.isArray(D.claims)?D.claims:[]).filter(c=>c&&typeof c==='object'&&okId(c.gid)&&okId(c.tid)&&['pending','ok','no'].includes(c.status))
+    .map(c=>{const o={gid:String(c.gid),tid:String(c.tid),at:+c.at||0,status:c.status};if(+c.dt)o.dt=+c.dt;return o;}).slice(-300);if(!D.claims.length)delete D.claims;}}
+// 應授＝基本 − 減授（不會小於 0）
+function otDue(t){return Math.max(0,Math.round((otN(t&&t.hours)-otN(t&&t.reduce))*10)/10);}
+// 這位老師每週最多可以超幾節：願意的節數，再受全校上限限制。沒填 otMax 當 0（沒說願意）
+function otLimit(D,t){const m=otN(t&&t.otMax),c=otN(D.settings&&D.settings.otCap);return m?(c?Math.min(m,c):m):0;}
+const otCounts=(D,g)=>g.mode!=='外加'||!!(D.settings&&D.settings.otCountExtra);
+// 課的年級：有指定就用指定的，沒有就看學生（全部同一個年級才算）
+function otGradeOf(D,g){if(g.grade)return String(g.grade);const S={};D.students.forEach(s=>{S[s.id]=s;});const gs=[...new Set((g.students||[]).map(id=>S[id]).filter(Boolean).map(s=>String(gradeOfCls(s.cls))))];return gs.length===1?gs[0]:'';}
+// 一位老師的一列：基本、減授、應授、已開（一般、外加）、超鐘點、上限、超過上限沒
+function otRow(D,t,reg,extra){const base=otN(t.hours),due=otDue(t),cnt=!!D.settings.otCountExtra,counted=reg+(cnt?extra:0),cap=otN(D.settings.otCap);
+  const ot=base?Math.max(0,Math.round((counted-due)*10)/10):0,otMax=t.otMax==null?null:+t.otMax;
+  const over=ot>0&&((cap>0&&ot>cap)||(otMax!=null&&ot>otMax));
+  return {id:t.id,name:t.name,role:t.role,base,reduce:otN(t.reduce),reduceNote:t.reduceNote||'',due,reg,extra,open:reg+extra,counted,ot,short:base?Math.max(0,Math.round((due-counted)*10)/10):0,
+    otMax,cap,limit:otLimit(D,t),over,noHours:!base};}
+function otAssigned(D,g){return !!g.teacher&&D.teachers.some(t=>t.id===g.teacher);}
+// 開課頁的摘要：用「開了幾節」（g.per）算，還沒排課也算得出來
+function otSummary(D){const L={};D.teachers.forEach(t=>{L[t.id]={reg:0,extra:0};});let need=0,needReg=0;
+  D.groups.forEach(g=>{if(g.on===false||!(+g.per))return;need+=+g.per;if(g.mode!=='外加')needReg+=+g.per;const o=L[g.teacher];if(o){if(g.mode==='外加')o.extra+=+g.per;else o.reg+=+g.per;}});
+  const T=D.teachers.filter(t=>t.role==='資源班'||(L[t.id].reg+L[t.id].extra)>0||otN(t.otMax)>0),rows=T.map(t=>otRow(D,t,L[t.id].reg,L[t.id].extra));
+  const due=D.teachers.filter(t=>t.role==='資源班').reduce((n,t)=>n+otDue(t),0),cnt=!!D.settings.otCountExtra,want=cnt?need:needReg;
+  const open=D.groups.filter(g=>g.on!==false&&+g.per>0&&!otAssigned(D,g));
+  return {need,needReg,want,due:Math.round(due*10)/10,short:Math.max(0,Math.round((want-due)*10)/10),rows,open:open.map(g=>g.id),openPer:open.reduce((n,g)=>n+(+g.per),0)};}
+
+/* 建議分配：沒有老師的課（opt.overflow：連超過上限的老師多出來的課）分給還有餘裕的老師。只產生建議，不改資料。
+   一定要遵守：每週超鐘點不超過老師願意的節數（otMax）與全校上限（otCap）；不給列在「不想教」的科目；
+               老師的不排課時段扣掉之後，可以排的節數要夠這門課每週的節數。
+   盡量做到（分數越低越好）：先補還沒滿應授的老師、超鐘點平均分；想教的科目、年級優先；
+               同一位學生的課給同一位老師（已經教他、是他的個管）。 */
+function suggestOvertime(D,opt){opt=opt||{};
+  const M=compile(D),byId={};D.teachers.forEach(t=>{byId[t.id]=t;});
+  const T=D.teachers.filter(t=>t.role==='資源班'||otN(t.otMax)>0);
+  const load={},extraN={};T.forEach(t=>{load[t.id]=0;extraN[t.id]=0;});
+  D.groups.forEach(g=>{if(g.on===false||!(+g.per)||load[g.teacher]==null)return;if(otCounts(D,g))load[g.teacher]+=+g.per;else extraN[g.teacher]+=+g.per;});
+  const teach={},cm={};D.groups.forEach(g=>{if(!byId[g.teacher])return;(g.students||[]).forEach(id=>{(teach[g.teacher]=teach[g.teacher]||new Set()).add(id);});});
+  D.students.forEach(s=>{if(s.caseMgr)(cm[s.caseMgr]=cm[s.caseMgr]||new Set()).add(s.id);});
+  const cap=t=>{const b=otN(t.hours);return b?otDue(t)+otLimit(D,t):otLimit(D,t);};   // 沒填基本鐘點的：只能用願意超的節數
+  // 要分的課
+  const todo=[];D.groups.forEach((g,gi)=>{if(g.on===false||!(+g.per))return;if(!otAssigned(D,g))todo.push({g,gi,from:''});});
+  if(opt.overflow)T.forEach(t=>{let over=load[t.id]-cap(t);if(over<=0||!otN(t.hours))return;
+    D.groups.map((g,gi)=>({g,gi})).filter(x=>x.g.teacher===t.id&&x.g.on!==false&&+x.g.per>0&&otCounts(D,x.g)).sort((a,b)=>b.g.per-a.g.per).forEach(x=>{if(over<=0)return;todo.push({g:x.g,gi:x.gi,from:t.id});over-=x.g.per;load[t.id]-=x.g.per;});});
+  const feas={};   // 老師 × 課：扣掉老師不排課之後還有幾格可以排
+  const slots=(t,gi)=>{const k=t.id+'|'+gi;if(feas[k]==null){const ti=M.tIdx[t.id],G=M.G[gi];feas[k]=G.alist.filter(s=>!(ti>=0&&M.off[ti][s])).length;}return feas[k];};
+  const reasons=(t,x)=>{const g=x.g,per=+g.per,c=otCounts(D,g);
+    if((t.avoidSubj||[]).includes(g.subject))return {no:'不想教'+g.subject};
+    if(x.from===t.id)return {no:'原本的老師'};
+    if(slots(t,x.gi)<per)return {no:'不排課時段太多（只剩 '+slots(t,x.gi)+' 格）'};
+    if(c&&load[t.id]+per>cap(t))return {no:otLimit(D,t)?'超鐘點會超過上限':'不願意超鐘點'};
+    return null;};
+  const score=(t,x)=>{const g=x.g,per=+g.per,due=otN(t.hours)?otDue(t):0,c=otCounts(D,g),now=load[t.id],aft=c?now+per:now;
+    const otNow=Math.max(0,now-due),otAft=Math.max(0,aft-due),why=[];let s=0;
+    s+=(otAft-otNow)*2+otAft*0.6;                                  // 新增的超鐘點；已經超很多的少給（平均）
+    s+=(c?aft:now+extraN[t.id]+per)/Math.max(1,due||1)*1.2;         // 負擔比例平均
+    if(c){if(otAft>otNow)why.push('超鐘點 +'+(otAft-otNow)+(otLimit(D,t)?'（上限 '+otLimit(D,t)+'）':''));else why.push('應授內（還差 '+Math.max(0,due-now)+' 節）');}
+    else why.push('外加課');
+    if((t.prefSubj||[]).includes(g.subject)){s-=3;why.push('想教'+g.subject);}
+    const gr=otGradeOf(D,g);if(gr&&(t.prefGrade||[]).includes(gr)){s-=2;why.push('想教'+(GRADE[gr]||gr+' 年級'));}
+    const st=g.students||[],tc=st.filter(id=>teach[t.id]&&teach[t.id].has(id)).length,cc=st.filter(id=>cm[t.id]&&cm[t.id].has(id)).length;
+    if(st.length&&(tc||cc)){s-=4*Math.max(tc,cc)/st.length;if(tc)why.push('已經教 '+tc+' 位學生');if(cc)why.push('個管 '+cc+' 位');}
+    return {s,why,otAdd:c?otAft-otNow:0};};
+  // 選擇少的課先分；一樣時節數多的先分
+  const nOK=x=>T.filter(t=>!reasons(t,x)).length;
+  todo.forEach(x=>{x.n=nOK(x);});todo.sort((a,b)=>a.n-b.n||b.g.per-a.g.per||a.gi-b.gi);
+  const list=[],left=[];
+  todo.forEach(x=>{let best=null,bs=Infinity,bw=null;const no=[];
+    T.forEach(t=>{const r=reasons(t,x);if(r){no.push(t.name+'：'+r.no);return;}const o=score(t,x);if(o.s<bs-1e-9){bs=o.s;best=t;bw=o;}});
+    const g=x.g;
+    if(!best){if(x.from)load[x.from]+=+g.per;left.push({gid:g.id,name:g.name,subject:g.subject,per:+g.per,from:x.from,why:no.length?no:['沒有可以帶的老師']});return;}
+    if(otCounts(D,g))load[best.id]+=+g.per;else extraN[best.id]+=+g.per;
+    (g.students||[]).forEach(id=>{(teach[best.id]=teach[best.id]||new Set()).add(id);});
+    list.push({gid:g.id,name:g.name,subject:g.subject,grade:otGradeOf(D,g),per:+g.per,mode:g.mode,from:x.from,fromName:x.from&&byId[x.from]?byId[x.from].name:'',to:best.id,toName:best.name,why:bw.why,otAdd:bw.otAdd});});
+  const rows=T.map(t=>({id:t.id,name:t.name,due:otDue(t),limit:otLimit(D,t),after:load[t.id],ot:otN(t.hours)?Math.max(0,load[t.id]-otDue(t)):0,extra:extraN[t.id]}));
+  return {list,left,rows};}
+
+/* 認領：沒有老師的課（待認領）。老師只能替自己認領；管理者核准才會改 g.teacher */
+function openCourses(D){return D.groups.filter(g=>g.on!==false&&+g.per>0&&!otAssigned(D,g));}
+function claimsOf(D,st){return (Array.isArray(D.claims)?D.claims:[]).filter(c=>!st||c.status===st);}
+// 還在等管理者的認領（課已經有老師、老師或課被刪掉的不算）
+function claimsPending(D){const open=new Set(openCourses(D).map(g=>g.id)),T=new Set(D.teachers.map(t=>t.id));return claimsOf(D,'pending').filter(c=>open.has(c.gid)&&T.has(c.tid));}
+function claimAdd(D,gid,tid,at){const g=D.groups.find(x=>x.id===gid),t=D.teachers.find(x=>x.id===tid);
+  if(!g||!t)return {ok:false,why:'找不到這門課或老師'};
+  if(otAssigned(D,g)||g.on===false||!(+g.per))return {ok:false,why:'這門課已經有老師了'};
+  if((t.avoidSubj||[]).includes(g.subject))return {ok:false,why:'你設定不教'+g.subject};
+  if(!Array.isArray(D.claims))D.claims=[];
+  if(D.claims.some(c=>c.gid===gid&&c.tid===tid&&c.status==='pending'))return {ok:false,why:'已經送出了'};
+  D.claims.push({gid,tid,at:+at||Date.now(),status:'pending'});if(D.claims.length>300)D.claims=D.claims.slice(-300);return {ok:true};}
+function claimCancel(D,gid,tid){const n=claimsOf(D).length;if(!Array.isArray(D.claims))return false;D.claims=D.claims.filter(c=>!(c.gid===gid&&c.tid===tid&&c.status==='pending'));return D.claims.length<n;}
+// 核准：課給這位老師，同一門課其他人的認領改成沒選上；不核准：只改這一筆
+function claimDecide(D,gid,tid,yes,at){const c=claimsOf(D,'pending').find(x=>x.gid===gid&&x.tid===tid),g=D.groups.find(x=>x.id===gid);
+  if(!c||!g)return {ok:false,why:'找不到這筆認領'};
+  if(yes){if(otAssigned(D,g))return {ok:false,why:'這門課已經有老師了'};if(!D.teachers.some(t=>t.id===tid))return {ok:false,why:'找不到這位老師'};
+    g.teacher=tid;D.claims.forEach(x=>{if(x.gid===gid&&x.status==='pending'){x.status=x===c?'ok':'no';x.dt=+at||Date.now();}});}
+  else{c.status='no';c.dt=+at||Date.now();}
+  return {ok:true};}
+
+/* 每月超鐘點（印給教務處、人事核薪）。
+   上課日：這個月的星期一到五，扣掉放假日（noClass）和學期起訖（D.settings.dates）以外的日子。
+   算法：一週一週算。那一週在這個月裡的上課日，照課表把每天的節數加起來（實際上課節數），
+         減掉應授 × 上課日數 ÷ 5（放假的日子應授也跟著少），少於 0 算 0、最多算到每週超鐘點（月初月底不滿一週的不會多算）；
+         這個月的超鐘點＝各週相加，取到小數一位。
+         一整週都上課時，就是「每週超鐘點」；放假那天的課不算。
+   外加課預設不算進超鐘點（另列外加節數）；D.settings.otCountExtra 打開才算。沒填基本鐘點的老師不算超鐘點。 */
+function overtimeMonth(D,M,slot,ym){
+  const m=String(ym||'').match(/^(\d{4})-(\d{1,2})$/);if(!m)return null;
+  M=M||compile(D);slot=slot||toState(M,D).slot;
+  const y=+m[1],mo=+m[2]-1,last=new Date(y,mo+1,0).getDate(),first=otYmd(new Date(y,mo,1)),end=otYmd(new Date(y,mo,last));
+  const hol=noClassSet(D.settings.noClass,first,end),term=termRange(D.settings.dates),days=[],off=[];
+  for(let d=1;d<=last;d++){const dt=new Date(y,mo,d),wd=dt.getDay(),s=otYmd(dt);if(wd<1||wd>5)continue;
+    if(hol.has(s)){off.push({date:s,why:'放假'});continue;}
+    if(term&&((term.from&&s<term.from)||(term.to&&s>term.to))){off.push({date:s,why:'學期外'});continue;}
+    const mon=new Date(dt);mon.setDate(dt.getDate()-(wd-1));days.push({date:s,wd:wd-1,week:otYmd(mon)});}
+  const reg={},ext={},Z=[0,0,0,0,0];
+  M.L.forEach((x,l)=>{const s=slot[l];if(s<0)return;const g=M.G[x.g];if(g.t<0)return;const id=M.T[g.t].id,d=Math.floor(s/M.NP),o=g.pull?reg:ext;(o[id]=o[id]||[0,0,0,0,0])[d]++;});
+  const cnt=!!D.settings.otCountExtra,weeks=[...new Set(days.map(x=>x.week))],r1=v=>Math.round(v*10)/10;
+  const rows=D.teachers.filter(t=>t.role==='資源班'||reg[t.id]||ext[t.id]).map(t=>{const R=reg[t.id]||Z,X=ext[t.id]||Z,per=d=>R[d]+(cnt?X[d]:0),base=otN(t.hours),due=otDue(t);
+    const weekly=[0,1,2,3,4].reduce((n,d)=>n+per(d),0),weekOT=base?Math.max(0,r1(weekly-due)):0;
+    const W=weeks.map(w=>{const ds=days.filter(x=>x.week===w),taught=ds.reduce((n,x)=>n+per(x.wd),0),share=due*ds.length/5;return {week:w,n:ds.length,taught,share:r1(share),ot:base?Math.min(weekOT,Math.max(0,r1(taught-share))):0};});
+    const note=[t.reduceNote?'減授 '+otN(t.reduce)+'（'+t.reduceNote+'）':otN(t.reduce)?'減授 '+otN(t.reduce):'',!base?'沒填基本鐘點':''].filter(Boolean);
+    const extraMonth=days.reduce((n,x)=>n+X[x.wd],0);if(!cnt&&extraMonth)note.push('外加 '+extraMonth+' 節另計');
+    return {id:t.id,name:t.name,base,reduce:otN(t.reduce),due,weekly,weekOT,days:days.length,month:r1(W.reduce((n,w)=>n+w.ot,0)),extraMonth,weeks:W,note:note.join('；')};});
+  return {ym:y+'-'+String(mo+1).padStart(2,'0'),days,off,weeks,rows,term};}
+
+const CORE={sanitizeIds,ID_RE,okId,suggestCaseMgr,otDay,noClassNorm,noClassSet,termRange,otDue,otLimit,otRow,otSummary,otGradeOf,suggestOvertime,openCourses,claimsOf,claimsPending,claimAdd,claimCancel,claimDecide,overtimeMonth,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash,promoteCls,packAssign,unpackAssign,schedStats,schedDiff};
 /* ───── 額外功能（extras.js 的畫面用；這裡只算，不碰畫面）：導師週報、學年交接、老師工作量、教室使用率、鎖課異動、家長聯絡 ───── */
 Object.assign(CORE,(function(){
 const xYmd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -997,14 +1155,14 @@ function handoverCheck(D,base,today,opt){
 const xBare=n=>normName(String(n||'').replace(/（[^）]*）|\([^)]*\)/g,'').trim());
 function teacherLoad(D,M,slot,E){
   M=M||compile(D);slot=slot||toState(M,D).slot;const per={},sameName=(a,b)=>!!a&&xBare(a)===xBare(b);
-  M.L.forEach((x,l)=>{if(slot[l]<0)return;const g=M.G[x.g];if(g.t<0)return;const id=M.T[g.t].id;per[id]=(per[id]||0)+1;});
+  const ext={};M.L.forEach((x,l)=>{if(slot[l]<0)return;const g=M.G[x.g];if(g.t<0)return;const id=M.T[g.t].id;per[id]=(per[id]||0)+1;if(!g.pull)ext[id]=(ext[id]||0)+1;});
   const vals=o=>Object.values(o&&typeof o==='object'?o:{}),pro=vals(E&&E.proctorOf),sup=vals(E&&E.supportOf);
   const meets=[];((D.iep&&D.iep.rounds)||[]).forEach(R=>(R.meets||[]).forEach(m=>{if(m&&m.at)meets.push(m);}));
   return D.teachers.filter(t=>t.role==='資源班').map(t=>{const hours=+t.hours||0,p=per[t.id]||0;
     const iep=meets.filter(m=>(m.p||[]).some(e=>e&&(e[0]==='t:'+t.id||(String(e[0]).slice(0,2)==='n:'&&sameName(String(e[0]).slice(2),t.name))))).length;
     return {id:t.id,name:t.name,hours,per:p,diff:hours?p-hours:0,groups:D.groups.filter(g=>g.teacher===t.id&&g.on!==false).length,
       cases:D.students.filter(s=>s.caseMgr===t.id).length,proctor:pro.filter(n=>sameName(n,t.name)).length,support:sup.filter(n=>sameName(n,t.name)).length,iep,
-      flag:!hours?'':p>hours?'over':p<hours?'under':''};});
+      flag:!hours?'':p>hours?'over':p<hours?'under':'',ot:otRow(D,t,p-(ext[t.id]||0),ext[t.id]||0)};});
 }
 
 /* 教室使用率：每間教室每一節是哪幾節課（照 assignRooms 分的教室）。rfix：這份排法指定的教室（toState 的 rfix）
@@ -1055,4 +1213,129 @@ function contactDigest(D,sid,since){
 return {weeklySummary,weeklyText,handoverBase,handoverCheck,teacherLoad,roomUsage,freeRooms,lockList,lockDiff,lockPack,lockUnpack,lockLogAdd,contactDigest,
   CONTACT_HOW,addDays,weekStartOf,daysBetween};
 })());
+/* ═════ 全校課表：整張格子（星期 × 節次 → 科目＋老師）。tt.js 讀 PDF 後用這裡檢查、存檔；別的功能用這裡查詢（只算，不碰畫面） ═════
+   D.tt[班級]={
+     subj:{科目:[[老師,節數,待確認]]},  統計（舊格式；段考、更新任課老師用）。有格子時由格子＋下方統計推出
+     src:'檔名 第 n 頁',
+     grid:[5][NR]   一～五 × 一般節次（D.periods 裡不是 extra 的，照順序），每格 {s:科目,t:老師} 或 null
+     pids:['1',…]   grid 每一欄是哪一個節次 id（讀入當時的作息；之後改作息也查得到）
+     gridExtra:{節次id或標籤:[5 格]}  早自習、第8節…：對得到 extra 節次就用它的 id，對不到就用標籤（例如 '第8節'）
+     sum:[[科目,老師,節數]]  課表下方的統計（照抄，用來核對格子）
+     unsure:['星期|節次']    AI 自己說沒把握的格子（改過那一格就拿掉）
+     head:'導師', conf:0～1（AI 的把握）, flags:[{k,d,p,s,t,m}] 待核對的地方, ok:1（老師全部接受過）
+   }
+   flags.k：cls 班級編號不對／name 名單上沒有這位老師／unsure AI 沒把握／count 格子和統計的節數不同／dup 同一格讀到兩種／conf 整頁把握不高
+   時段鍵＝'星期-節次id'，星期 0～4（和 D.assign、offBy 相同）。
+   給別的功能用的查詢：
+     ttTeacherBusy(D)                → {老師姓名:Set(時段鍵)}  普通班老師在原班上課的時段（IEP 選時段、標忙碌）
+     ttCellAt(D,班級,時段鍵)          → {s,t} 或 null
+     ttClassSubjectAt(D,班級,時段鍵)  → 科目 或 null
+     ttStudentMissed(D,學生id,時段鍵) → 學生這一節被抽出來時，原班正在上的科目 或 null（導師、鎖課輸出）
+   讀入用：ttPeriodId、ttSubjNorm、ttGridCheck（整理 AI 的回覆）、ttGridFlags、ttGridStore、ttGridRecheck、ttRename、ttNameList、ttHintNames */
+Object.assign(CORE,(function(){
+const ZH={'〇':0,'零':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+function zhNum(s){s=String(s);if(/^\d+$/.test(s))return +s;if(s.length===1&&ZH[s]!=null)return ZH[s];
+  const m=s.match(/^([一二三四五六七八九]?)十([一二三四五六七八九]?)$/);return m?(m[1]?ZH[m[1]]:1)*10+(m[2]?ZH[m[2]]:0):NaN;}
+// 節次的寫法統一：第一節／第1節／1／一 → 第1節；其他（早自習、午休）去空白照用
+function ttLabelNorm(x){x=String(x==null?'':x).replace(/\s+/g,'');const m=x.match(/^第?([0-9一二三四五六七八九十]+)節?$/);if(m){const n=zhNum(m[1]);if(n>0)return '第'+n+'節';}return x;}
+// 節次標籤 → D.periods 的 id；對不到回 ''
+function ttPeriodId(D,label){const L=ttLabelNorm(label);if(!L)return '';const P=D.periods||[];
+  let p=P.find(x=>ttLabelNorm(x.name)===L);if(p)return String(p.id);
+  for(const w of ['早','午','晚'])if(L.includes(w)){p=P.find(x=>x.extra&&String(x.name).includes(w))||P.find(x=>String(x.name).includes(w));return p?String(p.id):'';}
+  const m=L.match(/^第(\d+)節$/);
+  if(m){const n=+m[1],R=P.filter(x=>!x.extra);if(n<=R.length)return String(R[n-1].id);p=P.find(x=>x.extra&&String(x.id)===String(n));return p?String(p.id):'';}
+  p=P.find(x=>String(x.id)===String(label).trim());return p?String(p.id):'';}
+const SUBJ_ALIAS={'國文':'國語文','國語':'國語文','英文':'英語文','英語':'英語文','公民':'公民與社會','健教':'健康教育','視藝':'視覺藝術','美術':'視覺藝術','表藝':'表演藝術','生科':'生活科技','資訊':'資訊科技','資科':'資訊科技'};
+function ttSubjNorm(s){s=String(s==null?'':s).replace(/\s+/g,'');return SUBJ_ALIAS[s]||s;}
+// 老師姓名：去空白、去「老師」這類稱呼；比對時再去括號
+const teaClean=n=>String(n==null?'':n).replace(/\s+/g,'').replace(/(老師|教師)$/,'');
+const xb=n=>String(n||'').replace(/（[^）]*）|\([^)]*\)/g,'').trim();
+const teaKey=n=>normName(xb(n));
+// 給 AI 的名單、判斷「名單上有沒有」：名冊老師、不排課名單、讀過且確定的課表老師、導師、老師按過「保留」的名字
+function ttHintNames(D){const s=new Set(ttKnown(D));D.teachers.forEach(t=>{const b=xb(t.name);if(b)s.add(b);});
+  Object.values(D.classHead||{}).forEach(n=>{n=teaClean(n);if(n)s.add(n);});(D.ttOk||[]).forEach(n=>{if(n)s.add(String(n));});return s;}
+function eachCell(o,f){const P=o.pids||[];(o.grid||[]).forEach((row,d)=>(row||[]).forEach((c,i)=>{if(c&&P[i]!=null)f(d,String(P[i]),c,true);}));
+  const X=o.gridExtra||{};Object.keys(X).forEach(k=>(X[k]||[]).forEach((c,d)=>{if(c)f(d,k,c,false);}));}
+function cellRef(o,d,p){const i=(o.pids||[]).indexOf(String(p));if(i>=0)return ((o.grid||[])[d]||[])[i]||null;const x=(o.gridExtra||{})[p];return x&&x[d]||null;}
+const hasGrid=o=>!!o&&(o.grid||[]).some(r=>(r||[]).some(Boolean))||!!o&&Object.values(o.gridExtra||{}).some(r=>(r||[]).some(Boolean));
+// 和名單最像的一位（只錯一個字以內、而且明顯比第二像的近），給「一次改名字」當預設
+function ttNear(name,known){const s=cjk(name);if(s.length<2)return '';const a=[];
+  (known||[]).forEach(k=>{const kk=cjk(k);if(kk.length>=2)a.push({k,d:ttDist(s,kk)});});a.sort((x,y)=>x.d-y.d);
+  return a[0]&&a[0].d<=1&&(a.length<2||a[1].d-a[0].d>=0.4)?a[0].k:'';}
+
+// 待核對的地方。o 是 D.tt[班級] 的格式；known 是名單（Set）。老師按過「接受」（o.ok）就不再列
+function ttGridFlags(D,cls,o,known){const F=[];if(o.ok)return F;
+  const K=new Set([...(known||[])].map(teaKey));
+  if(!/^\d{3,4}$/.test(String(cls||'')))F.push({k:'cls',m:'班級編號看不清楚'});
+  eachCell(o,(d,p,c)=>{if(c.t&&!K.has(teaKey(c.t)))F.push({k:'name',d,p,t:c.t,s:c.s,m:'名單上沒有「'+c.t+'」'});});
+  (o.unsure||[]).forEach(k=>{const [d,p]=String(k).split('|');if(cellRef(o,+d,p)&&!F.some(f=>f.k==='name'&&f.d===+d&&f.p===p))F.push({k:'unsure',d:+d,p,m:'AI 不確定'});});
+  (o.dups||[]).forEach(k=>{const [d,p]=String(k).split('|');F.push({k:'dup',d:+d,p,m:'這一格讀到兩種'});});
+  // 格子的節數和下方統計對不對得上：統計可能只算一般節次，也可能連早自習、第8節一起算，兩種都算對
+  if((o.sum||[]).length&&hasGrid(o)){
+    const all={},reg={},sum={},key=(s,t)=>ttSubjNorm(s)+'|'+teaKey(t),name={};
+    eachCell(o,(d,p,c,r)=>{const k=key(c.s,c.t);name[k]=name[k]||[c.s,c.t];all[k]=(all[k]||0)+1;if(r)reg[k]=(reg[k]||0)+1;});
+    o.sum.forEach(x=>{const k=key(x[0],x[1]);name[k]=name[k]||[x[0],x[1]];sum[k]=(sum[k]||0)+(+x[2]||0);});
+    Object.keys(name).forEach(k=>{const a=all[k]||0,b=reg[k]||0,n=sum[k]||0;if(n===a||n===b)return;
+      const [s,t]=name[k];F.push({k:'count',s:ttSubjNorm(s),t:t||'',m:ttSubjNorm(s)+(t?' '+t:'')+'：格子 '+(b===a?a:b+'～'+a)+' 節，統計 '+n+' 節'});});}
+  if(o.conf!=null&&o.conf<0.6)F.push({k:'conf',m:'AI 對這一頁的把握不高（'+Math.round(o.conf*100)+'%）'});
+  return F;}
+// 統計（舊格式）：有格子就照格子算科目和老師，節數用下方統計的（統計沒有這一組才用格子數）；沒有格子就照統計。名單上沒有的老師標成待確認
+function ttSubjDerive(o,flags){const bad=new Set((flags||[]).filter(f=>f.k==='name').map(f=>f.t)),cnt={},ord=[],K=(s,t)=>ttSubjNorm(s)+'\u0001'+teaClean(t);
+  eachCell(o,(d,p,c)=>{if(!c.s||!c.t)return;const k=K(c.s,c.t);if(cnt[k]==null){cnt[k]=0;ord.push(k);}cnt[k]++;});
+  const sum={};(o.sum||[]).forEach(x=>{const k=K(x[0],x[1]);if(sum[k]==null)sum[k]=0;sum[k]+=+x[2]||0;});
+  if(!ord.length)Object.keys(sum).forEach(k=>ord.push(k));
+  const subj={};ord.forEach(k=>{const [s,t]=k.split('\u0001');if(!s||!t)return;(subj[s]=subj[s]||[]).push([t,sum[k]!=null?sum[k]:cnt[k]||0,bad.has(t)?1:0]);});
+  Object.values(subj).forEach(a=>a.sort((p,q)=>q[1]-p[1]));return subj;}
+
+// AI 的回覆 → D.tt 的格式（還沒存）。ans={class,homeroom,grid:[{day,period,subject,teacher,unsure}],summary:[{subject,teacher,periods}],confidence,notes}
+function ttGridCheck(D,ans){ans=ans&&typeof ans==='object'?ans:{};
+  const R=(D.periods||[]).filter(p=>!p.extra),pids=R.map(p=>String(p.id));
+  const grid=[0,1,2,3,4].map(()=>pids.map(()=>null)),gx={},unsure=[],dups=[],skipped=[];
+  const day=v=>{const n=typeof v==='number'?v:zhNum(String(v==null?'':v).replace(/^(星期|週|周)/,''));return n>=1&&n<=5?n-1:-1;};
+  (Array.isArray(ans.grid)?ans.grid:[]).forEach(g=>{if(!g||typeof g!=='object')return;const d=day(g.day);
+    const s=ttSubjNorm(g.subject),t=teaClean(g.teacher);if(!s&&!t)return;if(d<0){skipped.push(String(g.period||''));return;}
+    const pid=ttPeriodId(D,g.period),i=pids.indexOf(pid),key=i>=0?pid:(pid||ttLabelNorm(g.period));if(!key){skipped.push(String(g.period||''));return;}
+    let row,j;if(i>=0){row=grid[d];j=i;}else{row=gx[key]=gx[key]||[null,null,null,null,null];j=d;}
+    const old=row[j];if(old&&(old.s!==s||old.t!==t))dups.push(d+'|'+key);row[j]={s,t};
+    if(g.unsure===true)unsure.push(d+'|'+key);});
+  const sum=(Array.isArray(ans.summary)?ans.summary:[]).filter(x=>x&&x.subject).map(x=>[ttSubjNorm(x.subject),teaClean(x.teacher),Math.max(0,parseInt(x.periods,10)||0)]);
+  const conf=typeof ans.confidence==='number'&&isFinite(ans.confidence)?Math.max(0,Math.min(1,ans.confidence)):null;
+  return {cls:ttClassNo(ans.class),head:teaClean(ans.homeroom),grid,pids,gridExtra:gx,sum,unsure:[...new Set(unsure)],dups:[...new Set(dups)],conf,notes:String(ans.notes||'').slice(0,300),skipped};}
+// 存進 D.tt[cls]；導師還沒填的順便填上。opt={src,known}
+function ttGridStore(D,cls,e,opt){opt=opt||{};D.tt=D.tt||{};cls=String(cls);
+  const o={grid:e.grid,pids:e.pids,gridExtra:e.gridExtra||{},sum:e.sum||[],unsure:e.unsure||[],dups:e.dups||[],head:e.head||'',conf:e.conf==null?null:e.conf,src:opt.src||e.src||''};
+  if(e.notes)o.notes=e.notes;
+  D.tt[cls]=o;ttGridRecheck(D,cls,opt.known);
+  if(o.head&&/^\d{3,4}$/.test(cls)){D.classHead=D.classHead||{};if(!D.classHead[cls])D.classHead[cls]=o.head;}
+  return o;}
+// 改過格子之後重算待核對和統計
+function ttGridRecheck(D,cls,known){const o=D.tt&&D.tt[cls];if(!o||!o.grid)return null;
+  o.flags=ttGridFlags(D,cls,o,known||ttHintNames(D));o.subj=ttSubjDerive(o,o.flags);return o;}
+// 一次改一個名字：所有班（或 opt.cls 那一班）的格子、統計、導師都換掉，再重算待核對。回傳改了幾格
+function ttRename(D,from,to,opt){opt=opt||{};from=teaClean(from);to=teaClean(to);if(!from||!to||from===to)return 0;let n=0;const hit=[];
+  Object.keys(D.tt||{}).forEach(c=>{if(opt.cls!=null&&String(opt.cls)!==c)return;const o=D.tt[c];if(!o)return;let m=0;
+    if(!o.grid){Object.values(o.subj||{}).forEach(a=>a.forEach(x=>{if(x[0]===from){x[0]=to;x[2]=0;n++;}}));return;}   // 離線辨識讀的（只有統計）
+    let any=false;eachCell(o,(d,p,x)=>{if(x.t===from){x.t=to;m++;}});(o.sum||[]).forEach(x=>{if(x[1]===from){x[1]=to;any=true;}});if(o.head===from){o.head=to;any=true;}
+    n+=m;if(m||any)hit.push(c);});
+  const K=opt.known||ttHintNames(D);hit.forEach(c=>ttGridRecheck(D,c,K));
+  return n;}
+// 名單上沒有的名字，跨班整理：[{t,n 格數,cls:[班級],sug 最像的已知名字}]，出現越多的排越前面
+function ttNameList(D,known){known=known||ttHintNames(D);const by={};
+  Object.keys(D.tt||{}).sort().forEach(c=>{((D.tt[c]||{}).flags||[]).forEach(f=>{if(f.k!=='name')return;const x=by[f.t]=by[f.t]||{t:f.t,n:0,cls:[]};x.n++;if(!x.cls.includes(c))x.cls.push(c);});});
+  return Object.values(by).map(x=>Object.assign(x,{sug:ttNear(x.t,known)})).sort((a,b)=>b.n-a.n||a.t.localeCompare(b.t));}
+
+/* ── 查詢 ── */
+function splitKey(k){const m=String(k==null?'':k).match(/^(\d)-(.+)$/);return m?[+m[1],m[2]]:[-1,''];}
+function ttCellAt(D,cls,key){const o=D.tt&&D.tt[String(cls)];if(!o||!o.grid)return null;const [d,p]=splitKey(key);if(d<0||d>4)return null;
+  const c=cellRef(o,d,p);return c&&(c.s||c.t)?{s:c.s||'',t:c.t||''}:null;}
+function ttClassSubjectAt(D,cls,key){const c=ttCellAt(D,cls,key);return c&&c.s?c.s:null;}
+function ttStudentMissed(D,sid,key){const s=(D.students||[]).find(x=>x.id===sid);return s?ttClassSubjectAt(D,s.cls,key):null;}
+function ttTeacherBusy(D){const out={},P=new Set((D.periods||[]).map(p=>String(p.id)));
+  Object.keys(D.tt||{}).forEach(c=>{const o=D.tt[c];if(!o||!o.grid)return;eachCell(o,(d,p,x)=>{if(!x.t||!P.has(p))return;(out[x.t]=out[x.t]||new Set()).add(d+'-'+p);});});
+  return out;}
+
+return {ttLabelNorm,ttPeriodId,ttSubjNorm,ttHintNames,ttGridFlags,ttGridCheck,ttGridStore,ttGridRecheck,ttRename,ttNameList,ttNear,
+  ttCellAt,ttClassSubjectAt,ttStudentMissed,ttTeacherBusy};
+})());
+/* ═════ 全校課表（整張格子）結束 ═════ */
 if(typeof module!=='undefined')module.exports=CORE;

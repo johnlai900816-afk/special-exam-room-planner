@@ -9,8 +9,9 @@
 | `gemini.js` | 連線（不碰畫面）。兩種連線方式：`proxy`（學校的 AI 服務，建議）、`browser`（自己的金鑰，個人試用）。模型清單、錯誤訊息、使用紀錄。 |
 | `ai.js` | 題目、回覆格式與檢查（不連網）。去識別化、AI 排法的裁判、文字調整、說明問題、看圖核對課表。 |
 | `app.js` 最後的 Gemini 區塊 | 畫面。AI 的文字只用 `textContent` 放進畫面。 |
+| `tt.js` | 讀全校課表（設定 › 學校資料 › 全校課表）。每頁轉成約 1600px 的 JPEG，一頁一次請求（用途 `ttgrid`，`responseSchema` 限定格式），同時兩頁、失敗等一下再試。要勾選「可以送出老師姓名」才送；每次開網頁第一次送出前先給老師看內容。檢查與存檔在 core.js 最後的「全校課表：整張格子」區塊。 |
 | `functions/ai.js` | Cloud Functions：`aiGenerate`、`aiListModels`（asia-east1，Vertex AI）。 |
-| `test-gemini.js`、`functions/test-ai.js` | 用假的 fetch、Firestore、Vertex 測試，不需要金鑰：`node test-gemini.js`、`node functions/test-ai.js`。 |
+| `test-gemini.js`、`test-tt.js`、`functions/test-ai.js` | 用假的 fetch、Firestore、Vertex 測試，不需要金鑰：`node test-gemini.js`、`node functions/test-ai.js`。 |
 
 ## 原則
 
@@ -48,7 +49,7 @@ Content-Type: application/json
 請求：
 
 ```json
-{"model":"gemini-3-flash","purpose":"sched|adj|explain|tt","allowTeacherNames":false,
+{"model":"gemini-3-flash","purpose":"sched|adj|explain|tt|ttgrid","allowTeacherNames":false,
  "request":{"contents":[{"role":"user","parts":[{"text":"…"},{"inlineData":{"mimeType":"image/jpeg","data":"…"}}]}],
             "systemInstruction":{"parts":[{"text":"…"}]},
             "generationConfig":{"responseMimeType":"application/json","responseSchema":{},"temperature":0.2}}}
