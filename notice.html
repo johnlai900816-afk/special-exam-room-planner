@@ -3,7 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>特殊考場通知單生成器</title>
+<title>學生通知單｜資源班管理系統</title>
+<script>
+// 深色模式：跟著外層頁面（段考頁）或管理系統的 rc-theme；沒設定就跟系統
+(function(){var r=document.documentElement;function th(){var t=null;try{if(parent!==window)t=parent.document.documentElement.getAttribute('data-theme');}catch(e){}
+  if(t==null){try{t=localStorage.getItem('rc-theme');}catch(e){}}if(t==='light'||t==='dark')r.setAttribute('data-theme',t);else r.removeAttribute('data-theme');}
+  th();window.addEventListener('storage',function(e){if(e.key==='rc-theme')th();});
+  try{if(parent!==window)new MutationObserver(th).observe(parent.document.documentElement,{attributes:true,attributeFilter:['data-theme']});}catch(e){}})();
+</script>
 <style>
 /* ---------- 通知單本體（尺寸照原 Word 檔：A4、邊界 1.27cm、標楷體） ---------- */
 /* 高度 296mm（比 A4 少一點），避免印表機把最後一點點擠到第二張 */
@@ -43,82 +50,97 @@
 .page .reply .cut{border-top:1pt dashed #000;text-align:center;font-size:9pt;line-height:14pt;margin-bottom:4pt}
 .page .reply .ln{display:inline-block;width:32mm;border-bottom:.75pt solid #000}
 
-/* ---------- 操作介面 ---------- */
+/* ---------- 操作介面（DESIGN.md 的代號與元件；通知單本體永遠白底黑字） ---------- */
+:root{--bg:#f7f5f1;--card:#ffffff;--sunk:#efece6;--line:#e7e3db;--line2:#d6d0c5;--ink:#1f2430;--ink2:#4a5060;--mute:#6b6f7a;--red:#b8423a;--blue:#2f5c8a;--blue-l:#e9eff6;
+  --ok:#2f7a5b;--ok-l:#e6f2ec;--warn:#9a5b0b;--warn-l:#fbf0dc;--bad:#b3382d;--bad-l:#fbe8e5;--focus:#2f5c8a;--on-ink:#ffffff;
+  --lift:0 1px 3px rgba(31,36,48,.1);--pop:0 12px 36px rgba(31,36,48,.16);--backdrop:rgba(31,36,48,.38);--sheet:0 1px 3px rgba(31,36,48,.12),0 8px 24px rgba(31,36,48,.06);
+  --sans:"Noto Sans TC",system-ui,-apple-system,"Segoe UI","Microsoft JhengHei",sans-serif;color-scheme:light}
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171c;--card:#1e2128;--sunk:#191b21;--line:#2c3039;--line2:#3a3f4a;--ink:#eceef2;--ink2:#c3c7d0;--mute:#9096a3;--red:#e0776c;--blue:#7fa8d6;--blue-l:#1f2a38;
+  --ok:#6cc39b;--ok-l:#18302a;--warn:#e3a957;--warn-l:#352a18;--bad:#ee8576;--bad-l:#3b2221;--focus:#7fa8d6;--on-ink:#15171c;
+  --lift:0 1px 3px rgba(0,0,0,.4);--pop:0 12px 36px rgba(0,0,0,.5);--backdrop:rgba(0,0,0,.55);--sheet:0 1px 3px rgba(0,0,0,.5);color-scheme:dark}}
+@media screen{:root[data-theme="dark"]{--bg:#15171c;--card:#1e2128;--sunk:#191b21;--line:#2c3039;--line2:#3a3f4a;--ink:#eceef2;--ink2:#c3c7d0;--mute:#9096a3;--red:#e0776c;--blue:#7fa8d6;--blue-l:#1f2a38;
+  --ok:#6cc39b;--ok-l:#18302a;--warn:#e3a957;--warn-l:#352a18;--bad:#ee8576;--bad-l:#3b2221;--focus:#7fa8d6;--on-ink:#15171c;
+  --lift:0 1px 3px rgba(0,0,0,.4);--pop:0 12px 36px rgba(0,0,0,.5);--backdrop:rgba(0,0,0,.55);--sheet:0 1px 3px rgba(0,0,0,.5);color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;font-family:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-size:14px;color:#1f2933;background:#f5f6f8}
-#app{display:grid;grid-template-columns:minmax(380px,470px) 1fr;height:100vh}
-#side{background:#fff;border-right:1px solid #e2e5ea;display:flex;flex-direction:column;min-height:0}
-#side header{padding:12px 16px 0}
-#side h1{font-size:18px;margin:0 0 2px}
-#side header small{color:#66727f}
-.tabs{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid #e2e5ea}
-.tabs button{border:1px solid #e2e5ea;border-bottom:0;background:#f4f6f8;padding:7px 14px;border-radius:6px 6px 0 0;cursor:pointer;font:inherit;color:#44505c}
-.tabs button.on{background:#fff;color:#3451d1;font-weight:bold;position:relative;top:1px}
-#ed{overflow:auto;padding:14px 16px 40px;flex:1;min-height:0}
-#ed h3{font-size:14px;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid #e3e7eb;color:#27323d}
-#ed h3:first-child{margin-top:0}
-label.f{display:block;margin:0 0 8px;color:#44505c;font-size:13px}
-label.f>input,label.f>textarea{display:block;width:100%;margin-top:3px}
-input[type=text],textarea,select{font:inherit;padding:5px 7px;border:1px solid #c3cbd3;border-radius:4px;background:#fff;color:inherit;min-width:0}
-input[type=text]:focus,textarea:focus{outline:2px solid #3451d1;outline-offset:-1px}
-textarea{resize:vertical;line-height:1.5}
+body{margin:0;font-family:var(--sans);font-size:15px;line-height:1.55;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+#app{display:grid;grid-template-columns:minmax(360px,460px) 1fr;height:100vh}
+#side{background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#side header{padding:20px 20px 0;display:flex;align-items:center;gap:10px}
+#side h1{font-size:22px;margin:0;letter-spacing:-.02em}
+.mark{position:relative;width:22px;height:22px;flex:none}
+.mark::before,.mark::after{content:"";position:absolute;width:15px;height:15px;border-radius:5px}
+.mark::before{left:0;top:0;background:var(--red)}.mark::after{right:0;bottom:0;background:var(--blue);opacity:.9}
+.tabs{display:inline-flex;gap:2px;padding:4px;margin:14px 20px 4px;background:var(--sunk);border-radius:999px;align-self:flex-start}
+.tabs button{height:36px;border:0;background:none;border-radius:999px;padding:0 16px;font:inherit;color:var(--ink2);cursor:pointer;white-space:nowrap}
+.tabs button:hover{color:var(--ink)}
+.tabs button.on{background:var(--card);color:var(--ink);font-weight:700;box-shadow:var(--lift)}
+#ed{overflow:auto;padding:12px 20px 40px;flex:1;min-height:0}
+#ed h3{font-size:15px;margin:22px 0 10px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+#ed h3:first-child{margin-top:6px}
+label.f{display:block;margin:0 0 10px;color:var(--mute);font-size:13px}
+label.f>input,label.f>textarea{display:block;width:100%;margin-top:4px}
+input[type=text],textarea,select{font:inherit;font-size:15px;height:40px;padding:0 12px;border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--ink);min-width:0}
+textarea{height:auto;padding:10px 12px;resize:vertical;line-height:1.6}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--focus);outline-offset:-1px}
+input[type=checkbox]{accent-color:var(--ink);width:17px;height:17px;margin:0}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .row>label.f{flex:1;min-width:90px}
-button.b{font:inherit;padding:7px 13px;border:1px solid #cdd3db;border-radius:8px;background:#fff;cursor:pointer;color:#27323d}
-button.b:hover{background:#f1f4f7}
-button.b.pri{background:#3451d1;border-color:#3451d1;color:#fff}
-button.b.pri:hover{background:#2a41ab}
-button.b.warn{color:#b3261e;border-color:#e2b6b3}
-table.g{border-collapse:collapse;width:100%;font-size:13px}
-table.g th{font-weight:normal;color:#66727f;text-align:left;padding:2px 3px;font-size:12px}
-table.g td{padding:2px 3px;vertical-align:middle}
-table.g td.n{width:22px;text-align:center;color:#66727f;font-weight:bold}
-table.g input[type=text]{width:100%;padding:4px 5px}
-table.g input.t{width:54px;text-align:center}
-table.g tr.sep td{border-top:1px dashed #cfd6dd;padding-top:6px}
-.hint{color:#66727f;font-size:12px;line-height:1.6;margin:4px 0 10px}
-.hint code{background:#f5f6f8;padding:0 4px;border-radius:3px;font-family:Consolas,monospace}
-#stuList{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
-#stuList button{font:inherit;font-size:13px;padding:4px 9px;border:1px solid #c3cbd3;border-radius:14px;background:#fff;cursor:pointer}
-#stuList button.on{background:#3451d1;border-color:#3451d1;color:#fff}
-.day{font-weight:bold;color:#27323d;margin:12px 0 4px}
-.chk{display:inline-flex;gap:5px;align-items:center;color:#44505c;font-size:13px;cursor:pointer}
+.b{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:0 18px;border:1px solid var(--line2);border-radius:999px;background:var(--card);color:var(--ink);font:inherit;font-size:15px;line-height:1;cursor:pointer;white-space:nowrap;text-decoration:none}
+.b:hover{background:var(--sunk)}
+.b.pri{background:var(--ink);border-color:var(--ink);color:var(--on-ink);font-weight:700}
+.b.pri:hover{background:var(--ink);opacity:.88}
+.b.warn{color:var(--bad)}
+.b.icon{width:40px;padding:0}
+.b.dz{background:var(--bad);border-color:var(--bad);color:#fff}
+table.g{border-collapse:collapse;width:100%;font-size:14px}
+table.g th{font-weight:600;color:var(--mute);text-align:left;padding:4px 3px;font-size:12px}
+table.g td{padding:3px;vertical-align:middle}
+table.g td.n{width:24px;text-align:center;color:var(--mute);font-weight:700}
+table.g input[type=text]{width:100%;height:34px;padding:0 8px;font-size:14px;border-radius:8px}
+table.g input.t{width:62px;text-align:center;padding:0 4px}
+table.g tr.sep td{border-top:1px dashed var(--line2);padding-top:6px}
+.hint{color:var(--mute);font-size:13px;line-height:1.6;margin:4px 0 10px}
+.hint a{color:var(--blue)}
+code{background:var(--sunk);padding:0 5px;border-radius:4px;font-family:Consolas,monospace;font-size:13px}
+#stuList{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+#stuList button{font:inherit;font-size:13px;height:32px;padding:0 12px;border:1px solid var(--line2);border-radius:999px;background:var(--card);color:var(--ink2);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+#stuList button.on{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+.day{font-weight:700;margin:14px 0 4px;font-size:14px}
+.chk{display:inline-flex;gap:6px;align-items:center;color:var(--ink2);font-size:14px;cursor:pointer;min-height:32px}
 #main{display:flex;flex-direction:column;min-width:0;min-height:0}
-#bar{display:flex;gap:8px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid #e2e5ea;flex-wrap:wrap}
+#bar{display:flex;gap:8px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 #bar .sp{flex:1}
-#bar .who{font-weight:bold}
-#lk{font-size:12px;color:#1a7f37}
-.hint.lk{background:#eef7f0;border:1px solid #cfe6d5;border-radius:5px;padding:6px 9px;color:#27503a}
-a.b{font:inherit;padding:6px 12px;border:1px solid #b6c0ca;border-radius:5px;background:#fff;color:#27323d;display:inline-block}
-#pv{flex:1;overflow:auto;padding:18px;min-height:0}
-#pv .page{margin:0 auto 18px;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#bar .who{font-weight:700;font-variant-numeric:tabular-nums}
+#lk{font-size:13px;color:var(--ok);display:inline-flex;gap:4px;align-items:center}
+.hint.lk{background:var(--ok-l);border-radius:10px;padding:8px 12px;color:var(--ok)}
+#pv{flex:1;overflow:auto;padding:24px;min-height:0}
+#pv .page{margin:0 auto 20px;box-shadow:var(--sheet)}
+.empty{color:var(--mute);margin:60px auto 0;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap}
 .emb #side header{display:none}
-.emb .tabs{padding-top:8px}
-#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#27323d;color:#fff;padding:8px 16px;border-radius:6px;display:none;z-index:9}
-dialog{border:1px solid #b6c0ca;border-radius:8px;padding:18px;width:min(520px,92vw)}
-dialog h3{margin:0 0 8px}
+.emb .tabs{margin-top:16px}
+#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:var(--ink);color:var(--on-ink);padding:10px 20px;border-radius:999px;display:none;z-index:9;box-shadow:var(--pop);max-width:calc(100vw - 32px)}
+dialog{border:0;border-radius:16px;padding:24px;width:min(520px,92vw);background:var(--card);color:var(--ink);box-shadow:var(--pop)}
+dialog::backdrop{background:var(--backdrop)}
+dialog h3{margin:0 0 8px;font-size:18px;padding-right:36px}
 #print{display:none}
 svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px;flex:none}
-input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acc,#3451d1)}
-dialog .x{position:absolute;right:10px;top:10px;border:0;background:none;color:#66727f;cursor:pointer;padding:6px}
-dialog .dlgbtn{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
-dialog p.lead{white-space:pre-line;line-height:1.7;margin:4px 0 0}
-button.b.dz{background:#b3261e;border-color:#b3261e;color:#fff}
-.phint{font-size:12px;color:#66727f}
-#ovf{display:none;width:100%;background:#fff4e5;color:#b25e09;border:1px solid #f5cf9a;border-radius:6px;padding:5px 9px;font-size:13px}
-/* 放在管理系統裡時，換成外殼的暖色系 */
-.warm body{--acc:#2f6a5b;background:#f6f2ea;color:#2a2620}
-.warm #side,.warm #bar{background:#fffdf8;border-color:#e6dfd2}
-.warm .tabs{border-color:#e6dfd2}.warm .tabs button{background:#efe9dc;border-color:#e6dfd2;color:#4d463c}
-.warm .tabs button.on{background:#fffdf8;color:#235044}
-.warm button.b{border-color:#d3c9b8;background:#fffdf8;color:#2a2620;border-radius:10px}.warm button.b:hover{background:#efe9dc}
-.warm button.b.pri,.warm #stuList button.on{background:#2f6a5b;border-color:#2f6a5b;color:#fff}.warm button.b.pri:hover{background:#235044}
-.warm input[type=text]:focus,.warm textarea:focus{outline-color:#2f6a5b}
-.warm .hint,.warm label.f,.warm table.g th{color:#857b6c}.warm .hint.lk{background:#e6f1ea;border-color:#c5dccd;color:#235044}
-.warm #lk{color:#2f6a5b}.warm #ed h3{color:#2a2620;border-color:#e6dfd2}
-.warm dialog{border:0;border-radius:18px 18px 18px 6px;background:#fffdf8;box-shadow:0 20px 60px rgba(42,38,32,.3)}
-@media (max-width:900px){#app{grid-template-columns:1fr;height:auto}#side{max-height:none}#ed{overflow:visible}#pv{overflow:visible}}
+dialog .x{position:absolute;right:12px;top:12px;border:0;background:none;color:var(--mute);cursor:pointer;width:40px;height:40px;border-radius:50%;display:grid;place-items:center}
+dialog .x:hover{background:var(--sunk)}
+dialog .dlgbtn{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+dialog p.lead{white-space:pre-line;line-height:1.7;margin:4px 0 0;color:var(--ink2)}
+#ovf{display:none;width:100%;background:var(--warn-l);color:var(--warn);border-radius:10px;padding:8px 12px;font-size:14px}
+/* 「？」說明（收合，預設收起） */
+details.q{position:relative;display:inline-block;vertical-align:middle}
+details.q>summary{list-style:none;cursor:pointer;width:28px;height:28px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;font-size:14px;font-weight:700;color:var(--mute);background:var(--card)}
+details.q>summary::-webkit-details-marker{display:none}
+details.q[open]>summary{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+@media (pointer:coarse){details.q>summary{width:40px;height:40px}}
+.pop{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:max-content;max-width:min(340px,calc(100vw - 32px));background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:var(--pop);font-size:14px;font-weight:400;line-height:1.75;color:var(--ink2);white-space:normal}
+details.q.r .pop{left:auto;right:0}
+.pop p{margin:0 0 6px}.pop p:last-child{margin:0}
+@media (max-width:900px){#app{grid-template-columns:1fr;height:auto}#side{border-right:0;border-bottom:1px solid var(--line)}#ed{overflow:visible}#pv{overflow:visible;padding:12px}}
 @page{size:A4;margin:0}
 @media print{
   html,body{height:auto;background:#fff}
@@ -137,29 +159,30 @@ button.b.dz{background:#b3261e;border-color:#b3261e;color:#fff}
   <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
   <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
 </svg>
 <div id="app">
   <div id="side">
-    <header><h1>特殊考場通知單生成器</h1><small>資料只存在這台電腦的瀏覽器，不會上傳。</small></header>
+    <header><span class="mark" aria-hidden="true"></span><h1>學生通知單</h1></header>
     <div class="tabs">
       <button data-tab="stu" class="on">學生</button>
       <button data-tab="exam">考試設定</button>
-      <button data-tab="data" id="tabData">連動／匯出</button>
+      <button data-tab="data" id="tabData">連動</button>
     </div>
     <div id="ed"></div>
   </div>
   <div id="main">
     <div id="bar">
-      <button class="b" id="prev" title="上一位" aria-label="上一位"><svg class="ic"><use href="#i-left"/></svg></button>
+      <button class="b icon" id="prev" title="上一位" aria-label="上一位"><svg class="ic"><use href="#i-left"/></svg></button>
       <span class="who" id="cur"></span>
-      <button class="b" id="next" title="下一位" aria-label="下一位"><svg class="ic"><use href="#i-right"/></svg></button>
+      <button class="b icon" id="next" title="下一位" aria-label="下一位"><svg class="ic"><use href="#i-right"/></svg></button>
       <label class="chk"><input type="checkbox" id="showAll"> 預覽全部</label>
       <span id="lk"></span>
       <span class="sp"></span>
-      <span class="phint">列印時「縮放」請選「實際大小／100%」</span>
       <button class="b" id="printOne">只印這位</button>
-      <button class="b pri" id="printAll"><svg class="ic"><use href="#i-printer"/></svg> 列印全部／存成 PDF</button>
+      <button class="b pri" id="printAll"><svg class="ic"><use href="#i-printer"/></svg> 全部印出</button>
+      <details class="q r"><summary aria-label="說明">?</summary><div class="pop">列印時「縮放」選「實際大小／100%」。要存 PDF，印表機選「另存為 PDF」。</div></details>
       <div id="ovf"></div>
     </div>
     <div id="pv"></div>
@@ -176,6 +199,9 @@ const KEY='exam-notice-v1', PLANNER_KEY='special-exam-room-v1';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ic=n=>'<svg class="ic" aria-hidden="true"><use href="#i-'+n+'"/></svg>';
+const q=h=>'<details class="q"><summary aria-label="說明">?</summary><div class="pop">'+h+'</div></details>';
+// 「？」點外面就收起
+document.addEventListener('click',e=>{document.querySelectorAll('details.q[open]').forEach(d=>{if(!d.contains(e.target))d.open=false;});});
 let D, cur=0, tab='stu';
 // 確認／提醒視窗（取代瀏覽器內建的 confirm／alert）：按主要按鈕＝true
 function askBox(msg,o){o=o||{};return new Promise(res=>{const d=$('ask');let done=false;
@@ -321,7 +347,7 @@ function checkOverflow(list){const box=document.createElement('div');box.style.c
 /* ---------- 預覽 ---------- */
 function renderPreview(){
   const pv=$('pv'),all=$('showAll').checked;
-  if(!D.students.length){pv.innerHTML='<p style="text-align:center;color:#66727f;margin-top:60px">還沒有學生。先到「① 排考場」把考場排好，這裡就會自動出現；也可以在左邊手動新增。</p>';$('cur').textContent='';return;}
+  if(!D.students.length){pv.innerHTML='<div class="empty">還沒有學生'+(EMB?'<button class="b" onclick="try{parent.showTab(\'board\')}catch(e){}">去排考場</button>':'<button class="b" onclick="addOne()">'+ic('plus')+' 新增一位</button>')+'</div>';$('cur').textContent='';return;}
   cur=Math.max(0,Math.min(cur,D.students.length-1));
   pv.innerHTML=(all?D.students:[D.students[cur]]).map(noticeHtml).join('');
   $('cur').textContent=(cur+1)+' / '+D.students.length+'　'+stuId(D.students[cur]);
@@ -330,8 +356,8 @@ function renderPreview(){
 }
 function showOverflow(){const bad=D.students.length?checkOverflow(D.students):[],el=$('ovf');
   el.style.display=bad.length?'block':'none';
-  el.innerHTML=bad.length?ic('alert')+' 有 '+bad.length+' 張通知單內容超出一張 A4，印出來最下面會被切掉：'+esc(bad.join('、'))+'。請縮短注意事項'+(D.head.reply?'，或取消家長回條':'')+'。':'';}
-function fit(){const pv=$('pv'),w=pv.clientWidth-36,pw=793.7;const z=Math.min(1,w/pw);pv.querySelectorAll('.page').forEach(p=>p.style.zoom=z);}
+  el.innerHTML=bad.length?ic('alert')+' '+bad.length+' 張超出一頁，最下面會被切掉：'+esc(bad.join('、'))+'。請縮短注意事項'+(D.head.reply?'或取消回條':'')+'。':'';}
+function fit(){const pv=$('pv'),w=pv.clientWidth-52,pw=793.7;const z=Math.min(1,w/pw);pv.querySelectorAll('.page').forEach(p=>p.style.zoom=z);}
 window.addEventListener('resize',fit);
 
 /* ---------- 編輯區 ---------- */
@@ -346,13 +372,12 @@ function renderEd(){
 }
 function edStu(){
   let h='<h3>學生名單（'+D.students.length+' 人）</h3><div id="stuList">'+stuListHtml()+'</div>';
-  h+='<div class="row" style="margin-bottom:6px"><button class="b" data-act="add">＋新增一位</button><button class="b" data-act="paste">貼上名單</button><button class="b" data-act="sort">依班級排序</button></div>';
+  h+='<div class="row" style="margin-bottom:6px"><button class="b" data-act="add">'+ic('plus')+' 新增</button><button class="b" data-act="paste">貼上名單</button><button class="b" data-act="sort">依班級排序</button></div>';
   const s=D.students[cur];
   if(!s)return h;
   const i=cur;
-  h+='<h3>這位學生</h3><div class="row"><label class="f" style="flex:.8">班級'+inp('students.'+i+'.cls',s.cls,'903','K')+'</label><label class="f" style="flex:.6">座號'+inp('students.'+i+'.seat',s.seat,'15','K')+'</label><label class="f" style="flex:1.4">姓名'+inp('students.'+i+'.name',s.name,'','K')+'</label></div>';
-  h+=s.pid?'<div class="hint lk">'+ic('link')+' 這位學生來自排列機：灰色字就是排列機排的地點與時間，會自動跟著更新，不用自己打。只有想改掉它時才需要填（填了會蓋過排列機）。姓名可以在這裡補成全名，之後同步不會被改掉。</div>'
-    :'<div class="hint">地點留白＝「'+esc(D.defLoc)+'」。只填跟一般同學不一樣的地方就好；時間有改會自動加框。地點要分兩行用 <code>/</code> 隔開。</div>';
+  h+='<h3>這位學生 '+q('<p>地點留白＝「'+esc(D.defLoc)+'」，只填和一般同學不同的。時間有改會自動加框。</p><p>地點或科目要分兩行，用 <code>/</code> 隔開。</p>')+'</h3><div class="row"><label class="f" style="flex:.8">班級'+inp('students.'+i+'.cls',s.cls,'903','K')+'</label><label class="f" style="flex:.6">座號'+inp('students.'+i+'.seat',s.seat,'15','K')+'</label><label class="f" style="flex:1.4">姓名'+inp('students.'+i+'.name',s.name,'','K')+'</label></div>';
+  if(s.pid)h+='<div class="hint lk">'+ic('link')+' 灰字是排考場帶來的，會自動更新；填了會蓋過。</div>';
   D.days.forEach((dy,d)=>{
     h+='<div class="day">'+esc(dy.date)+'（'+esc(dy.dow)+'）</div><table class="g"><tr><th></th><th>考試地點</th><th>灰底</th><th>開始</th><th>結束</th><th>科目改為</th></tr>';
     D.periods.forEach((p,pi)=>{
@@ -366,51 +391,48 @@ function edStu(){
     if(dy.pmMerge)h+='<label class="f" style="margin-top:6px">下午合併格文字（留白＝「'+esc(dy.pmText)+'」，填 <b>-</b> ＝空白）'+inp('students.'+i+'.pm.'+d,s.pm[d]||'',dy.pmText)+'</label>';
   });
   h+='<datalist id="rooms">'+D.rooms.map(r=>'<option value="'+esc(r)+'">').join('')+'</datalist>';
-  h+='<h3>注意事項（一行一項，自動編號）</h3><textarea data-k="students.'+i+'.notes" data-notes="1" rows="5" style="width:100%">'+esc(s.notes!=null?s.notes:D.notes)+'</textarea>';
-  h+='<div class="hint">強調寫法：<code>__底線__</code>　<code>[[外框]]</code>　<code>==灰底==</code>'+(s.notes!=null?'　<a href="#" data-act="resetNotes">改回共同注意事項</a>':'　（目前使用共同注意事項）')+'</div>';
-  h+='<div class="row" style="margin-top:14px"><button class="b" data-act="dup">複製這位</button><button class="b warn" data-act="del">刪除這位</button></div>';
+  h+='<h3>注意事項 '+q('一行一項，自動編號。強調：<code>__底線__</code> <code>[[外框]]</code> <code>==灰底==</code>')+'</h3><textarea data-k="students.'+i+'.notes" data-notes="1" rows="5" style="width:100%">'+esc(s.notes!=null?s.notes:D.notes)+'</textarea>';
+  if(s.notes!=null)h+='<div class="hint"><a href="#" data-act="resetNotes">改回共同注意事項</a></div>';
+  h+='<div class="row" style="margin-top:14px"><button class="b" data-act="dup">複製這位</button><button class="b warn" data-act="del">刪除</button></div>';
   return h;
 }
 function stuListHtml(){return D.students.map((s,i)=>'<button data-sel="'+i+'"'+(i===cur?' class="on"':'')+(s.pid?' title="來自排列機"':'')+'>'+(s.pid?ic('link')+' ':'')+esc(stuId(s)||'（未命名）')+'</button>').join('');}
 function edExam(){
   const H=D.head;
-  let h='<h3>標題與文字</h3>';
+  let h='<h3>標題與文字 '+q('學習中心導師會印在說明文字裡；名冊有填個管老師的學生，改印他的個管老師。')+'</h3>';
   h+='<label class="f">標題第一行'+inp('head.line1',H.line1)+'</label><label class="f">標題第二行'+inp('head.line2',H.line2)+'</label>';
   h+='<div class="row"><label class="f">左上角方框（留白＝不顯示）'+inp('head.label',H.label)+'</label><label class="f">沒填地點時顯示'+inp('defLoc',D.defLoc)+'</label></div>';
-  h+='<label class="f">學習中心導師（會印在說明文字裡）'+inp('head.teachers',H.teachers,'王小明老師、陳小華老師')+'</label><div class="hint" style="margin-top:-4px">共用名冊裡有填「個管老師」的學生，會改印他自己的個管老師。</div>';
-  h+='<label class="chk" style="margin-bottom:8px"><input type="checkbox" data-k="head.reply" data-keep="1"'+(H.reply?' checked':'')+'> 最下面加「家長回條」（虛線剪下，家長簽名交回）</label>';
-  h+='<h3>印章</h3><div class="row"><label class="chk"><input type="checkbox" data-k="head.stampOn" data-keep="1"'+(H.stampOn?' checked':'')+'> 顯示印章</label><button class="b" data-act="stamp">換一張印章圖</button>'+(H.stamp?'<button class="b" data-act="stampReset">改回原本的章</button>':'')+'</div><input type="file" id="stampFile" accept="image/*" hidden>';
+  h+='<label class="f">學習中心導師'+inp('head.teachers',H.teachers,'王小明老師、陳小華老師')+'</label>';
+  h+='<label class="chk" style="margin-bottom:8px"><input type="checkbox" data-k="head.reply" data-keep="1"'+(H.reply?' checked':'')+'> 加家長回條</label>';
+  h+='<h3>印章</h3><div class="row"><label class="chk"><input type="checkbox" data-k="head.stampOn" data-keep="1"'+(H.stampOn?' checked':'')+'> 顯示印章</label><button class="b" data-act="stamp">換印章</button>'+(H.stamp?'<button class="b" data-act="stampReset">改回原本的</button>':'')+'</div><input type="file" id="stampFile" accept="image/*" hidden>';
   h+='<h3>日期</h3>';
   D.days.forEach((dy,d)=>{h+='<div class="row"><label class="f">第 '+(d+1)+' 天日期'+inp('days.'+d+'.date',dy.date,'10月14日')+'</label><label class="f" style="flex:.5">星期'+inp('days.'+d+'.dow',dy.dow,'三')+'</label></div>'+
     '<div class="row" style="margin:-2px 0 10px"><label class="chk"><input type="checkbox" data-k="days.'+d+'.pmMerge" data-keep="1" data-re="1"'+(dy.pmMerge?' checked':'')+'> 下午合併成一格</label>'+(dy.pmMerge?'<input type="text" style="flex:1" data-k="days.'+d+'.pmText" data-keep="1" value="'+esc(dy.pmText)+'" placeholder="例：服務學習(回原班)">':'')+'</div>';});
-  h+='<h3>節次、時間與科目</h3><div class="hint">科目要分兩行（第二行小字）用 <code>/</code> 隔開，例：<code>生物(七)/理化(八九)</code></div>';
+  h+='<h3>節次、時間與科目 '+q('科目要分兩行（第二行小字）用 <code>/</code> 隔開，例：<code>生物(七)/理化(八九)</code>')+'</h3>';
   D.days.forEach((dy,d)=>{
     h+='<div class="day">'+esc(dy.date)+'（'+esc(dy.dow)+'）</div><table class="g"><tr><th>節</th><th>開始</th><th>結束</th><th>科目</th></tr>';
     D.periods.forEach((p,pi)=>{const k='periods.'+pi+'.d.'+d+'.',x=p.d[d];
       h+='<tr'+(pi===D.amCount?' class="sep"':'')+'><td class="n">'+esc(p.n)+'</td><td><input type="text" class="t" data-keep="1" data-k="'+k+'s" value="'+esc(x.s)+'"></td><td><input type="text" class="t" data-keep="1" data-k="'+k+'e" value="'+esc(x.e)+'"></td><td><input type="text" data-keep="1" data-k="'+k+'subj" value="'+esc(x.subj)+'"></td></tr>';});
     h+='</table>';});
-  h+='<h3>共同注意事項（一行一項）</h3><textarea data-k="notes" data-keep="1" rows="4" style="width:100%">'+esc(D.notes)+'</textarea><div class="hint">沒有另外改過注意事項的學生都會用這一份。強調寫法：<code>__底線__</code>　<code>[[外框]]</code>　<code>==灰底==</code></div>';
-  h+='<h3>常用地點（輸入時的下拉選單，一行一個）</h3><textarea id="roomsTa" rows="5" style="width:100%">'+esc(D.rooms.join('\n'))+'</textarea>';
+  h+='<h3>共同注意事項 '+q('沒有另外改過的學生都用這一份。一行一項。強調：<code>__底線__</code> <code>[[外框]]</code> <code>==灰底==</code>')+'</h3><textarea data-k="notes" data-keep="1" rows="4" style="width:100%">'+esc(D.notes)+'</textarea>';
+  h+='<h3>常用地點 '+q('輸入地點時的選單，一行一個。')+'</h3><textarea id="roomsTa" rows="5" style="width:100%">'+esc(D.rooms.join('\n'))+'</textarea>';
   return h;
 }
 function edData(){
-  if(EMB){ // 在排列機裡：連動是自動的，備份與共用都在右上角「共用」
-    const n=D.students.filter(s=>s.pid).length;
-    return '<h3>自動帶入</h3><div class="hint lk">'+ic('link')+' 日期、考科、時間、每位學生的考試地點與延長時間，都是從「排考場」自動帶過來的，排法一改這裡就跟著變。'+(n?'目前 '+n+' 位學生。':'')+'</div>'+
-      '<div class="hint">你在這裡補的<b>全名、注意事項、導師姓名、手動改過的格子</b>會被保留；登入共用後，其他老師也會看到。</div>'+
-      '<h3>整理</h3><div class="row"><button class="b" data-act="clearManual">清掉手動改過的格子（全部照排考場）</button></div>'+
-      '<div class="row" style="margin-top:8px"><button class="b warn" data-act="reset">通知單全部重來</button></div>'+
-      '<div class="hint" style="margin-top:8px">「全部重來」會清掉補過的全名與注意事項，再依排考場重新產生。</div>';
-  }
   const n=D.students.filter(s=>s.pid).length;
-  let h='<h3>與「特殊試場排列機」連動</h3>';
-  h+='<label class="chk" style="margin-bottom:6px"><input type="checkbox" data-k="link" data-keep="1" data-re="1"'+(D.link?' checked':'')+'> <b>自動連動</b>（建議開著）</label>';
-  h+='<div class="hint">開著時，每次打開這一頁、或排列機有任何變動，都會自動把<b>日期、考科、時間、每位學生的考試地點與延長時間</b>帶過來，不用自己打。你在這裡補的全名、注意事項、手動改過的格子都會保留。<br>目前狀態：<b>'+esc(linkMsg||'尚未連動')+'</b>'+(n?'（'+n+' 位學生來自排列機）':'')+'</div>';
-  h+='<div class="row"><button class="b pri" data-act="plLocal">立即重新同步</button>'+(EMB?'':'<a class="b" style="text-decoration:none" href="'+PLANNER_URL+'">回到排列機</a>')+'<button class="b" data-act="plFile">改用排列機設定檔（.json）</button></div><input type="file" id="plFile" accept=".json,application/json" hidden>';
-  h+='<div class="row" style="margin-top:8px"><button class="b" data-act="clearManual">清掉手動改過的格子（全部以排列機為準）</button></div>';
-  h+='<h3>這個生成器自己的設定檔</h3><div class="hint">換電腦或想備份時用。檔案裡有學生姓名，請自行保管。</div>';
-  h+='<div class="row"><button class="b" data-act="exp">匯出設定檔</button><button class="b" data-act="imp">匯入設定檔</button></div><input type="file" id="impFile" accept=".json,application/json" hidden>';
-  h+='<h3>重來</h3><div class="row"><button class="b warn" data-act="clearStu">清空學生名單</button><button class="b warn" data-act="reset">全部還原成範例</button></div>';
+  if(EMB){ // 在段考頁裡：連動是自動的，備份與共用都在段考頁
+    return '<h3>自動帶入</h3><div class="hint lk">'+ic('link')+' 日期、考科、時間、地點從排考場自動帶入'+(n?'（'+n+' 位）':'')+'</div>'+
+      '<p class="hint">補的全名、注意事項、手動改的格子會保留。</p>'+
+      '<h3>整理</h3><div class="row"><button class="b" data-act="clearManual">清掉手動修改</button><button class="b warn" data-act="reset">全部重來</button></div>';
+  }
+  let h='<h3>與排列機連動</h3>';
+  h+='<label class="chk" style="margin-bottom:6px"><input type="checkbox" data-k="link" data-keep="1" data-re="1"'+(D.link?' checked':'')+'> 自動連動</label>';
+  h+='<div class="hint">'+esc(linkMsg||'尚未連動')+(n?'（'+n+' 位）':'')+'</div>';
+  h+='<div class="row"><button class="b" data-act="plLocal">立即同步</button><a class="b" href="'+PLANNER_URL+'">回到排列機</a><button class="b" data-act="plFile">用排列機設定檔</button></div><input type="file" id="plFile" accept=".json,application/json" hidden>';
+  h+='<div class="row" style="margin-top:8px"><button class="b" data-act="clearManual">清掉手動修改</button></div>';
+  h+='<h3>設定檔</h3><p class="hint">檔案含學生姓名，請自行保管。</p>';
+  h+='<div class="row"><button class="b" data-act="exp">匯出</button><button class="b" data-act="imp">匯入</button></div><input type="file" id="impFile" accept=".json,application/json" hidden>';
+  h+='<h3>重來</h3><div class="row"><button class="b warn" data-act="clearStu">清空學生</button><button class="b warn" data-act="reset">還原成範例</button></div>';
   return h;
 }
 
@@ -432,7 +454,7 @@ $('ed').addEventListener('change',e=>{const el=e.target;
   if(el.id==='stampFile'&&el.files[0]){const f=el.files[0];if(f.size>600*1024){toast('圖檔太大，請用 600KB 以下的圖');return;}
     const r=new FileReader();r.onload=()=>{D.head.stamp=r.result;D.head.stampOn=true;save();renderEd();renderPreview();};r.readAsDataURL(f);}
   if(el.id==='plFile'&&el.files[0])readJson(el.files[0],o=>syncPlanner(o,false,'已從設定檔帶入'));
-  if(el.id==='impFile'&&el.files[0])readJson(el.files[0],o=>{if(!o.periods||!o.students||!o.head){tellBox('這不是通知單生成器的設定檔。\n如果是排列機的設定檔，請用上面的「選排列機設定檔」。');return;}D=normalize(o);cur=0;save();renderAll();toast('已匯入');});
+  if(el.id==='impFile'&&el.files[0])readJson(el.files[0],o=>{if(!o.periods||!o.students||!o.head){tellBox('這不是通知單的設定檔。排列機的設定檔請用「用排列機設定檔」。');return;}D=normalize(o);cur=0;save();renderAll();toast('已匯入');});
 });
 function readJson(f,cb){const r=new FileReader();r.onload=()=>{let o;try{o=JSON.parse(r.result);}catch(e){tellBox('檔案讀不懂，請確認是 .json 設定檔');return;}cb(o);};r.readAsText(f);}
 $('ed').addEventListener('click',async e=>{
@@ -441,7 +463,7 @@ $('ed').addEventListener('click',async e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
   const act=a.dataset.act;if(a.tagName==='A')e.preventDefault();
   const s=D.students[cur];
-  if(act==='add'){D.students.push({cls:'',seat:'',name:'',a:{},c:{},pm:{},notes:null});cur=D.students.length-1;}
+  if(act==='add'){addOne();return;}
   else if(act==='dup'){const c=JSON.parse(JSON.stringify(s));c.name+='（複製）';delete c.pid;delete c.plName;c.c=Object.assign({},c.a,c.c);c.a={};D.students.splice(cur+1,0,c);cur++;}
   else if(act==='del'){if(!await askBox('確定刪除 '+stuId(s)+'？'))return;D.students.splice(cur,1);}
   else if(act==='sort'){const me=s;D.students.sort((x,y)=>String(x.cls).localeCompare(String(y.cls),'zh-Hant',{numeric:true})||String(x.seat).localeCompare(String(y.seat),'zh-Hant',{numeric:true}));cur=Math.max(0,D.students.indexOf(me));}
@@ -450,9 +472,9 @@ $('ed').addEventListener('click',async e=>{
   else if(act==='stamp'){$('stampFile').click();return;}
   else if(act==='stampReset'){D.head.stamp='';}
   else if(act==='plLocal'){const o=plannerData();
-    if(!o){tellBox('這個瀏覽器裡找不到排列機的資料。\n請先到「① 排考場」把考場排好，或改用排列機設定檔。');return;}
+    if(!o){tellBox('找不到排考場的資料。請先排考場，或用排列機設定檔。');return;}
     D.link=true;syncPlanner(o,false,'已同步');return;}
-  else if(act==='clearManual'){if(!await askBox('確定清掉所有「來自排列機的學生」手動改過的地點、時間、科目？\n姓名與注意事項會保留。'))return;D.students.forEach(x=>{if(x.pid){x.c={};x.pm={};}});}
+  else if(act==='clearManual'){if(!await askBox('清掉手動改過的地點、時間、科目？姓名與注意事項會保留。'))return;D.students.forEach(x=>{if(x.pid){x.c={};x.pm={};}});}
   else if(act==='plFile'){$('plFile').click();return;}
   else if(act==='imp'){$('impFile').click();return;}
   else if(act==='exp'){const b=new Blob([JSON.stringify(D,null,1)],{type:'application/json'}),x=document.createElement('a');x.href=URL.createObjectURL(b);x.download='通知單設定_'+D.head.line1+'.json';document.body.appendChild(x);x.click();setTimeout(()=>{URL.revokeObjectURL(x.href);x.remove();},500);return;}
@@ -462,7 +484,7 @@ $('ed').addEventListener('click',async e=>{
 });
 function pasteDialog(){
   const d=$('dlg');
-  d.innerHTML='<button class="x" id="pasteX" aria-label="關閉">'+ic('x')+'</button><h3>貼上名單</h3><div class="hint">一行一位，寫法像 <code>903-15 楊明杰</code>、<code>903 15 楊明杰</code>，也可以直接從 Excel 複製「班級、座號、姓名」三欄貼上。<br>班級座號已經在名單裡的（例如排列機帶來的學生），只會把姓名換成你貼的全名，不會重複新增。</div><textarea id="pasteTa" rows="10" style="width:100%"></textarea><div class="row" style="margin-top:10px;justify-content:flex-end"><button class="b" id="pasteNo">取消</button><button class="b pri" id="pasteOk">加入</button></div>';
+  d.innerHTML='<button class="x" id="pasteX" aria-label="關閉">'+ic('x')+'</button><h3>貼上名單</h3><div class="hint">一行一位，例：<code>903-15 楊明杰</code>。可以從 Excel 複製三欄貼上；已有的班級座號只會補上姓名。</div><textarea id="pasteTa" rows="10" style="width:100%"></textarea><div class="dlgbtn"><button class="b" id="pasteNo">取消</button><button class="b pri" id="pasteOk">加入</button></div>';
   d.showModal();
   $('pasteNo').onclick=$('pasteX').onclick=()=>d.close();
   $('pasteOk').onclick=()=>{let n=0,u=0;
@@ -478,8 +500,6 @@ function pasteDialog(){
 const PLANNER_URL='./';
 const EMB=window.top!==window; // 放在排列機的「⑤ 學生通知單」分頁裡
 if(EMB)document.documentElement.classList.add('emb');
-// 排列機本身放在管理系統裡（暖色外觀）時，這一頁也跟著換成暖色
-try{if(EMB&&parent.document.body.classList.contains('embed'))document.documentElement.classList.add('warm');}catch(e){}
 // 名冊改了（例如換了個管老師）就重新讀
 window.addEventListener('storage',e=>{if(e.key===RKEY){RC=null;renderPreview();}});
 const GN={7:'七',8:'八',9:'九'};
@@ -548,7 +568,7 @@ function syncPlanner(P,quiet,msg){
     if(Object.keys(s.c).length||s.notes!=null){delete s.pid;delete s.plName;s.a={};return true;}gone++;return false;});
   D.students.sort((x,y)=>String(x.cls).localeCompare(String(y.cls),'zh-Hant',{numeric:true})||String(x.seat).localeCompare(String(y.seat),'zh-Hant',{numeric:true}));
   cur=Math.max(0,D.students.indexOf(me));
-  const t=new Date();linkMsg='已連動排列機（'+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')+' 更新）';
+  const t=new Date();linkMsg='已同步 '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
   save();renderAll();
   if(msg)toast(msg+'：'+seen.size+' 位學生'+(add?'（新增 '+add+'）':'')+(gone?'（移除 '+gone+'）':''));
   return true;
@@ -558,7 +578,7 @@ function reloadData(){const me=D.students[cur],id=me&&(me.pid||stuId(me));D=load
 window.addEventListener('storage',e=>{if(e.key===KEY)reloadData();});
 if(EMB)document.addEventListener('DOMContentLoaded',()=>{const b=document.getElementById('tabData');if(b)b.textContent='其他';});
 // 排列機一存檔，這裡立刻跟著更新
-window.addEventListener('storage',e=>{if(e.key===PLANNER_KEY)autoSync('排列機有變動，已更新');});
+window.addEventListener('storage',e=>{if(e.key===PLANNER_KEY)autoSync('已更新');});
 
 /* ---------- 列印 ---------- */
 function doPrint(list){if(!list.length){toast('沒有學生可以印');return;}
@@ -571,6 +591,7 @@ $('prev').onclick=()=>{cur=(cur-1+D.students.length)%Math.max(1,D.students.lengt
 $('next').onclick=()=>{cur=(cur+1)%Math.max(1,D.students.length);renderAll();};
 $('showAll').onchange=renderPreview;
 
+function addOne(){D.students.push({cls:'',seat:'',name:'',a:{},c:{},pm:{},notes:null});cur=D.students.length-1;save();renderAll();}
 function renderAll(){cur=Math.max(0,Math.min(cur,D.students.length-1));renderEd();renderPreview();$('lk').innerHTML=D.link&&linkMsg?ic('link')+' '+esc(linkMsg):'';}
 D=load();
 if(!autoSync())renderAll();
