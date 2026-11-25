@@ -16,7 +16,7 @@
    單機模式就是這台電腦的主人，當作管理者。管理者可以「以教師身分預覽」。 */
 import { browserLocalPersistence, browserSessionPersistence, onAuthStateChanged, setPersistence } from "firebase/auth";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { boundTeacherId, claimsOf, isHost, normEmail, roleOf, type Access, type AppRole } from "./accounts";
+import { appRoleOf, boundTeacherId, claimsOf, isHost, normEmail, roleOf, type Access, type AppRole } from "./accounts";
 import { watchAccess, watchExam, watchMain } from "./cloud";
 import { firebase, signOutNow } from "./firebase";
 import { demoData, getLocalMe, KEY_ME, loadLocalExam, loadLocalMain, readBackupFile, setLocalMe } from "./local";
@@ -211,7 +211,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     cloud === "off"
       ? "admin"
       : cloud === "on"
-        ? claims?.role || roleOf(access, user?.email)
+        ? appRoleOf(claims) || roleOf(access, user?.email)
         : cloud === "error" && user
           ? "admin"
           : override?.kind === "demo"
@@ -244,7 +244,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     source = { kind: "none", label: "雲端還沒有資料" };
   }
 
-  const boundId = cloud === "on" ? claims?.teacherId || boundTeacherId(access, user?.email) : localMe;
+  const boundId = cloud === "on" ? claims?.tid || boundTeacherId(access, user?.email) : localMe;
   const meId = (realRole === "admin" && viewAs) || boundId;
 
   const value: Session = {
