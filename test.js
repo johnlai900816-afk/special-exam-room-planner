@@ -300,5 +300,30 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   ok(!Object.keys(D2.tt).length&&!Object.keys(D2.classHead).length&&r4.ttCleared,'升年級時清掉全校課表和導師');
 }
 
+// 18. 簽到退統計：學期中加入的學生、新學期清掉組別；備註拆成公開與私密
+{
+  console.log('\n18. 出缺席統計與私密備註');
+  const vm=require('vm'),fs=require('fs');
+  const D=C.defaultData(),g=D.groups[0],[a,b]=g.students;
+  const ctx={D,console,localStorage:{getItem:()=>null,setItem:()=>{}},isRO:()=>false,attPush:()=>{},toast:()=>{},document:{},window:{}};
+  vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+'/checkin.js','utf8')+';this.attSet=attSet;this.attStats=attStats;this.ATTref=()=>ATT;this.setATT=x=>{ATT=x;};',ctx);
+  const key=g.id+'@1',late=D.students.find(s=>!g.students.includes(s.id));
+  ctx.attSet('2026-09-01',key,a,{st:'in',tin:'',tout:'',note:''});           // 這時候 late 還不在組裡
+  g.students.push(late.id);
+  ctx.attSet('2026-09-08',key,a,{st:'in',tin:'',tout:'',note:''});
+  let S=ctx.attStats('2026-01-01','2026-12-31','');
+  ok(S[late.id]&&S[late.id].exp===1&&S[b].exp===2&&S[b].abs===2,'學期中才加入的學生，只算加入之後的節次（之前的不算缺席）');
+  ok(Array.isArray(ctx.ATTref()['2026-09-01'][key]._roster)&&ctx.ATTref()['2026-09-01'][key]._info.g===g.name,'點名時記下當時的名單、組名和節次');
+  // 舊紀錄沒有 _roster：只從學生第一次有紀錄那天開始算
+  ctx.setATT({'2026-09-01':{[key]:{[a]:{st:'in'}}},'2026-09-08':{[key]:{[a]:{st:'in'},[b]:{st:'in'}}},'2026-09-15':{[key]:{[a]:{st:'in'}}}});
+  S=ctx.attStats('2026-01-01','2026-12-31','');ok(S[b].exp===2&&S[b].abs===1,'舊紀錄：從第一次有紀錄的那天開始算應到');
+  // 新學期把組別清掉，統計還在，用存下來的組名
+  ctx.setATT({});ctx.attSet('2026-09-01',key,a,{st:'in',tin:'',tout:'',note:''});const nm=g.name;D.groups=[];
+  S=ctx.attStats('2026-01-01','2026-12-31','');ok(S[a]&&S[a].exp===1&&S[a].rows[0].g===nm&&S[b].abs===1,'新學期清掉組別後，出缺席統計還在');
+  const E=C.normalize({students:[{id:'x',cls:'701',name:'甲',note:'情緒障礙，需要冷靜角'}],settings:{}});
+  ok(E.students[0].privNote==='情緒障礙，需要冷靜角'&&!E.students[0].note&&C.normalize(Object.assign(E,{students:[Object.assign(E.students[0],{note:'帶課本'})]})).students[0].note==='帶課本','舊的備註先搬到私密備註，之後寫的公開提醒不會再被搬走');
+  const F=C.defaultData();C.importStudents(F,'班級\t座號\t姓名\t備註\n701\t03\t王小明\t服藥中');ok(F.students[0].privNote==='服藥中'&&!F.students[0].note,'名單上的備註匯入成私密備註');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

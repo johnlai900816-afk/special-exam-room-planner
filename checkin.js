@@ -14,10 +14,16 @@ function dowOf(date){const d=new Date(date+'T00:00:00').getDay();return d>=1&&d<
 function dateLabel(date){const d=new Date(date+'T00:00:00');return (d.getMonth()+1)+' 月 '+d.getDate()+' 日 週'+'日一二三四五六'[d.getDay()];}
 function attSave(){try{localStorage.setItem(AKEY,JSON.stringify(ATT));}catch(e){}}
 function attGet(date,key,sid){return ((ATT[date]||{})[key]||{})[sid]||null;}
+// 一節課的紀錄裡，底線開頭的是附帶資料不是學生：_roster＝點名當時這一組的學生、_info＝組名和節次名稱
+const attSids=o=>Object.keys(o||{}).filter(k=>k[0]!=='_');
 function attSet(date,key,sid,rec){
   if(isRO()){toast('你是檢視權限，不能點名');return false;}
   const day=ATT[date]=ATT[date]||{},s=day[key]=day[key]||{};
-  if(rec)s[sid]=rec;else{delete s[sid];if(!Object.keys(s).length)delete day[key];if(!Object.keys(day).length)delete ATT[date];}
+  if(rec){s[sid]=rec;
+    // 第一次點這一節時記下當時的名單和名稱：學期中才加入的學生不會被算成之前每節都缺席；新學期清掉組別後統計也還看得到
+    if(!Array.isArray(s._roster)){const at=key.lastIndexOf('@'),g=D.groups.find(x=>x.id===key.slice(0,at)),p=D.periods.find(x=>x.id===key.slice(at+1));
+      if(g){s._roster=g.students.slice();s._info={g:g.name,p:p?p.name:''};attPush(date,key,'_roster',s._roster);attPush(date,key,'_info',s._info);}}}
+  else{delete s[sid];if(!attSids(s).length)delete day[key];if(!Object.keys(day).length)delete ATT[date];}
   attSave();attPush(date,key,sid,rec);return true;
 }
 // 某一天照課表有哪些課
@@ -124,15 +130,18 @@ function logSpan(){const t=new Date(),td=today();
   if(logRange==='all')return ['0000-00-00','9999-99-99'];
   return [logFrom||td,logTo||td];}
 // 只計算「有點過名」的節次，所以放假、停課不會被算成缺席
+// 應到的人：有 _roster 就照點名當時的名單；舊紀錄沒有的話，只從這位學生在這一組第一次有紀錄的那天開始算
 function attStats(from,to,gid){
-  const by={};
+  const by={},first={};
+  Object.keys(ATT).forEach(date=>{for(const key in ATT[date]){const g0=key.slice(0,key.lastIndexOf('@'));attSids(ATT[date][key]).forEach(sid=>{const k=g0+'|'+sid;if(!first[k]||date<first[k])first[k]=date;});}});
   Object.keys(ATT).filter(d=>d>=from&&d<=to).sort().forEach(date=>{const day=ATT[date];
-    for(const key in day){const at=key.lastIndexOf('@'),g=D.groups.find(x=>x.id===key.slice(0,at)),p=D.periods.find(x=>x.id===key.slice(at+1));
-      if(!g||(gid&&g.id!==gid))continue;const done=!p||isOver(date,p);
-      new Set(g.students.concat(Object.keys(day[key]))).forEach(sid=>{const r=day[key][sid];if(!r&&!done)return;
+    for(const key in day){const at=key.lastIndexOf('@'),id=key.slice(0,at),rec=day[key],info=rec._info||{},g=D.groups.find(x=>x.id===id),p=D.periods.find(x=>x.id===key.slice(at+1));
+      if((!g&&!info.g)||(gid&&id!==gid))continue;const done=!p||isOver(date,p);   // 組別被清掉（新學期）時，用紀錄裡存的組名
+      const roster=Array.isArray(rec._roster)?rec._roster:g?g.students.filter(sid=>first[id+'|'+sid]&&first[id+'|'+sid]<=date):[];
+      new Set(roster.concat(attSids(rec))).forEach(sid=>{const r=rec[sid];if(!r&&!done)return;
         const o=by[sid]=by[sid]||{exp:0,in:0,late:0,leave:0,abs:0,rows:[]},st=r?r.st:'abs';
         o.exp++;if(st==='in'||st==='late')o.in++;if(st==='late')o.late++;if(st==='leave')o.leave++;if(st==='abs')o.abs++;
-        o.rows.push({date,p:p?p.name:'',g:g.name,st:r?STN[r.st]:'未到',tin:r?r.tin:'',tout:r?r.tout:'',note:r?r.note:''});});}});
+        o.rows.push({date,p:p?p.name:(info.p||''),g:g?g.name:info.g,st:r?STN[r.st]:'未到',tin:r?r.tin:'',tout:r?r.tout:'',note:r?r.note:''});});}});
   return by;
 }
 function renderAttLog(){

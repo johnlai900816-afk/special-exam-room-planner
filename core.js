@@ -66,7 +66,7 @@ function defaultData(){
     offBy:{'g:7':['4-6'],'g:8':['4-6'],'g:9':['3-6']},
     sets:[{id:'x1',name:'技藝班',students:[g9[3].id,g9[6].id],off:['1-5','1-6','1-7'],note:'週二下午到合作學校上課'}],
     assign:{},
-    settings:{regClash:true,seed:1}
+    settings:{regClash:true,seed:1,noteSplit:1}
   };
 }
 
@@ -84,6 +84,8 @@ function normalize(D){
   if(!D.settings.seed)D.settings.seed=1;
   D.teachers.forEach(t=>{if(!Array.isArray(t.off))t.off=[];if(!t.role)t.role='普通班';t.hours=Math.max(0,+t.hours||0);});
   D.students.forEach(s=>{if(!Array.isArray(s.needs))s.needs=[];});
+  // 備註拆成「公開提醒」（note，簽到時給學生看）和「個管私密備註」（privNote）。舊資料的備註不知道能不能給學生看，一律先搬到私密
+  if(!D.settings.noteSplit){D.students.forEach(s=>{if(s.note&&!s.privNote){s.privNote=s.note;s.note='';}});D.settings.noteSplit=1;}
   D.groups.forEach(g=>{if(!Array.isArray(g.students))g.students=[];g.per=Math.max(0,Math.min(15,+g.per||0));if(!g.mode)g.mode='抽離';if(g.on==null)g.on=true;g.grade=g.grade?String(g.grade):'';});
   if(D.title==null)D.title='';
   return D;
@@ -642,7 +644,7 @@ function importStudents(D,text){
     if(cm){const nm=normName(cm);let t=D.teachers.find(x=>normName(x.name)===nm);
       if(!t&&nm){t=newTeacher(D,nm,'資源班');R.newCM.push(nm);}   // 個管老師一定是資源班老師：名冊還沒有就先建起來
       if(t){s.caseMgr=t.id;R.cm++;}else R.noCM.push(cm);}
-    if(note)s.note=note;
+    if(note)s.privNote=note;   // 學校名冊的備註常有個資，先放私密備註；要給學生看的提醒另外寫在「公開提醒」
     if(hr){D.classHead=D.classHead||{};D.classHead[cls]=normName(hr);}
   });
   R.noCM=[...new Set(R.noCM)];R.newCM=[...new Set(R.newCM)];return R;

@@ -586,71 +586,111 @@ const SUBC={'':['#eef5ee','#5aa06f','#22603a'],國:['#fdecec','#e86a6a','#a11d1d
 function shortName(g){const n=String(g.name||''),j=String(g.subject||'');return j&&n.length>j.length&&n.endsWith(j)?n.slice(0,-j.length):j&&n.length>j.length&&n.startsWith(j)?n.slice(j.length):n;}
 function slotsText(list){const by={};list.forEach(s=>{const d=Math.floor(s/M.NP);(by[d]=by[d]||[]).push(M.P[s%M.NP].name);});
   return Object.keys(by).sort().map(d=>'週'+DAYS[d]+' '+by[d].join('、')).join('；');}
+// 表頭放在 <thead>，印很多頁時每一頁都會重複表頭
+const thead=(cells,cls)=>`<thead><tr>${cells.map(c=>`<th${cls?` class="${cls}"`:''}>${c}</th>`).join('')}</tr></thead>`;
+const signLine=(x)=>`<p class="sign">製表：＿＿＿＿＿＿　日期：＿＿＿＿＿＿${x||''}</p>`;
+function printDate(){const d=new Date();return (d.getFullYear()-1911)+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');}
+const tName=t=>t>=0&&M.T[t]?M.T[t].name:'';
+const tCall=n=>n&&!/(老師|主任|組長|校長)/.test(n)?n+'老師':n;   // 王 → 王老師；林組長照原樣
+// 現在的鎖課：每一筆 {cls,s,sj,t,groups,extra}。彈性鎖課照配鎖課的結果（原班實際鎖的科目可能和資源班不一樣）
+function locksNow(){if(M.flex)return assignLocks(M,ST.slot).locks.map(k=>({cls:k.cls,s:k.s,sj:k.sj,t:k.t,groups:k.groups,extra:k.extra}));
+  const m=new Map();M.L.forEach((x,l)=>{const s=ST.slot[l],g=M.G[x.g];if(s<0||!g.need)return;g.locks.forEach(k=>{const key=k.cls+'|'+s;let o=m.get(key);if(!o)m.set(key,o={cls:k.cls,s,sj:g.subject,t:k.t,groups:[],extra:false});if(!o.groups.includes(g.name))o.groups.push(g.name);});});
+  return [...m.values()];}
+// 總課表格子裡的老師簡稱：用姓；同姓的老師就用 normName 後的名字
+function tShort(){const o={},nm=t=>normName(M.T[t].name).replace(/（.*?）|\(.*?\)/g,''),sur=M.rts.map(t=>nm(t).slice(0,1));
+  M.rts.forEach((t,i)=>{o[t]=sur.filter(x=>x===sur[i]).length>1?nm(t):sur[i];});return o;}
 function renderOut(){
-  const modes=[['master','總課表'],['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['lockraw','鎖課清單（教務處格式）'],['homeroom','給導師的班級抽離表'],['card','學生個人課表'],['student','學生抽離一覽'],['group','組別總表']];
+  const modes=[['master','總課表'],['teacher','資源班老師課表'],['lock','給教務處的鎖課表'],['lockraw','鎖課清單（教務處格式）'],['homeroom','給導師的班級抽離表'],['regular','給任課老師的抽離名單'],['card','學生個人課表'],['student','學生抽離一覽'],['cm','個管個案一覽'],['group','組別總表']];
   const placed=[...ST.slot].filter(s=>s>=0).length;
   let h=`<p class="guide">排好之後，在這裡印出或複製各種表。<b>鎖課表</b>是給教務處的：列出每個班哪幾節必須排哪一科，原班才會和資源班同時上同一科。</p>
   <div class="bar">`+modes.map(([k,n])=>`<button class="b${outMode===k?' pri':''}" onclick="outMode='${k}';render()">${n}</button>`).join('')+`<span class="grow"></span><button class="b" onclick="copyOut()">複製</button><button class="b" onclick="window.print()">列印</button></div>`;
-  if(outMode==='master')h+=`<div class="bar"><label class="note" style="margin:0">實施日期 <input type="text" class="w8" value="${esc(D.settings.dates||'')}" placeholder="115.09.02-116.01.20" onchange="D.settings.dates=this.value.trim();save();render()"></label><span class="note" style="margin:0">欄是教室、顏色是老師；列印時會自動用橫式。教室名稱取最後一個字當欄名。</span></div>`;
+  const dateIn=`<label class="note" style="margin:0">實施日期 <input type="text" class="w8" value="${esc(D.settings.dates||'')}" placeholder="115.09.02-116.01.20" onchange="D.settings.dates=this.value.trim();save();render()"></label>`;
+  if(outMode==='master')h+=`<div class="bar">${dateIn}<span class="note" style="margin:0">欄是教室；每格寫科目、組別和老師的姓，印成黑白也分得出老師。列印時會自動用橫式。教室名稱取最後一個字當欄名。</span></div>`;
+  if(outMode==='homeroom'||outMode==='regular')h+=`<div class="bar">${dateIn}<span class="note" style="margin:0">一班（一位老師）一頁。</span></div>`;
   if(outMode==='card')h+=`<div class="bar"><label class="note" style="margin:0">課表名稱 <input type="text" class="w8" value="${esc(D.settings.cardTitle||'資源班課表')}" onchange="D.settings.cardTitle=this.value.trim();save();render()"></label>
     <select onchange="outG=this.value;render()"><option value="">全部年級</option>${[...new Set(D.students.map(x=>gradeOfCls(x.cls)))].filter(x=>GRADE[x]).sort().map(x=>`<option value="${x}"${String(x)===outG?' selected':''}>${GRADE[x]}</option>`).join('')}</select><span class="note" style="margin:0">一位學生一頁</span></div>`;
-  if(!placed){$('page').innerHTML=h+`<div class="probs">還沒有排法，請先到「排課」按一鍵排課。</div>`;return;}
-  const T=esc(D.title||'資源班');let b='';
+  if(!placed){$('page').innerHTML=h+`<div class="probs">還沒有排法，請先到「排課表」按一鍵排課。</div>`;return;}
+  const T=esc(D.title||'資源班'),dt=D.settings.dates?`<p class="dt">實施日期：${esc(D.settings.dates)}</p>`:'';let b='';
+  const cmName=s=>{const t=D.teachers.find(x=>x.id===s.caseMgr);return t?t.name:'';};
+  const roomOf=l=>ROOM[l]>=0&&D.rooms[ROOM[l]]?D.rooms[ROOM[l]].name:'';
   if(outMode==='master'){
     const names=D.rooms.map(r=>String(r.name||'')),uq=a=>new Set(a).size===a.length,la=names.map(n=>n.slice(-1)),fa=names.map(n=>n.slice(0,1)),rn=names.every(n=>n.length<=2)?names:uq(la)?la:uq(fa)?fa:names;
     const cols=D.rooms.map((r,i)=>({i,n:rn[i]})).concat(M.L.some((x,l)=>ST.slot[l]>=0&&ROOM[l]<0)?[{i:-1,n:'其他'}]:[]),at={};
     M.L.forEach((x,l)=>{const sl=ST.slot[l];if(sl>=0){const k=sl+'|'+ROOM[l];(at[k]=at[k]||[]).push(l);}});
-    const tc=t=>TCOL[Math.max(0,M.rts.indexOf(t))%TCOL.length];
-    b=`<style>@page{size:A4 landscape;margin:10mm}</style><div class="pg master">${D.settings.dates?`<p class="dt">實施日期：${esc(D.settings.dates)}</p>`:''}<h2>${T} 課表</h2><p class="lg">教師：${M.rts.map(t=>`<b style="color:${tc(t)}">${esc(M.T[t].name)}</b>`).join('、')}</p>
-      <table class="out mt"><tr><th rowspan="2"></th>${DAYS.map(d=>`<th colspan="${cols.length}" class="dl">星期${d}</th>`).join('')}</tr><tr>${DAYS.map(()=>cols.map((c,k)=>`<th class="${k?'':'dl'}">${esc(c.n)}</th>`).join('')).join('')}</tr>`+
+    const ti=t=>Math.max(0,M.rts.indexOf(t))%12,tc=t=>TCOL[ti(t)%TCOL.length],sh=tShort();
+    // 老師除了顏色，還有 .t0～.t11（樣式另外加框線花紋）和格子裡的姓，黑白印也認得出來
+    b=`<style>@page{size:A4 landscape;margin:10mm}</style><div class="pg master">${dt}<h2>${T} 課表</h2><p class="lg">教師：${M.rts.map(t=>`<b class="t${ti(t)}" style="color:${tc(t)}">${esc(M.T[t].name)}（${esc(sh[t])}）</b>`).join('、')}</p>
+      <table class="out mt"><thead><tr><th rowspan="2"></th>${DAYS.map(d=>`<th colspan="${cols.length}" class="dl">星期${d}</th>`).join('')}</tr><tr>${DAYS.map(()=>cols.map((c,k)=>`<th class="${k?'':'dl'}">${esc(c.n)}</th>`).join('')).join('')}</tr></thead>`+
       D.periods.map((p,pi)=>`<tr><th>${esc(String(p.name).replace(/^第\s*(\S+?)\s*節$/,'$1'))}</th>`+DAYS.map((d,di)=>cols.map((c,k)=>`<td class="${k?'':'dl'}">${(at[(di*M.NP+pi)+'|'+c.i]||[]).map(l=>{const g=M.G[M.L[l].g];
-        return `<span style="color:${tc(g.t)}"><b>${esc(String(g.subject).slice(0,1))}</b><br>${esc(shortName(g.ref))}</span>`;}).join('')}</td>`).join('')).join('')+'</tr>').join('')+'</table></div>';
+        return `<span class="t${ti(g.t)}" style="color:${tc(g.t)}"><b>${esc(String(g.subject).slice(0,1))}</b><br>${esc(shortName(g.ref))}${g.t>=0?`<br><small>${esc(sh[g.t]||'')}</small>`:''}</span>`;}).join('')}</td>`).join('')).join('')+'</tr>').join('')+'</table></div>';
   }else if(outMode==='teacher'){
     M.rts.forEach(t=>{const at={};M.L.forEach((x,l)=>{const g=M.G[x.g];if(g.t===t&&ST.slot[l]>=0)at[ST.slot[l]]=l;});
-      b+=`<div class="pg"><h2>${T}｜${esc(M.T[t].name)}課表（每週 ${Object.keys(at).length} 節）</h2><table class="out"><tr><th style="width:92px">節次</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
+      b+=`<div class="pg"><h2>${T}｜${esc(M.T[t].name)}課表（每週 ${Object.keys(at).length} 節）</h2><table class="out">${thead(['節次'].concat(DAYS.map(d=>'週'+d)))}`+
         D.periods.map((p,pi)=>`<tr><td class="c">${esc(p.name)}<br><small>${esc(p.start)}～${esc(p.end)}</small></td>`+DAYS.map((d,di)=>{const l=at[di*M.NP+pi];if(l==null)return '<td></td>';const g=M.G[M.L[l].g];
-          return `<td class="c"><b>${esc(g.name)}</b><br><small>${esc(ROOM[l]>=0?D.rooms[ROOM[l]].name:'')}　${g.stu.length} 人</small></td>`;}).join('')+'</tr>').join('')+'</table></div>';});
+          return `<td class="c"><b>${esc(g.name)}</b><br><small>${esc(roomOf(l))}　${g.stu.length} 人</small></td>`;}).join('')+'</tr>').join('')+'</table></div>';});
   }else if(outMode==='lockraw'){
     const reg=D.periods.filter(p=>!p.extra),pn=s=>{const p=M.P[s%M.NP],m=String(p.name).match(/^第\s*(\d+)\s*節$/);return m?+m[1]:reg.indexOf(p)+1;};
     const rows=(M.flex?assignLocks(M,ST.slot).locks.map(k=>({cls:k.cls,sj:k.sj,s:k.s,t:M.T[k.t].name})):lockTable(M,ST.slot).flatMap(r=>r.slots.map(s=>({cls:r.cls,sj:r.subject,s,t:r.teacher})))).sort((a,c)=>a.cls.localeCompare(c.cls)||a.s-c.s);
-    b=`<div class="pg"><h2>${T}｜鎖課清單</h2><table class="out"><tr><th>班級名稱</th><th>科目名稱</th><th>星期</th><th>首節</th><th>末節</th><th>教師姓名</th></tr>`+
+    b=`<div class="pg"><h2>${T}｜鎖課清單（${printDate()} 印）</h2><table class="out">${thead(['班級名稱','科目名稱','星期','首節','末節','教師姓名'])}`+
       rows.map(r=>`<tr><td class="c">${esc(r.cls)}</td><td class="c">${esc(LOCKN[r.sj]||r.sj)}</td><td class="c">${Math.floor(r.s/M.NP)+1}</td><td class="c">${pn(r.s)}</td><td class="c">${pn(r.s)}</td><td>${esc(r.t)}</td></tr>`).join('')+
-      `</table><p class="note">欄位和教務處「特教鎖課需求」的資料輸出相同，按「複製」可以貼到試算表。科目名稱國文、英文會寫成國語文、英語文。共 ${rows.length} 筆。</p></div>`;
+      `</table><p class="note">欄位和教務處「特教鎖課需求」的資料輸出相同，按「複製」可以貼到試算表。科目名稱國文、英文會寫成國語文、英語文。共 ${rows.length} 筆。</p>${signLine()}</div>`;
     // 特教鎖課整理：每班各科鎖幾節、國文有沒有連 2 節（同一天相鄰兩節）
     const CS=['國語文','英語文','數學','理化'],cnt={};
     rows.forEach(r=>{const o=cnt[r.cls]=cnt[r.cls]||{n:{},g:[]},sj=LOCKN[r.sj]||r.sj;o.n[sj]=(o.n[sj]||0)+1;if(sj==='國語文')o.g.push(r.s);});
     const dbl=g=>g.some(s=>g.includes(s+1)&&Math.floor(s/M.NP)===Math.floor((s+1)/M.NP)&&pn(s+1)===pn(s)+1)?1:0;
-    b+=`<div class="pg"><h2>${T}｜特教鎖課整理</h2><table class="out"><tr><th>班級名稱</th><th>國語文</th><th>英語文</th><th>數學</th><th>國文連2</th><th>理化</th></tr>`+
+    b+=`<div class="pg"><h2>${T}｜特教鎖課整理（${printDate()} 印）</h2><table class="out">${thead(['班級名稱','國語文','英語文','數學','國文連2','理化'])}`+
       Object.keys(cnt).sort().map(c=>{const o=cnt[c];return `<tr><td class="c">${esc(c)}</td>${CS.slice(0,3).map(s=>`<td class="c">${o.n[s]||0}</td>`).join('')}<td class="c">${dbl(o.g)}</td><td class="c">${o.n['理化']||0}</td></tr>`;}).join('')+
-      `</table><p class="note">欄位和「特教鎖課需求」的特教鎖課整理相同。國文連2 是 1 表示這一班有鎖到同一天相鄰的兩節國文。</p></div>`;
+      `</table><p class="note">欄位和「特教鎖課需求」的特教鎖課整理相同。國文連2 是 1 表示這一班有鎖到同一天相鄰的兩節國文。</p>${signLine()}</div>`;
   }else if(outMode==='lock'){
     if(M.flex){const A=assignLocks(M,ST.slot),n=A.locks.filter(k=>!k.extra).length,ex=A.locks.length-n;
       b=`<div class="pg"><p class="note">有學生被抽離的班級節次共 <b>${A.pulled}</b> 個：鎖到 <b>${n}</b> 個（同一科 ${A.same}、改鎖別科 ${n-A.same}），鎖不到 <b>${A.open.length}</b> 個${ex?'；另外為了連堂多鎖 '+ex+' 節':''}。${A.fixAll?`手排鎖課 ${A.fixAll} 節，沿用 <b>${A.fixed}</b> 節。`:''}</p>${A.warn.length?`<div class="probs">${A.warn.map(w=>'<div>'+esc(w)+'</div>').join('')}</div>`:''}</div>`+
-        (A.open.length?`<div class="pg"><h2>${T}｜鎖不到課的節次</h2><table class="out"><tr><th>班級</th><th>節次</th><th>資源班組別</th><th>原因</th></tr>`+A.open.map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.groups.join('、'))}</td><td>${esc(o.why)}</td></tr>`).join('')+`</table><p class="note">這些節次學生照樣到資源班上課，只是原班那一節不是主科。想減少的話，可以到排課頁把那一節移到別的時段。</p></div>`:'')+
-        (A.idle.length?`<div class="pg"><h2>${T}｜手排鎖課沒用到的節次</h2><table class="out"><tr><th>班級</th><th>節次</th><th>手排鎖的老師</th><th>科目</th></tr>`+A.idle.sort((a,c)=>a.cls.localeCompare(c.cls)||a.s-c.s).map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.t)}</td><td>${esc(o.sj||'')}</td></tr>`).join('')+`</table><p class="note">手排時有鎖，但現在的課表這一節沒有這一班的學生被抽離，所以不會交給教務處。九年級英數理如果是教學組統一鎖的，也會列在這裡。</p></div>`:'');}
-    b+=`<div class="pg"><h2>${T}｜資源班抽離課鎖課表</h2><table class="out"><tr><th>班級</th><th>科目</th><th>任課老師</th><th>請排這一科的節次</th><th>節數</th><th>資源班組別</th></tr>`+
+        (A.open.length?`<div class="pg"><h2>${T}｜鎖不到課的節次</h2><table class="out">${thead(['班級','節次','資源班組別','原因'])}`+A.open.map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.groups.join('、'))}</td><td>${esc(o.why)}</td></tr>`).join('')+`</table><p class="note">這些節次學生照樣到資源班上課，只是原班那一節不是主科。想減少的話，可以到排課表把那一節移到別的時段。</p></div>`:'')+
+        (A.idle.length?`<div class="pg"><h2>${T}｜手排鎖課沒用到的節次</h2><table class="out">${thead(['班級','節次','手排鎖的老師','科目'])}`+A.idle.sort((a,c)=>a.cls.localeCompare(c.cls)||a.s-c.s).map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.t)}</td><td>${esc(o.sj||'')}</td></tr>`).join('')+`</table><p class="note">手排時有鎖，但現在的課表這一節沒有這一班的學生被抽離，所以不會交給教務處。九年級英數理如果是教學組統一鎖的，也會列在這裡。</p></div>`:'');}
+    b+=`<div class="pg"><h2>${T}｜資源班抽離課鎖課表（${printDate()} 印）</h2><table class="out">${thead(['班級','科目','任課老師','請排這一科的節次','節數','資源班組別'])}`+
       lockTable(M,ST.slot).map(r=>`<tr><td class="c">${esc(r.cls)}</td><td class="c">${esc(r.subject)}</td><td>${esc(r.teacher)}</td><td>${esc(slotsText(r.slots))}</td><td class="c">${r.slots.length}</td><td>${esc(r.groups.join('、'))}</td></tr>`).join('')+
-      `</table><p class="note">外加課和不鎖課的課不占原班主科時間，沒有列在這張表。</p></div>`;
+      `</table><p class="note">外加課和不鎖課的課不占原班主科時間，沒有列在這張表。</p>${signLine()}</div>`;
   }else if(outMode==='homeroom'||outMode==='card'){
     const of={};M.L.forEach((x,l)=>{const s=ST.slot[l],g=M.G[x.g];if(s<0)return;g.stu.forEach(i=>{(of[i]=of[i]||{})[s]={g,l};});});
     const list=D.students.map((s,i)=>({s,i})).filter(o=>of[o.i]).sort((a,b2)=>sortStu(a.s,b2.s));
-    const cell=o=>o?`<b>${esc(o.g.subject)}</b><br><small>${esc(o.g.name)}${ROOM[o.l]>=0?'・'+esc(D.rooms[ROOM[o.l]].name):''}</small>`:'';
     if(outMode==='card'){const ttl=D.settings.cardTitle||'資源班課表';
-      b=list.filter(o=>!outG||gradeOfCls(o.s.cls)===+outG).map(({s,i})=>`<div class="pg pcard"><h2>${esc(s.cls)}-${esc(s.seat)}${esc(s.name)}　${esc(ttl)}</h2><table class="out pt"><tr><th style="width:100px">節次/時間</th>${DAYS.map(d=>`<th>星期${d}</th>`).join('')}</tr>`+
+      b=list.filter(o=>!outG||gradeOfCls(o.s.cls)===+outG).map(({s,i})=>`<div class="pg pcard"><h2>${esc(s.cls)}-${esc(s.seat)}${esc(s.name)}　${esc(ttl)}</h2>${cmName(s)?`<p class="dt">個管老師：${esc(tCall(cmName(s)))}</p>`:''}<table class="out pt">${thead(['節次/時間'].concat(DAYS.map(d=>'星期'+d)))}`+
         D.periods.map((p,pi)=>`<tr class="${pi%2?'alt':''}"><th>${esc(p.name)}${p.start&&!p.extra?`<small>${esc(p.start)}–${esc(p.end)}</small>`:''}</th>`+DAYS.map((d,di)=>{const o=of[i][di*M.NP+pi];if(!o)return '<td></td>';
-          const c=SUBC[String(o.g.subject)[0]]||SUBC[''],tn=o.g.t>=0?M.T[o.g.t].name:'';
-          return `<td><div class="pc" style="background:${c[0]};border-left-color:${c[1]};color:${c[2]}"><b>${esc(o.g.subject)}</b><span>${esc(tn&&!/(老師|主任|組長)/.test(tn)?tn+'老師':tn)}</span><small>${ROOM[o.l]>=0?'@ '+esc(D.rooms[ROOM[o.l]].name):''}</small></div></td>`;}).join('')+'</tr>').join('')+`</table></div>`).join('')||'<p class="note">這個年級沒有學生有排課。</p>';}
-    else b=[...new Set(list.map(o=>String(o.s.cls)))].map(c=>`<div class="pg"><h2>${T}｜${esc(c)} 班 資源班抽離表</h2><table class="out"><tr><th>座號</th><th>姓名</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}</tr>`+
-      list.filter(o=>String(o.s.cls)===c).map(({s,i})=>`<tr><td class="c">${esc(s.seat)}</td><td>${esc(s.name)}</td>`+DAYS.map((d,di)=>'<td>'+Object.keys(of[i]).map(Number).filter(x=>Math.floor(x/M.NP)===di).sort((a,b2)=>a-b2).map(x=>esc(M.P[x%M.NP].name+' '+of[i][x].g.subject)).join('<br>')+'</td>').join('')+'</tr>').join('')+`</table><p class="note">以上節次學生到資源班上課，請導師協助提醒。</p></div>`).join('');
+          const c=SUBC[String(o.g.subject)[0]]||SUBC[''],tn=tName(o.g.t);
+          return `<td><div class="pc" style="background:${c[0]};border-left-color:${c[1]};color:${c[2]}"><b>${esc(o.g.subject)}</b><span>${esc(tCall(tn))}</span><small>${roomOf(o.l)?'@ '+esc(roomOf(o.l)):''}</small></div></td>`;}).join('')+'</tr>').join('')+`</table></div>`).join('')||'<p class="note">這個年級沒有學生有排課。</p>';}
+    else{
+      // 給導師：每一節寫「原班 ○○課 → 資源班 ○○（老師・教室）」。彈性鎖課時原班鎖的科目可能和資源班不同，照配鎖課的結果寫
+      const lk={};locksNow().forEach(k=>{lk[k.cls+'|'+k.s]=k;});
+      const line=(s,x)=>{const o=of[s.i][x],g=o.g,pn=M.P[x%M.NP].name,to='資源班 '+g.subject+'（'+[tCall(tName(g.t)),roomOf(o.l)].filter(Boolean).join('・')+'）';
+        if(!g.pull)return `<b>${esc(pn)}</b> <span class="tagv">外加</span> → ${esc(to)}`;
+        const k=lk[s.s.cls+'|'+x],from=g.need&&k?'原班 '+k.sj+'課':g.need?'原班（這一節沒有鎖課）':'原班照常上課（不鎖課）';
+        return `<b>${esc(pn)}</b> ${esc(from)} → ${esc(to)}`;};
+      b=[...new Set(list.map(o=>String(o.s.cls)))].map(c=>{const ss=list.filter(o=>String(o.s.cls)===c),cms=[...new Set(ss.map(o=>cmName(o.s)).filter(Boolean))],hr=(D.classHead||{})[c];
+        return `<div class="pg">${dt}<h2>${T}｜${esc(c)} 班 資源班抽離表</h2><p class="note">${hr?'導師：'+esc(tCall(hr))+'　':''}個管老師：${esc(cms.map(tCall).join('、')||'未指定')}</p><table class="out">${thead(['座號','姓名','個管老師'].concat(DAYS.map(d=>'週'+d)))}`+
+        ss.map(o=>`<tr><td class="c">${esc(o.s.seat)}</td><td>${esc(o.s.name)}</td><td class="c">${esc(cmName(o.s))}</td>`+DAYS.map((d,di)=>'<td>'+Object.keys(of[o.i]).map(Number).filter(x=>Math.floor(x/M.NP)===di).sort((a,b2)=>a-b2).map(x=>line(o,x)).join('<br>')+'</td>').join('')+'</tr>').join('')+
+        `</table><p class="note">以上節次學生到資源班上課，請導師協助提醒。標「外加」的是早自習、午休等外加時段，不占原班的課。</p>${signLine('　導師簽收：＿＿＿＿＿＿')}</div>`;}).join('');}
+  }else if(outMode==='regular'){
+    // 給原班任課老師：他哪一班、哪一節有學生被抽離、去上什麼。老師來自鎖課（彈性鎖課照配鎖課結果）
+    const by={};locksNow().forEach(k=>{if(k.t>=0&&!k.extra)(by[k.t]=by[k.t]||[]).push(k);});
+    const outAt=(cls,s)=>{const r=[];M.L.forEach((x,l)=>{if(ST.slot[l]!==s)return;const g=M.G[x.g];if(!g.need)return;g.stu.forEach(i=>{const st=D.students[i];if(String(st.cls)===cls)r.push({st,g,l});});});return r.sort((a,c)=>sortStu(a.st,c.st));};
+    b=Object.keys(by).map(Number).sort((a,c)=>tName(a).localeCompare(tName(c))).map(t=>`<div class="pg">${dt}<h2>${T}｜給 ${esc(tCall(tName(t)))} 的抽離名單</h2><table class="out">${thead(['節次','班級','您這節的課','被抽離的學生','去資源班上'])}`+
+      by[t].sort((a,c)=>a.s-c.s||a.cls.localeCompare(c.cls)).map(k=>{const st=outAt(k.cls,k.s);return `<tr><td>${esc(M.sn(k.s))}</td><td class="c">${esc(k.cls)}</td><td class="c">${esc(k.sj)}</td><td>${esc(st.map(o=>o.st.seat+' '+o.st.name).join('、'))}</td><td>${esc([...new Set(st.map(o=>o.g.subject+'（'+[tCall(tName(o.g.t)),roomOf(o.l)].filter(Boolean).join('・')+'）'))].join('、'))}</td></tr>`;}).join('')+
+      `</table><p class="note">這些節次上面的學生到資源班上課，不在原班教室。</p>${signLine()}</div>`).join('')||'<p class="note">還沒有任何鎖課，請先到「任課老師」填各班原班老師。</p>';
+  }else if(outMode==='cm'){
+    // 一位個管老師一頁：他的個案在哪一班、上哪些組、每週幾節（私密欄位不印）
+    const cms=D.teachers.filter(t=>D.students.some(s=>s.caseMgr===t.id));
+    b=cms.map(t=>{const ss=D.students.map((s,i)=>({s,i})).filter(o=>o.s.caseMgr===t.id).sort((a,c)=>sortStu(a.s,c.s));
+      return `<div class="pg"><h2>${T}｜${esc(tCall(t.name))} 個管個案一覽（${ss.length} 人）</h2><table class="out">${thead(['班級','座號','姓名','組別（老師）','每週節數','上課節次'])}`+
+      ss.map(({s,i})=>{const gs=M.G.filter(g=>g.per&&g.stu.includes(i)),ls=M.L.map((x,l)=>l).filter(l=>gs.includes(M.G[M.L[l].g])&&ST.slot[l]>=0);
+        return `<tr><td class="c">${esc(s.cls)}</td><td class="c">${esc(s.seat)}</td><td>${esc(s.name)}</td><td>${esc(gs.map(g=>g.name+(g.t>=0?'（'+tName(g.t)+'）':'')).join('、')||'尚未分組')}</td><td class="c">${ls.length}</td><td>${esc(slotsText(ls.map(l=>ST.slot[l]).sort((a,c)=>a-c)))}</td></tr>`;}).join('')+'</table></div>';}).join('')||'<p class="note">還沒有學生指定個管老師。</p>';
   }else if(outMode==='student'){
     const of={};M.L.forEach((x,l)=>{const s=ST.slot[l],g=M.G[x.g];if(s<0)return;g.stu.forEach(i=>{(of[i]=of[i]||[]).push({s,g});});});
-    b=`<div class="pg"><h2>${T}｜學生抽離一覽</h2><table class="out"><tr><th>班級</th><th>座號</th><th>姓名</th>${DAYS.map(d=>`<th>週${d}</th>`).join('')}<th>每週</th></tr>`+
+    b=`<div class="pg"><h2>${T}｜學生抽離一覽</h2><table class="out">${thead(['班級','座號','姓名'].concat(DAYS.map(d=>'週'+d),['每週']))}`+
       D.students.map((s,i)=>({s,i})).filter(o=>of[o.i]).sort((a,b2)=>sortStu(a.s,b2.s)).map(({s,i})=>`<tr><td class="c">${esc(s.cls)}</td><td class="c">${esc(s.seat)}</td><td>${esc(s.name)}</td>`+
         DAYS.map((d,di)=>'<td>'+of[i].filter(o=>Math.floor(o.s/M.NP)===di).sort((a,b2)=>a.s-b2.s).map(o=>esc(M.P[o.s%M.NP].name+' '+o.g.name)).join('<br>')+'</td>').join('')+`<td class="c">${of[i].length}</td></tr>`).join('')+'</table></div>';
   }else{
-    b=`<div class="pg"><h2>${T}｜組別總表</h2><table class="out"><tr><th>組別</th><th>科目</th><th>型態</th><th>老師</th><th>教室</th><th>上課節次</th><th>學生</th></tr>`+
+    b=`<div class="pg"><h2>${T}｜組別總表</h2><table class="out">${thead(['組別','科目','型態','老師','教室','上課節次','學生'])}`+
       M.G.filter(g=>g.per).map(g=>{const ls=M.L.map((x,l)=>l).filter(l=>M.L[l].g===g.gi&&ST.slot[l]>=0),rs=[...new Set(ls.map(l=>ROOM[l]).filter(r=>r>=0).map(r=>D.rooms[r].name))];
-        return `<tr><td><b>${esc(g.name)}</b></td><td class="c">${esc(g.subject)}</td><td class="c">${g.pull?'抽離':'外加'}</td><td>${esc(g.t>=0?M.T[g.t].name:'')}</td><td>${esc(rs.join('、'))}</td><td>${esc(slotsText(ls.map(l=>ST.slot[l]).sort((a,c)=>a-c)))}</td><td>${esc(g.stu.map(i=>stuLabel(D.students[i])).join('、'))}</td></tr>`;}).join('')+'</table></div>';
+        return `<tr><td><b>${esc(g.name)}</b></td><td class="c">${esc(g.subject)}</td><td class="c">${esc(g.ref.mode||'抽離')}</td><td>${esc(tName(g.t))}</td><td>${esc(rs.join('、'))}</td><td>${esc(slotsText(ls.map(l=>ST.slot[l]).sort((a,c)=>a-c)))}</td><td>${esc(g.stu.map(i=>stuLabel(D.students[i])).join('、'))}</td></tr>`;}).join('')+'</table></div>';
   }
   $('page').innerHTML=h+`<div id="outArea">${b}</div>`;
 }
