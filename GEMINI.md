@@ -62,7 +62,7 @@ Content-Type: application/json
 
 - 401：沒登入、登入過期，或信箱沒有驗證。
 - 403：不在共用名單、是檢視權限，或請求來自別的網站。
-- 400：模型名稱或 request 不對，或資料太大。
+- 400：模型名稱或 request 不對、模型不在白名單，或資料太大。
 - 429：超過使用次數。`details` 會附上 `google.rpc.RetryInfo.retryDelay`（例如 `"37s"`）。每日上限另外附 `QuotaFailure`，其中 `quotaId` 含 `PerDay`。
 - 404：找不到這個模型。
 - 503：Vertex 出錯。不會洩漏內部訊息。
@@ -74,8 +74,9 @@ Content-Type: application/json
 3. 讀取 `config/access`：信箱要在 `emails` 裡。`viewers`（檢視權限）預設不能用。規則和 `firestore.rules` 的 member／editor 相同。
 4. 檢查使用次數：每人每分鐘 `AI_PER_MINUTE` 次、每天 `AI_PER_DAY` 次。計數器放在 Firestore 的 `aiRate/{uid}`，用交易更新。
 5. 去識別化，這是第二道防線：從 `rc/main` 讀名冊，把文字部分的學生姓名換成 S 代號。`allowTeacherNames` 是 false 時，老師姓名和「王老師」這類只有一位同姓老師的叫法也會換掉。圖片不會更動。
-6. 用 Functions 的服務帳號，經 `@google/genai`（Vertex 模式）呼叫 Gemini。
-7. 寫一筆 `auditLogs`：uid、email、角色、時間、用途、模型、token 數、換掉的姓名數、成功或錯誤碼，以及題目的 SHA-256。只記雜湊，不記題目內容。這些紀錄只有主持人讀得到，網頁不能寫入（見 `firestore.rules`）。
+6. 模型白名單：只接受 Vertex 自動查到的清單裡 flash、flash-lite、pro 三個系列（`gemini-版本-flash…`，不含圖片、語音、即時等特殊模型），或 `AI_ALLOWED_MODELS` 另外列的。`generationConfig` 只轉送 `temperature`、`topP`、`topK`、`maxOutputTokens`、`responseMimeType`、`responseSchema`，`candidateCount` 固定 1；`tools`、`safetySettings` 等其他欄位一律丟掉。
+7. 用 Functions 的服務帳號，經 `@google/genai`（Vertex 模式）呼叫 Gemini。
+8. 寫一筆 `auditLogs`：uid、email、角色、時間、用途、模型、token 數、換掉的姓名數、成功或錯誤碼，以及題目的 SHA-256。只記雜湊，不記題目內容。這些紀錄只有主持人讀得到，網頁不能寫入（見 `firestore.rules`）。
 
 ### 環境變數（都有預設值，可以放在 `functions/.env`）
 
@@ -86,7 +87,8 @@ Content-Type: application/json
 | `AI_PER_MINUTE` / `AI_PER_DAY` | `10` / `200` | 每人的使用次數上限 |
 | `AI_SERVER_DEID` | `true` | 伺服器端是否再去識別化一次 |
 | `AI_ALLOW_VIEWERS` | `false` | 檢視權限能不能用 |
-| `AI_MODELS` | （空） | Vertex 列不出模型時的備用清單，例如 `gemini-2.5-flash,gemini-2.5-pro` |
+| `AI_MODELS` | （空） | Vertex 列不出模型時的備用清單，例如 `gemini-2.5-flash,gemini-2.5-pro`（一樣要符合白名單） |
+| `AI_ALLOWED_MODELS` | （空） | 白名單以外另外開放的模型，用逗號分隔 |
 
 ## 部署（還沒有部署；以下由管理者執行）
 
