@@ -547,5 +547,8 @@ const synth=(seed,K,OFF)=>{K=K||3;OFF=OFF||3;const r=rng(seed),ri=n=>Math.floor(
   const R=C.solve(M,S,{seed:3});ok(R.slot[l]===s,'一鍵排課不會移動固定時段的課');
 }
 
+// 40～45. 額外功能（導師週報、學年交接、老師工作量、教室使用率、鎖課異動、家長聯絡）：見 test-extras.js
+require('./test-extras.js').run(ok);
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);

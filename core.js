@@ -869,4 +869,155 @@ function suggestCaseMgr(D,opt){
   return {list,summary};
 }
 const CORE={suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash,promoteCls,packAssign,unpackAssign,schedStats,schedDiff};
+/* ───── 額外功能（extras.js 的畫面用；這裡只算，不碰畫面）：導師週報、學年交接、老師工作量、教室使用率、鎖課異動、家長聯絡 ───── */
+Object.assign(CORE,(function(){
+const xYmd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function xDate(s){const m=String(s||'').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
+function addDays(s,n){const d=xDate(s);if(!d)return '';d.setDate(d.getDate()+n);return xYmd(d);}
+// 那一週的星期一（週日算前一週）
+function weekStartOf(s){const d=xDate(s);if(!d)return '';d.setDate(d.getDate()-((d.getDay()+6)%7));return xYmd(d);}
+function daysBetween(a,b){const x=xDate(a),y=xDate(b);if(!x||!y)return NaN;return Math.round((y-x)/864e5);}
+const md=s=>{const d=xDate(s);return d?(d.getMonth()+1)+'/'+d.getDate():String(s||'');};
+const XST={in:'已到',late:'遲到',leave:'請假',abs:'缺席'};
+const callName=n=>{n=String(n||'').trim();return n&&!/(老師|主任|組長|校長|導師)$/.test(n)?n+'老師':n;};
+
+/* 導師週報：weekStart 那一週（週一～週五）每位學生被抽出去上的課與出缺席。
+   只算正式課表（D.assign）；外加課（早自習）不在原班上課時間，預設不列（opt.all 才列）。
+   ATT 的格式見 checkin.js。opt.today：之後的日子算「還沒上」，不算未點名 */
+function weeklySummary(D,ATT,weekStart,opt){
+  opt=opt||{};ATT=ATT||{};
+  const ws=weekStartOf(weekStart),today=opt.today||'',M=opt.M||compile(D),slot=opt.slot||toState(M,D).slot;
+  const dates=[0,1,2,3,4].map(d=>addDays(ws,d)),byS={},seen=new Set(),sIdx={};D.students.forEach(s=>{sIdx[s.id]=s;});
+  const add=(sid,date,pi,p,g,rec)=>{if(!sIdx[sid])return;
+    const r=rec&&rec[sid],any=rec&&Object.keys(rec).some(k=>k[0]!=='_'),future=!!today&&date>today;
+    const st=r?r.st:(any&&!future?'abs':'');
+    (byS[sid]=byS[sid]||[]).push({date,pi,pid:p?p.id:'',pname:p?p.name:'',gid:g.id,gname:g.name,subject:g.subject||'',st,tin:r&&r.tin||'',note:r&&r.note||'',future});};
+  M.L.forEach((x,l)=>{const s=slot[l];if(s<0)return;const g=M.G[x.g];if(!g.pull&&!opt.all)return;
+    const d=Math.floor(s/M.NP),pi=s%M.NP,p=M.P[pi],date=dates[d],key=g.ref.id+'@'+p.id,rec=(ATT[date]||{})[key]||null;
+    if(seen.has(date+'|'+key))return;seen.add(date+'|'+key);
+    const roster=rec&&Array.isArray(rec._roster)?rec._roster:g.stu.map(i=>D.students[i].id);
+    new Set(roster.concat(rec?Object.keys(rec).filter(k=>k[0]!=='_'):[])).forEach(sid=>add(sid,date,pi,p,{id:g.ref.id,name:g.name,subject:g.subject},rec));});
+  // 這一週有點名、但現在的課表已經沒有的節次（週中改過課表）：照點名紀錄算
+  dates.forEach(date=>{const day=ATT[date]||{};for(const key in day){if(seen.has(date+'|'+key))continue;
+    const rec=day[key],at=key.lastIndexOf('@'),gid=key.slice(0,at),pid=key.slice(at+1),g0=D.groups.find(x=>x.id===gid),info=rec._info||{};
+    if(g0&&g0.mode==='外加'&&!opt.all)continue;
+    const pi=D.periods.findIndex(x=>x.id===pid),p=pi>=0?D.periods[pi]:{id:pid,name:info.p||''};
+    if(pi>=0&&D.periods[pi].extra&&!opt.all)continue;
+    const g={id:gid,name:g0?g0.name:(info.g||''),subject:g0?g0.subject:''};
+    new Set((Array.isArray(rec._roster)?rec._roster:[]).concat(Object.keys(rec).filter(k=>k[0]!=='_'))).forEach(sid=>add(sid,date,pi,p,g,rec));}});
+  const classes={};
+  Object.keys(byS).forEach(sid=>{const s=sIdx[sid],rows=byS[sid].sort((a,b)=>a.date.localeCompare(b.date)||a.pi-b.pi);
+    const c={n:0,in:0,late:0,leave:0,abs:0,none:0,future:0};
+    rows.forEach(r=>{if(r.future){c.future++;return;}c.n++;if(r.st==='in'||r.st==='late')c.in++;if(r.st)c[r.st]++;else c.none++;});
+    const cls=String(s.cls);(classes[cls]=classes[cls]||[]).push({id:sid,cls,seat:s.seat,name:s.name,rows,c});});
+  const head=D.classHead||{};
+  return {weekStart:ws,weekEnd:dates[4],dates,classes:Object.keys(classes).sort().map(cls=>({cls,head:head[cls]||'',
+    students:classes[cls].sort((a,b)=>(+a.seat||0)-(+b.seat||0)||String(a.name).localeCompare(String(b.name)))}))};
+}
+// 一班的週報草稿（給導師，用 LINE 傳）。opt.from：署名
+function weeklyText(W,entry,opt){opt=opt||{};
+  const L=[(entry.head?callName(entry.head):'導師')+'您好：',entry.cls+' 班 '+md(W.weekStart)+'～'+md(W.weekEnd)+' 到資源班上課的情形：'];
+  entry.students.forEach(s=>{const done=s.rows.filter(r=>!r.future),sub={};done.forEach(r=>{const k=r.subject||r.gname;sub[k]=(sub[k]||0)+1;});
+    const subj=Object.keys(sub).map(k=>k+' '+sub[k]+' 節').join('、');
+    if(!done.length){L.push('・'+s.name+'：這週的課還沒上。');return;}
+    const when=r=>md(r.date)+' '+r.pname,parts=[];
+    [['late','遲到'],['leave','請假'],['abs','缺席']].forEach(([k,n])=>{const rs=done.filter(r=>r.st===k);if(rs.length)parts.push(n+' '+rs.length+' 次（'+rs.map(when).join('、')+'）');});
+    const notes=done.filter(r=>r.note).map(r=>md(r.date)+' '+r.note);
+    let line='・'+s.name+'：'+subj+'，'+(parts.length?parts.join('、'):s.c.none?'其餘正常':'全勤')+'。';
+    if(s.c.none===s.c.n)line='・'+s.name+'：'+subj+'。';
+    if(notes.length)line+='備註：'+notes.join('；')+'。';
+    L.push(line);});
+  L.push('有任何問題再跟我說，謝謝！');if(opt.from)L.push(String(opt.from));
+  return L.join('\n');
+}
+
+/* 學年交接檢查：和上次的基準（D.handoverBase）比、加上資料本身的檢查。today 是 'YYYY-MM-DD'。
+   每一項 {k, level:'bad'|'warn', t（哪一個）, d（怎麼了）, go:{to,id}} */
+const XDUE=[['iepDate','IEP 會議'],['reviewDate','下次檢討'],['certExp','鑑定有效期限']];
+function handoverBase(D,at){const s={};D.students.forEach(x=>{s[x.id]={cls:String(x.cls==null?'':x.cls),seat:String(x.seat==null?'':x.seat),caseMgr:x.caseMgr||'',name:String(x.name||'')};});return {at:at||Date.now(),s};}
+function handoverCheck(D,base,today,opt){
+  opt=opt||{};const days=opt.days||60,items=[],lab=s=>String(s.cls)+' '+(s.seat!==''&&s.seat!=null?String(s.seat).padStart(2,'0')+' ':'')+(s.name||'');
+  const put=(k,level,t,d,go)=>items.push({k,level,t,d,go});
+  if(base&&base.s){const ids=new Set();
+    D.students.forEach(s=>{ids.add(s.id);const b=base.s[s.id];
+      if(!b){put('in','warn',lab(s),'新加入（轉入）',{to:'stu',id:s.id});return;}
+      const c=String(s.cls)!==b.cls,se=String(s.seat)!==b.seat;
+      if(c||se)put('moved','warn',lab(s),[c?'班級 '+b.cls+' → '+s.cls:'',se?'座號 '+b.seat+' → '+s.seat:''].filter(Boolean).join('、'),{to:'stu',id:s.id});});
+    Object.keys(base.s).forEach(id=>{if(ids.has(id))return;const b=base.s[id];put('out','warn',lab(b),'已不在名冊（轉出）',{to:'stulist'});});}
+  const cls=[...new Set(D.students.map(s=>String(s.cls)).filter(Boolean))].sort(),tt=D.tt||{};
+  if(cls.length&&!Object.keys(tt).length)put('tt','warn','全校課表','還沒有讀進來',{to:'tt'});
+  else cls.filter(c=>!tt[c]).forEach(c=>put('tt','warn',c+' 班','有學生，全校課表沒有這一班',{to:'tt'}));
+  const tids=new Set(D.teachers.map(t=>t.id));
+  D.students.forEach(s=>{if(!s.caseMgr)put('cm','warn',lab(s),'沒有個管',{to:'stu',id:s.id});
+    else if(!tids.has(s.caseMgr))put('cm','bad',lab(s),'個管已不在名冊',{to:'stu',id:s.id});});
+  D.students.forEach(s=>XDUE.forEach(([k,n])=>{const v=s[k];if(!v)return;const d=daysBetween(today,v);if(isNaN(d)||d>days)return;
+    put('due',d<0?'bad':'warn',lab(s),n+' '+v+(d<0?' 已過 '+(-d)+' 天':d===0?' 就是今天':' 還有 '+d+' 天'),{to:'stu',id:s.id});}));
+  const sIdx={};D.students.forEach(s=>{sIdx[s.id]=s;});
+  D.groups.forEach(g=>{if(!g.grade)return;const bad=(g.students||[]).map(id=>sIdx[id]).filter(s=>s&&gradeOfCls(s.cls)!==+g.grade);
+    if(bad.length)put('grade','bad',g.name||'（未命名）',(GRADE[+g.grade]||g.grade+' 年級')+'的課，有 '+bad.map(s=>s.cls+' '+s.name).join('、'),{to:'group',id:g.id});});
+  return {items,hasBase:!!(base&&base.s),at:base&&base.at||0};
+}
+
+/* 老師工作量：每位資源班老師的鐘點、排了幾節、幾門課、個管幾位、段考監考幾節、IEP 會議幾場 */
+const xBare=n=>normName(String(n||'').replace(/（[^）]*）|\([^)]*\)/g,'').trim());
+function teacherLoad(D,M,slot,E){
+  M=M||compile(D);slot=slot||toState(M,D).slot;const per={},sameName=(a,b)=>!!a&&xBare(a)===xBare(b);
+  M.L.forEach((x,l)=>{if(slot[l]<0)return;const g=M.G[x.g];if(g.t<0)return;const id=M.T[g.t].id;per[id]=(per[id]||0)+1;});
+  const vals=o=>Object.values(o&&typeof o==='object'?o:{}),pro=vals(E&&E.proctorOf),sup=vals(E&&E.supportOf);
+  const meets=[];((D.iep&&D.iep.rounds)||[]).forEach(R=>(R.meets||[]).forEach(m=>{if(m&&m.at)meets.push(m);}));
+  return D.teachers.filter(t=>t.role==='資源班').map(t=>{const hours=+t.hours||0,p=per[t.id]||0;
+    const iep=meets.filter(m=>(m.p||[]).some(e=>e&&(e[0]==='t:'+t.id||(String(e[0]).slice(0,2)==='n:'&&sameName(String(e[0]).slice(2),t.name))))).length;
+    return {id:t.id,name:t.name,hours,per:p,diff:hours?p-hours:0,groups:D.groups.filter(g=>g.teacher===t.id&&g.on!==false).length,
+      cases:D.students.filter(s=>s.caseMgr===t.id).length,proctor:pro.filter(n=>sameName(n,t.name)).length,support:sup.filter(n=>sameName(n,t.name)).length,iep,
+      flag:!hours?'':p>hours?'over':p<hours?'under':''};});
+}
+
+/* 教室使用率：每間教室每一節是哪幾節課（照 assignRooms 分的教室）。rfix：這份排法指定的教室（toState 的 rfix）
+   使用率的分母是「一般節次、不含全校共同不排」的格子數；早自習有用到也算進分子 */
+function roomUsage(M,slot,rfix){
+  const keep=M.lroom;if(rfix)M.lroom=rfix;const room=assignRooms(M,slot);M.lroom=keep;
+  const NR=M.NR,NS=M.NS,cells=[...Array(NR)].map(()=>[...Array(NS)].map(()=>[])),none=[];
+  M.L.forEach((x,l)=>{const s=slot[l];if(s<0)return;const g=M.G[x.g],o={l,gi:x.g,name:g.name,subject:g.subject,teacher:g.t>=0?M.T[g.t].name:''};
+    if(room[l]>=0)cells[room[l]][s].push(o);else none.push(Object.assign({s},o));});
+  const reg=[];for(let s=0;s<NS;s++)if(!M.P[s%M.NP].extra&&!M.blocked[s])reg.push(s);
+  const rooms=M.D.rooms.map((r,i)=>{let used=0;for(let s=0;s<NS;s++)if(cells[i][s].length&&(reg.includes(s)||M.P[s%M.NP].extra))used++;
+    return {i,id:r.id,name:r.name,spare:!!r.spare,used,total:reg.length,pct:reg.length?Math.round(Math.min(used,reg.length)/reg.length*100):0};});
+  return {rooms,cells,none,reg,NS,NP:M.NP};
+}
+function freeRooms(U,s){return U.rooms.filter(r=>!(U.cells[r.i][s]||[]).length);}
+
+/* 鎖課異動：每一筆鎖課 {cls, k（時段 '星期-節次id'）, sj, t（老師姓名）} */
+const lkKey=o=>JSON.stringify([o.cls,o.k,o.sj,o.t]);
+function lockSort(a){return a.sort((x,y)=>String(x.cls).localeCompare(String(y.cls))||String(x.k).localeCompare(String(y.k))||String(x.sj).localeCompare(String(y.sj)));}
+// 現在這份排法給教務處的鎖課清單：彈性鎖課照配鎖課（assignLocks），其他照 lockTable
+function lockList(M,slot){const out=[];
+  if(M.flex)assignLocks(M,slot).locks.forEach(k=>out.push({cls:String(k.cls),k:M.s2key(k.s),sj:k.sj,t:M.T[k.t]?M.T[k.t].name:''}));
+  else lockTable(M,slot).forEach(r=>r.slots.forEach(s=>out.push({cls:String(r.cls),k:M.s2key(s),sj:r.subject,t:r.teacher||''})));
+  const seen=new Set();return lockSort(out.filter(o=>{const k=lkKey(o);if(seen.has(k))return false;seen.add(k);return true;}));}
+function lockDiff(prev,cur){prev=prev||[];cur=cur||[];
+  const P=new Set(prev.map(lkKey)),C=new Set(cur.map(lkKey));
+  return {added:lockSort(cur.filter(o=>!P.has(lkKey(o)))),removed:lockSort(prev.filter(o=>!C.has(lkKey(o))))};}
+const lockPack=list=>list.map(o=>[o.cls,o.k,o.sj,o.t]);
+const lockUnpack=a=>(a||[]).filter(Array.isArray).map(p=>({cls:String(p[0]||''),k:String(p[1]||''),sj:String(p[2]||''),t:String(p[3]||'')}));
+// 確定課表時記一筆：和上次確定時的清單（D.lockLast）比，最多留 50 筆
+function lockLogAdd(D,cur,meta){meta=meta||{};
+  const prev=D.lockLast&&Array.isArray(D.lockLast.list)?lockUnpack(D.lockLast.list):null,d=lockDiff(prev||[],cur);
+  const e={at:meta.at||Date.now(),by:meta.by||'本機',label:String(meta.label||''),added:d.added,removed:d.removed,n:cur.length};if(!prev)e.first=true;
+  D.lockLog=(Array.isArray(D.lockLog)?D.lockLog:[]).concat([e]).slice(-50);D.lockLast={at:e.at,list:lockPack(cur)};return e;}
+
+/* 家長聯絡紀錄：D.contacts[學生id]＝[{id,date,how,who,note}]。since 之後（含當天）的整理成一段文字，給 IEP 會議用 */
+const CONTACT_HOW=['電話','LINE','面談','聯絡簿','其他'];
+function contactDigest(D,sid,since){
+  const s=D.students.find(x=>x.id===sid),all=(((D.contacts||{})[sid])||[]).filter(e=>e&&e.date);
+  const list=all.filter(e=>!since||String(e.date)>=String(since)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const by={};list.forEach(e=>{const h=CONTACT_HOW.includes(e.how)?e.how:'其他';by[h]=(by[h]||0)+1;});
+  const yr=new Set(list.map(e=>String(e.date).slice(0,4))).size>1,dt=e=>yr?String(e.date):md(e.date);
+  const head=(s?String(s.cls)+' '+s.name+'　':'')+'家長聯絡紀錄'+(since?'（'+since+' 起）':'')+'：共 '+list.length+' 次'+(list.length?'（'+CONTACT_HOW.filter(h=>by[h]).map(h=>h+' '+by[h]).join('、')+'）':'');
+  const text=[head].concat(list.map(e=>'・'+dt(e)+' '+(CONTACT_HOW.includes(e.how)?e.how:'其他')+(e.who?'｜'+e.who:'')+(e.note?'：'+String(e.note).replace(/\s*\n\s*/g,' '):''))).join('\n');
+  return {n:list.length,list,by,text};
+}
+
+return {weeklySummary,weeklyText,handoverBase,handoverCheck,teacherLoad,roomUsage,freeRooms,lockList,lockDiff,lockPack,lockUnpack,lockLogAdd,contactDigest,
+  CONTACT_HOW,addDays,weekStartOf,daysBetween};
+})());
 if(typeof module!=='undefined')module.exports=CORE;
