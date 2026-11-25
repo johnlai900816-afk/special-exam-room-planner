@@ -13,8 +13,9 @@
       allow create, update: if editor()
         && h.matches('^[0-9a-f]{64}$')
         && request.resource.data.exp is timestamp
+        && request.resource.data.exp < request.time + duration.value(120, 'd')
         && request.resource.data.r is string && request.resource.data.r.matches('^[A-Za-z0-9_-]{1,60}$')
-        && request.resource.data.keys is list && request.resource.data.keys.size() <= 400
+        && request.resource.data['keys'] is list && request.resource.data['keys'].size() <= 400
         && request.resource.data.stu is list && request.resource.data.stu.size() <= 80
         && request.resource.data.who in ['t', 'p'];
       allow delete: if editor();
