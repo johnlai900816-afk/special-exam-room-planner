@@ -116,6 +116,7 @@ h3{font-family:var(--serif);font-size:var(--fs-lg);margin:28px 0 10px;letter-spa
 h3:first-child{margin-top:0}
 .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .vsep{display:inline-block;width:1px;height:22px;background:var(--line2);margin:0 4px;flex:none;align-self:center}
+.bar>button.danger:last-child{margin-left:auto}
 button.b{border:1px solid var(--line2);background:var(--card);border-radius:var(--r-md);padding:7px 14px;min-height:40px;font-size:var(--fs-base);cursor:pointer;font-family:inherit;color:var(--ink);transition:background .25s var(--ease),border-color .25s var(--ease)}
 button.b:hover{background:var(--hover);border-color:var(--mute)}
 button.b.pri{background:var(--acc);color:var(--on-acc);border-color:var(--acc);font-weight:700}
@@ -227,7 +228,7 @@ table.grid td.g{background:repeating-linear-gradient(135deg,var(--hatch-1),var(-
 
 /* 排課板 */
 #busy{position:fixed;inset:0;background:var(--veil);color:var(--ink);display:none;align-items:center;justify-content:center;font-size:var(--fs-xl);font-weight:700;z-index:98}
-#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 20px;min-height:40px;border-radius:var(--r-lg);display:none;z-index:99;box-shadow:var(--shadow-pop);max-width:90vw;font-size:var(--fs-base);line-height:1.5}
+#toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 20px;min-height:40px;border-radius:var(--r-lg);display:none;z-index:99;box-shadow:var(--shadow-pop);width:max-content;max-width:90vw;font-size:var(--fs-base);line-height:1.5}
 #toast:has(button){padding:4px 4px 4px 18px}
 /* 吐司上的「復原」與關閉 */
 #toast .toast-act,#toast .toast-x{border:0;background:none;color:inherit;font:inherit;cursor:pointer;min-height:40px;min-width:40px;border-radius:var(--r-sm);vertical-align:middle}
