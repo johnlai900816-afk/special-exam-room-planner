@@ -38,6 +38,11 @@ describe("發布內容", () => {
     expect(x.out).not.toHaveProperty("r");
     expect(x.exp).toBe(IEP.expMs(R));
   });
+  it("公開內容不放任何「有課」：publicDoc 沒有 busy，有人塞進來也不寫", () => {
+    expect(doc).not.toHaveProperty("busy");
+    const x = C.cleanDoc({ ...doc, busy: { [o.keys[0]]: "資源班課" } }, now);
+    expect(x.out).not.toHaveProperty("busy");
+  });
   it("過期、超過 120 天、節次格式不對、出席者代號不對都擋", () => {
     expect(() => C.cleanDoc({ ...doc, expMs: now - 1 }, now)).toThrow(/期限已過/);
     expect(() => C.cleanDoc({ ...doc, expMs: now + 130 * 864e5 }, now)).toThrow(/120/);

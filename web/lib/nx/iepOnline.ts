@@ -6,7 +6,7 @@
 import { collection, getDocs } from "firebase/firestore";
 import { OLD_APP } from "@/components/Planned";
 import { firebase } from "../firebase";
-import { IEP, type Busy, type LocalTokens, type Round } from "../iep";
+import { IEP, type LocalTokens, type Round } from "../iep";
 import type { RcData } from "../types";
 import type { RepoScope } from "../repo";
 import { callNx } from "./session";
@@ -61,12 +61,13 @@ export function urlOf(R: Round, pk: string): string {
   return t ? OLD_APP + "iep.html?k=" + t : "";
 }
 
-/** 發布（或更新線上內容）：每位出席者一份 iepTok/{雜湊}。會改 R（tokH、pub、pubAt），呼叫的人要存檔 */
-export async function publish(scope: RepoScope, D: RcData, R: Round, busy: Busy): Promise<number> {
+/** 發布（或更新線上內容）：每位出席者一份 iepTok/{雜湊}（不放任何「有課」；nxIepPublish 整份覆蓋，舊文件的 busy 也會清掉）。
+    會改 R（tokH、pub、pubAt），呼叫的人要存檔 */
+export async function publish(scope: RepoScope, D: RcData, R: Round): Promise<number> {
   const local = localTokens(R.id);
   const list = IEP.ensureTokens(D, R, local);
   saveTokens(R.id, local);
-  const docs = list.map((o) => ({ h: R.tokH![o.k], doc: { ...IEP.publicDoc(D, R, o, busy), pk: o.k } }));
+  const docs = list.map((o) => ({ h: R.tokH![o.k], doc: { ...IEP.publicDoc(D, R, o), pk: o.k } }));
   const kept = new Set(docs.map((d) => d.h));
   const drop = (R.pub || []).filter((h) => !kept.has(h));
   await callNx("nxIepPublish", { sid: scope.sid, termId: scope.termId, roundId: R.id, docs, drop });
@@ -83,14 +84,14 @@ export async function publish(scope: RepoScope, D: RcData, R: Round, busy: Busy)
 }
 
 /** 這台電腦沒有鑰匙的人：換一把新的（舊連結失效） */
-export async function regen(scope: RepoScope, D: RcData, R: Round, busy: Busy, keys: string[]): Promise<number> {
+export async function regen(scope: RepoScope, D: RcData, R: Round, keys: string[]): Promise<number> {
   const local = localTokens(R.id);
   const ppl = IEP.webPeople(D, R).filter((o) => keys.includes(o.k) && R.tokH?.[o.k]);
   const olds: string[] = [];
   const docs = ppl.map((o) => {
     const r = IEP.regenTok(R, local, o.k);
     if (r.old && r.old !== r.h) olds.push(r.old);
-    return { h: r.h, doc: { ...IEP.publicDoc(D, R, o, busy), pk: o.k } };
+    return { h: r.h, doc: { ...IEP.publicDoc(D, R, o), pk: o.k } };
   });
   await callNx("nxIepPublish", { sid: scope.sid, termId: scope.termId, roundId: R.id, docs, drop: olds });
   saveTokens(R.id, local);

@@ -35,7 +35,7 @@ export function inviteDocs(D: RcData, R: Round, readers: string[], busy?: Busy):
     if (!o.k.startsWith("t:") || !o.keys.length) return;
     if (quick && !o.meets.some((x) => x.m.at)) return;
     const tid = o.k.slice(2);
-    const p = IEP.publicDoc(D, R, o, busy);
+    const p = IEP.publicDoc(D, R, o);
     const meets = o.meets
       .filter((x) => x.m.at)
       .map((x) => {
@@ -55,7 +55,8 @@ export function inviteDocs(D: RcData, R: Round, readers: string[], busy?: Busy):
       due: p.due,
       keys: quick ? [] : p.keys,
       ps: quick ? [] : p.ps,
-      busy: quick ? {} : p.busy,
+      // 不放任何「有課」：和公開頁一樣（承辦有課的節次建立調查時就拿掉了，其他人的只在發起人的 app 裡用）
+      busy: {},
       stu: p.stu,
       meets,
     };

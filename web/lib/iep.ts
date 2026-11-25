@@ -45,6 +45,10 @@ export interface Round {
   tokH?: Record<string, string>;
   pub?: string[];
   pubAt?: number;
+  /** 承辦挑的時段（有勾就只問這些） */
+  pick?: string[];
+  /** 承辦有課的節次也問 */
+  inclBusy?: number;
   [k: string]: unknown;
 }
 export interface SlotInfo {
@@ -126,7 +130,8 @@ export interface PublicDoc {
   host: string;
   keys: string[];
   ps: { id: string; n: string; t: string }[];
-  busy: Record<string, string>;
+  /** 舊版發布的才有；新版不放任何「有課」 */
+  busy?: Record<string, string>;
   stu: { c: string; r: string; q: number; cm: string }[];
   keep: string;
   expMs: number;
@@ -137,6 +142,28 @@ export interface IepCfg {
   req: Record<string, number>;
   admin: [string, string, number?][];
   subj: number;
+}
+
+/** 承辦挑時段的格子（iep.js pickGrid） */
+export interface PickCell {
+  k: string;
+  busy: boolean;
+  why: string;
+  subj: string;
+  tint: "" | "avoid" | "prefer";
+  on: boolean;
+}
+export interface PickGrid {
+  cols: { p: string; name: string; time: string; st: string }[];
+  rows: { date: string; label: string; cells: (PickCell | null)[] }[];
+  hasTT: boolean;
+}
+export interface BuildRes {
+  base: number;
+  cut: number;
+  kept: number;
+  why: Record<string, string>;
+  hosts: string[];
 }
 
 export interface IepApi {
@@ -220,6 +247,22 @@ export interface IepApi {
   addMeetAs(D: RcData, R: Round, sid: string, tid: string): Meet | null;
   newRoundAs(D: RcData, tid: string, opt?: Record<string, unknown>): Round;
   selfAnswer(D: RcData, R: Round, pk: string, free: string[], note?: string): boolean;
+  AVOID_DEF: string[];
+  PREFER_DEF: string[];
+  hintLists(D: RcData | null): { avoid: string[]; prefer: string[] };
+  subjHint(sj: string, lists?: { avoid: string[]; prefer: string[] }): "" | "avoid" | "prefer";
+  subjNorm(s: string): string;
+  ttCell(D: RcData, cls: string, w: number, pid: string): { s: string; t?: string } | null;
+  /** 日期區間的星期一到五（扣掉放假日）× 勾的節次 */
+  baseKeys(D: RcData, d1: string, d2: string, ps: string[]): string[];
+  /** 承辦老師（要扣掉他忙的節次） */
+  hostsOf(D: RcData, R: Partial<Round> | null, sids?: string[]): string[];
+  /** 一位老師在這些時段為什麼不行（只在 app 裡看，不放進公開資料） */
+  tBusy(D: RcData, tid: string, keys: string[], ctx?: unknown, except?: Round): Record<string, string>;
+  pickGrid(D: RcData, o: { keys: string[]; sids: string[]; busy?: Record<string, string>; pick?: string[] }): PickGrid;
+  suggestPick(G: PickGrid): string[];
+  /** 照日期、節次、承辦忙碌、勾選重算 R.slots（與每場的 m.sl） */
+  buildSlots(D: RcData, R: Round, ctx?: unknown): BuildRes;
 }
 
 export const IEP = IEP_JS as unknown as IepApi;

@@ -132,6 +132,8 @@ describe("IEP：只看得到、改得到自己的", () => {
     expect(Object.keys(want)).toContain(rid + "_r1");
     // 公開內容只有班級座號，沒有姓名
     expect(JSON.stringify(want[rid + "_r1"])).not.toContain("陳小華");
+    // 也不放任何人哪一節有課
+    expect(want[rid + "_r1"].busy).toEqual({});
 
     const r1 = createMemoryRepo(T("r1"), t.store);
     const L1 = await r1.load();

@@ -13,8 +13,10 @@ const HASH_RE = /^[0-9a-f]{64}$/;
 const SLOT_RE = /^\d{4}-\d{2}-\d{2}\|[A-Za-z0-9_:\-]{1,20}$/;
 const PK_RE = /^[tnx]:[^/]{1,60}$/;
 const LIM = { keys: 400, stu: 80, days: 120, docs: 300 };
-/** 公開頁讀得到的欄位（和 iep-core.js PUBLIC 一樣） */
+/** 公開頁讀得到的欄位（和 iep-core.js PUBLIC 一樣；busy 只為了讀舊版發布的文件） */
 const PUBLIC = ['v', 'who', 'once', 'name', 'title', 'round', 'kind', 'd1', 'd2', 'due', 'host', 'keys', 'ps', 'busy', 'stu', 'keep'];
+/** 新版寫得進去的欄位：不收任何「有課」原因（busy）。寫入是整份覆蓋（merge:false），舊文件的 busy 也一起清掉 */
+const WRITE = PUBLIC.filter((k) => k !== 'busy');
 
 const str = (v, n) => typeof v === 'string' && v.length <= n;
 
@@ -29,7 +31,7 @@ function mayTouch(token, sid, round) {
 function cleanDoc(d, now) {
   if (!d || typeof d !== 'object') throw bad('內容格式不對');
   const out = {};
-  PUBLIC.forEach((k) => {
+  WRITE.forEach((k) => {
     if (d[k] !== undefined) out[k] = d[k];
   });
   if (!['t', 'p'].includes(out.who)) throw bad('who 只能是 t 或 p');
@@ -54,4 +56,4 @@ function mirrorPath(tok, round, h) {
   return `schools/${tok.sid}/terms/${tok.termId}/iep/${round}/responses/${h}`;
 }
 
-module.exports = { ID_RE, TERM_RE, ROUND_RE, HASH_RE, SLOT_RE, PK_RE, LIM, PUBLIC, mayTouch, cleanDoc, mirrorPath };
+module.exports = { ID_RE, TERM_RE, ROUND_RE, HASH_RE, SLOT_RE, PK_RE, LIM, PUBLIC, WRITE, mayTouch, cleanDoc, mirrorPath };
