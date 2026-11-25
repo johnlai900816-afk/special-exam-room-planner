@@ -385,3 +385,38 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 5. **普通班老師要不要帳號**：還是先只開資源班老師。
 6. **搬移日**：哪一天起只用新版編輯、舊版轉唯讀。
 7. **AI**：要不要開、哪些任務、每校每天的上限。
+
+---
+
+## 8. Phase 2：老師端（`/me/…`，新資料模型）
+
+| 頁面 | 網址 | 讀寫 |
+|---|---|---|
+| 今天 | `/me/` | 我的課（現在這一節）、待辦（要點名、IEP 要填空堂、可以排的調查、個管學生 30 天內到期）、要開的會 |
+| 我的學生 | `/me/students/`、個案 `/me/student/?id=` | 學生、組別、課表、出缺席；**個管才有**私密欄位、家長聯絡、段考服務（`students/{id}/private/profile`，`Repo.patch` 帶 rev） |
+| 我的 IEP | `/me/iep/?tab=inv|survey|plan|quick` | 填空堂（`iepInvite`）、調查①②③④、排定與通知（開會通知和舊版逐字相同，`test/iep-print.test.ts`）、直接開會 |
+| 點名 | `/me/check/` | 我的課、最近的課；`Repo.mark` |
+| 我的設定 | `/me/settings/` | 不排課時段（`Repo.saveMyOff`）、監考（`exam/{eid}` 的 proctorOf／supportOf）、深色、字級、公用電腦模式 |
+
+- 登入（`lib/nx/session.tsx`）：Google → 沒有 claims 就呼叫 `nxAcceptInvite` → `getIdToken(true)` → 讀 `schools/{sid}.currentTerm`。
+  老師 → Firestore 版 Repo；管理者／編輯／檢視這一階段只看到「管理功能請先用舊版」。沒登入或單機 → 範例資料（記憶體版 Repo，可以選看哪位老師）。
+- 過渡期：`schools/{sid}.mode=='legacy'` 時老師端只讀；`schools/{sid}.native`（集合名稱陣列，和 `nxLink/main.native` 一致，由 Function 寫）列出的部分可以寫。
+- `iep.js`、`teacher.js` 直接 import（`lib/iep.ts`、`lib/teach.ts`，只補型別），和 `core.js` 一樣不複製。
+- 舊版 IEP 的 QR 小單與「③ 連結與 QR」流程正在改版，新版放在獨立元件 `components/iep/QrSlips.tsx`、`components/iep/Publish.tsx`，之後照新設計改這兩個檔。
+
+**IEP 線上連結**：公開頁（舊版 `iep.html`）與 `iepGetSurvey`／`iepSubmit` 不動。鑰匙只存在發布的那台電腦（`rc-iep-tok`，和舊版同一個鍵；公用電腦模式在 sessionStorage）。
+新版老師不在舊名單的「編輯」裡，規則不讓他寫 `iepTok`，所以新增 `functions/nx-iep.js`（純邏輯 `nx-iep-core.js`，`test/nx-iep.test.ts`）：
+
+| Function | 做什麼 |
+|---|---|
+| `nxIepPublish({sid, termId, roundId, docs:[{h, doc}], drop})` | 呼叫的人是那份調查單的 readers（或管理者／編輯）才行；檢查欄位與上限（400 節、80 位、120 天）後寫 `iepTok/{h}`，多加 `sid`、`termId`；別的調查用過的雜湊不能蓋；`drop` 只刪同一份調查單的 |
+| `nxIepClose({sid, termId, roundId})` | 結束調查：刪這份調查單的 `iepTok`、`iepResp` 回覆、新位置的 `responses` |
+| `nxIepMirror`（`iepResp/{round}/r/{h}` 觸發） | `iepTok/{h}` 有 `sid`、`termId` 就把回覆抄到 `schools/{sid}/terms/{tid}/iep/{round}/responses/{h}`；舊版發的（沒有 sid）不動 |
+
+**要部署的東西**（都還沒做）：
+1. 規則：`web/firestore.rules.next`（B 段新增 `iepInvite`、老師刪自己唯一 reader 的 `iep`）。
+2. Functions：`nx-index.js` 已匯出 `nxIepPublish`、`nxIepClose`、`nxIepMirror`（還要先部署 phase 1 的 `nx-claims.js` 等）；`functions/index.js` 要加 `Object.assign(exports, require('./nx-index'))`。
+3. `iepTok` 的 `where('r','==')` + `where('sid','==')`（nxIepClose）只用單欄索引合併，不用另外建索引。
+
+**測試**：`npm test`（單元：`teacher.test.ts` 今天／待辦、IEP 範圍、私密欄位；`iep-print.test.ts` 通知單逐字比對；`nx-iep.test.ts`）、
+`npm run test:rules`（加了 iepInvite、老師刪調查單、responses 的規則測試）、`npm run test:e2e`（Firestore＋Auth 模擬器：兩位老師真的登入，各自只讀得到自己的學生，private 只有個管讀寫得到）。

@@ -14,7 +14,7 @@ import { createFirestoreRepo, createMemoryRepo, toCoreD, type Repo } from "@/lib
 | `RepoScope` | type | `{ sid, termId, uid, role, tid? }`，`role`/`tid` 來自 custom claims |
 | `Loaded` | type | `{ records: TermRecords, revs: RevMap }` |
 | `RevMap`, `revKey(col, id)` | type, fn | 每份文件的 `{rev, updatedBy, updatedAt}`；學期文件的 key 是 `"term"`，其他是 `"students/s1"` |
-| `WritableCol`, `DocOf<C>` | type | `"term" \| "teachers" \| "classes" \| "groups" \| "students" \| "privates" \| "attendance" \| "iep"` |
+| `WritableCol`, `DocOf<C>` | type | `"term" \| "teachers" \| "classes" \| "groups" \| "students" \| "privates" \| "attendance" \| "iep" \| "iepInvite"` |
 | `RevConflictError` | class | 別人先改了：`{col, id, expected, current}` |
 | `RepoDeniedError` | class | 沒有權限 |
 | `createFirestoreRepo(db, scope, opt?)` | fn | Firestore 版（`opt.readOnly` 過渡期設 true） |
@@ -50,6 +50,7 @@ import { createFirestoreRepo, createMemoryRepo, toCoreD, type Repo } from "@/lib
 | `privates` | 全部 | 只有自己個管的 | 無 |
 | `attendance` | 全部 | `teacherId == tid` | 無 |
 | `iep` | 全部 | `readers` 含 `tid` | 無 |
+| `iepInvite` | 全部 | `teacherId == tid`（邀請我的）或 `readers` 含 `tid`（我發的） | 無 |
 | `exam` | 全部 | 全部（考程、試場、監考對照） | 全部 |
 | `examPrivate`、`versions`、`lockLog`、`staff` | 全部 | 無 | 無 |
 
@@ -82,3 +83,10 @@ await repo.put("groups", "g1", { ...g, studentIds: [...g.studentIds, "s9"] }, re
 // 老師改自己的不排課時段
 await repo.saveMyOff(["2-5", "2-6"], revs[revKey("teachers", scope.tid!)].rev);
 ```
+
+### IEP 填空堂邀請 `iepInvite/{roundId}_{teacherId}`（phase 2 新增）
+
+新版才有、舊格式 D 沒有（`functions/nx-split.js` 不認得，搬移與同步不碰；`emptyRecords()`／`splitD()` 會補一個空的）。
+調查單的 readers（發起人、個管）寫公開的部分（和線上連結 iepTok 同一套：班級座號、節次、有課的種類、已排定的場次）；
+被邀請的老師只能改 `free`、`note`、`ansAt`。發起人打開「我的 IEP」時，`lib/nx/iepSync.mergeInvites` 把回覆讀回調查單。
+老師可以刪「只有自己一個 reader」的調查單（`iep`）與自己是 readers 的邀請。
