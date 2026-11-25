@@ -139,7 +139,7 @@ function overlap(a,b){return a.date===b.date&&(a.k===b.k||(!!a.st&&!!b.st&&a.st<
 /* ───── 有課、有事：自動標出 ─────
    ctx＝{M, slot, room}：app 傳現成的（M、ST.slot、ROOM）；沒傳就自己從 D 算一次 */
 function ctxOf(D){const C=core(),M=C.compile(D),S=C.toState(M,D);M.lroom=S.rfix;return {M,slot:S.slot,room:C.assignRooms(M,S.slot)};}
-function weekBusy(D,ctx){const C=core(),{M,slot,room}=ctx,NS=M.NS,tb=new Map(),rb=new Map();
+function weekBusy(D,ctx){if(ctx._wb)return ctx._wb;const C=core(),{M,slot,room}=ctx,NS=M.NS,tb=new Map(),rb=new Map();
   const put=(map,k,why)=>{if(!map.has(k))map.set(k,why);};
   // 先放資源班的課（最確定），再放鎖課（原班老師同一節在上原班的課），最後才是老師登記的不排課時段
   M.L.forEach((x,l)=>{const s=slot[l],g=M.G[x.g];if(s<0)return;if(g.t>=0)put(tb,g.t*NS+s,'資源班上課（'+g.name+'）');
@@ -152,7 +152,10 @@ function weekBusy(D,ctx){const C=core(),{M,slot,room}=ctx,NS=M.NS,tb=new Map(),r
   const TG=D.tgrid||{};
   M.T.forEach((t,ti)=>{for(let s=0;s<NS;s++)if(M.off[ti][s])put(tb,ti*NS+s,'已登記不排課'+(t.note?'（'+t.note+'）':''));
     (TG[t.id]||TG[t.name]||[]).forEach(k=>{const s=M.key2s(k);if(s>=0)put(tb,ti*NS+s,'原班上課');});});
-  return {tb,rb,M};}
+  // 全校課表的格子（D.tt[班級].grid）：原班任課老師在哪幾節上課
+  const reg=D.periods.map((p,i)=>i).filter(i=>!D.periods[i].extra);
+  Object.keys(D.tt||{}).forEach(cls=>{const g=D.tt[cls]&&D.tt[cls].grid;if(!Array.isArray(g))return;g.slice(0,5).forEach((row,w)=>{if(!Array.isArray(row))return;row.forEach((x,i)=>{if(!x||!x.t||reg[i]==null)return;const t=teacherOf(D,x.t),ti=t?M.tIdx[t.id]:null;if(ti==null)return;put(tb,ti*NS+w*M.NP+reg[i],'原班上課（'+cls+(x.s||'')+'）');});});});
+  return ctx._wb={tb,rb,M};}
 /* 每個人每個候選時段已知的忙碌原因 → {pk:{時段:原因}}，教室 → {教室名稱:{時段:原因}} */
 function busyOf(D,R,ctx){ctx=ctx||ctxOf(D);const {tb,rb,M}=weekBusy(D,ctx),NS=M.NS,NP=M.NP,keys=keysOf(R),inf=keys.map(k=>slotInfo(D,k));
   const people=new Set();R.meets.forEach(m=>m.p.forEach(x=>people.add(x[0])));
@@ -170,6 +173,56 @@ function busyOf(D,R,ctx){ctx=ctx||ctxOf(D);const {tb,rb,M}=weekBusy(D,ctx),NS=M.
     inf.forEach(f=>{if(f.w<0)return;for(const pi of f.pis){const g=rb.get(ri*NS+f.w*NP+pi);if(g){const o=rooms[name]=rooms[name]||{};if(!o[f.k])o[f.k]='資源班上課（'+g+'）';break;}}});});
   out.__rooms=rooms;out.__iep=hard;return out;}
 
+
+/* ───── 候選時段：承辦的個管老師有課（或已登記不排課、已有別的 IEP 會議）的節次，一開始就拿掉，不問任何人 ─────
+   R.d1～R.d2 的星期一到五（扣掉放假日）× R.ps 的節次，減掉承辦老師忙的節次；R.pick 有勾的話只問勾的那些。
+   R.inclBusy＝1：老師忙的節次也問（很少用）。承辦不是老師（特教組開的）時：學生都同一位個管就拿他當承辦；
+   個管不同的，每場會議各自扣掉自己個管忙的節次（m.sl）。忙的原因只在 app 裡給個管、管理者看，不放進公開資料。 */
+const AVOID_DEF=['國語文','英語文','數學'],PREFER_DEF=['綜合活動','彈性','社團','輔導','班會'];
+const SUBJ_ALIAS={'國文':'國語文','英文':'英語文','國語':'國語文','英語':'英語文'};
+const subjNorm=s=>{s=String(s==null?'':s).trim();return SUBJ_ALIAS[s]||s;};
+// 哪些科目盡量不要抽學生出來開會（avoid）、哪些適合開會（prefer）：D.settings.iepAvoidSubj／iepPreferSubj，沒設就用預設
+function hintLists(D){const S=(D&&D.settings)||{},L=v=>Array.isArray(v)&&v.length?v.map(subjNorm).filter(Boolean):null;return {avoid:L(S.iepAvoidSubj)||AVOID_DEF.slice(),prefer:L(S.iepPreferSubj)||PREFER_DEF.slice()};}
+function subjHint(sj,lists){const s=subjNorm(sj);if(!s)return '';lists=lists||hintLists(null);
+  if(lists.avoid.some(x=>s===x||s.includes(x)))return 'avoid';if(lists.prefer.some(x=>s.includes(x)))return 'prefer';return '';}
+// 原班課表的格子：D.tt[班級].grid[星期 0～4][一般節次（不含外加）的順序]＝{s:科目,t:老師}；沒有資料回傳 null
+function regIdx(D){const a={};D.periods.filter(p=>!p.extra).forEach((p,i)=>{a[p.id]=i;});return a;}
+function ttCell(D,cls,w,pid,ri){const c=D.tt&&D.tt[String(cls)],g=c&&Array.isArray(c.grid)?c.grid:null;if(!g||!(w>=0&&w<=4))return null;
+  const i=(ri||regIdx(D))[pid];if(i==null)return null;const row=g[w],x=Array.isArray(row)?row[i]:null;return x&&typeof x==='object'&&x.s?x:null;}
+// 候選時段的底：日期區間的星期一到五，扣掉放假日（D.settings.noClass）× 勾的節次（照作息順序）
+function baseKeys(D,d1,d2,ps){const C=core(),hol=C.noClassSet?C.noClassSet((D.settings||{}).noClass,d1,d2):new Set(),pids=D.periods.filter(p=>(ps||[]).includes(p.id)).map(p=>p.id);
+  return dateRange(d1,d2,[1,2,3,4,5]).filter(d=>!hol.has(d)).flatMap(d=>pids.map(p=>key(d,p)));}
+// 這次調查的承辦老師（要扣掉他忙的節次）：老師開的就是他；特教組開的、學生都同一位個管時是那位個管
+function hostsOf(D,R,sids){const h=hostId(D,R);if(h)return [h];const ids=sids||(R?R.meets.map(m=>m.s):[]);
+  const cms=[...new Set(ids.map(id=>(stuOf(D,id)||{}).caseMgr).filter(Boolean))];return cms.length===1&&D.teachers.some(t=>t.id===cms[0])?cms:[];}
+// 一位老師在這些時段為什麼不行（內部用）：資源班課、原班課（鎖課、原班課表）、已登記不排課、已排定的 IEP 會議
+function tBusy(D,tid,keys,ctx,except){const t=D.teachers.find(x=>x.id===tid),out={};if(!t)return out;ctx=ctx||ctxOf(D);
+  const {tb,M}=weekBusy(D,ctx),ti=M.tIdx[tid],NS=M.NS,NP=M.NP,pk='t:'+tid,inf=keys.map(k=>slotInfo(D,k));
+  inf.forEach(f=>{if(f.w<0||ti==null)return;for(const pi of f.pis){const w=tb.get(ti*NS+f.w*NP+pi);if(w){out[f.k]=w;break;}}});
+  ensure(D).rounds.forEach(R2=>{if(R2===except)return;R2.meets.forEach(m=>{if(!m.at||!m.p.some(x=>x[0]===pk))return;const f2=slotInfo(D,m.at);
+    inf.forEach(f=>{if(!out[f.k]&&overlap(f,f2))out[f.k]='已排 IEP（'+stuLabel(stuOf(D,m.s))+'）';});});});
+  return out;}
+// 承辦挑時段的格子：每一格是這些學生原班在上什麼（多位學生取最多的）、承辦忙不忙、主科（avoid）或適合開會（prefer）
+function pickGrid(D,o){const keys=o.keys||[],busy=o.busy||{},pick=new Set(o.pick||[]),L=hintLists(D),ri=regIdx(D),S=(o.sids||[]).map(id=>stuOf(D,id)).filter(Boolean);
+  const inf=keys.map(k=>slotInfo(D,k)),dates=[...new Set(inf.map(f=>f.date))].sort(),cols=[];
+  inf.forEach(f=>{if(!cols.some(c=>c.p===f.p))cols.push({p:f.p,name:f.name,time:f.time,st:f.st});});cols.sort((a,b)=>a.st.localeCompare(b.st));
+  const by=new Map(inf.map(f=>[f.k,f]));let hasTT=false;
+  const rows=dates.map(d=>({date:d,label:fmtDate(d),cells:cols.map(c=>{const k=key(d,c.p),f=by.get(k);if(!f)return null;
+    const subs=S.map(s=>ttCell(D,s.cls,f.w,c.p,ri)).filter(Boolean).map(x=>subjNorm(x.s));if(subs.length)hasTT=true;
+    const cnt={};subs.forEach(x=>{cnt[x]=(cnt[x]||0)+1;});const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0]||'';
+    const hs=subs.map(x=>subjHint(x,L)),tint=hs.includes('avoid')?'avoid':subs.length&&hs.every(x=>x==='prefer')?'prefer':'';
+    return {k,busy:!!busy[k],why:busy[k]||'',subj:S.length===1||subs.length?top:'',tint,on:pick.has(k)};})}));
+  return {cols,rows,hasTT};}
+// 「勾選建議時段」：承辦有空、學生在上綜合、彈性、社團…的節次
+function suggestPick(G){const out=[];G.rows.forEach(r=>r.cells.forEach(c=>{if(c&&!c.busy&&c.tint==='prefer')out.push(c.k);}));return out;}
+// 照日期、節次、承辦忙碌、勾選重算 R.slots（與每場的 m.sl）；回傳 {base 原本幾節, cut 拿掉幾節, kept 剩幾節, why 拿掉的原因, hosts}
+function buildSlots(D,R,ctx){ctx=ctx||ctxOf(D);const base=baseKeys(D,R.d1,R.d2,R.ps||[]),hs=hostsOf(D,R),hb={};
+  if(!R.inclBusy)hs.forEach(t=>{const b=tBusy(D,t,base,ctx,R);for(const k in b)if(!hb[k])hb[k]=b[k];});
+  let keys=base.filter(k=>!hb[k]);const pick=Array.isArray(R.pick)?R.pick.filter(k=>keys.includes(k)):[];if(pick.length)keys=keys.filter(k=>pick.includes(k));
+  R.slots=keys.map(splitKey);
+  R.meets.forEach(m=>{delete m.sl;const cm=(stuOf(D,m.s)||{}).caseMgr;if(R.inclBusy||!cm||hs.includes(cm)||!D.teachers.some(t=>t.id===cm))return;
+    const b=tBusy(D,cm,keys,ctx,R),sl=keys.filter(k=>!b[k]);if(sl.length&&sl.length<keys.length)m.sl=sl;});
+  return {base:base.length,cut:Object.keys(hb).length,kept:keys.length,why:hb,hosts:hs};}
 /* ───── 回覆 ───── */
 function record(R,k,sk,v){if(!k||!sk)return;if(v==='y'||v==='n'||v==='m'){(R.ans[k]=R.ans[k]||{})[sk]=v;}
   else if(R.ans[k]){delete R.ans[k][sk];if(!Object.keys(R.ans[k]).length)delete R.ans[k];}}
@@ -350,7 +403,7 @@ function quickMeet(D,o){const I=ensure(D),s=stuOf(D,o.sid);if(!s)return null;
 
 /* ───── 線上調查：每位出席者一個專屬連結（QR） ─────
    一位老師被好幾場會議邀請，仍然只有一個連結，一次回答全部。家長另有自己的連結（只能送出一次）。
-   公開頁只放必要的東西：稱呼、學生的班級座號（或遮住的姓名）、日期範圍、節次、已知有課的節次；不放障別、服務等任何資料。 */
+   公開頁只放必要的東西：稱呼、學生的班級座號（或遮住的姓名）、日期範圍、節次；不放誰在什麼時候有課、障別、服務等任何資料。 */
 const B62='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 // 24 碼、每碼 62 選 1（約 142 位元，超過 128 位元）。位元組 ≥248 丟掉重抽，避免某些字母機率偏高
 function token(n){n=n||24;const cr=typeof globalThis!=='undefined'?globalThis.crypto:null;
@@ -412,11 +465,12 @@ function pubLimitText(x){return x.what==='keys'?(x.name+'：要回覆的節次�
 // 公開頁上的「有課」只寫種類，不寫組別名稱、不寫別的學生
 function shortBusy(why){why=String(why||'');return /資源班上課/.test(why)?'資源班課':/原班上課/.test(why)?'原班課':/IEP/.test(why)?'已有會議':/不排課/.test(why)?'不排課':'有事';}
 // 寫到 iepTok/{鑰匙的雜湊} 的公開內容（app 另外加上 exp 時間戳記、r 調查 id、pk 出席者代號；Function 只回傳公開欄位）
-function publicDoc(D,R,o,busy){const pk=o.k,keys=o.keys,b={};keys.forEach(k=>{const w=busy&&busy[pk]&&busy[pk][k];if(w)b[k]=shortBusy(w);});
+// 不放任何「有課」「不排課」的原因：承辦有課的節次在建立時就拿掉了，其他人的只在 app 裡排時間時用（busy 參數留著相容，不用）
+function publicDoc(D,R,o,busy){const keys=o.keys;
   const pids=[...new Set(keys.map(k=>splitKey(k)[1]))],ps=D.periods.filter(p=>pids.includes(p.id)).map(p=>({id:p.id,n:p.name,t:pad(p.start)+'–'+pad(p.end)}));
   const role=o.meets.map(x=>x.role).join('、');
   return {v:1,who:o.teacher?'t':'p',once:o.teacher?0:1,name:salute(o.name,role,o.teacher),title:String(D.title||''),round:String(R.name||''),kind:String(R.kind||KINDS[0]),
-    d1:R.d1||'',d2:R.d2||'',due:R.due||'',host:hostLabel(D,R),keys:keys.slice(),ps,busy:b,
+    d1:R.d1||'',d2:R.d2||'',due:R.due||'',host:hostLabel(D,R),keys:keys.slice(),ps,
     stu:o.meets.map(x=>({c:stuShow(x.s,R.priv==='mask'?'mask':'cls'),r:x.role,q:x.req?1:0,cm:x.cm})),
     keep:String(R.keep||'會議時間排定後由特教組刪除，最晚保留到本學期結束'),expMs:expMs(R)};}
 // 讀回老師在手機上送出的回覆：勾的節次＝可，沒勾的＝不可；只收比上次新的
@@ -425,8 +479,8 @@ function applyWeb(R,o,resp){if(!resp||!resp.at||!Array.isArray(resp.free))return
   o.keys.forEach(k=>record(R,o.k,k,free.has(k)?'y':'n'));R.web[o.k]={at:+resp.at,note:String(resp.note||'').slice(0,300)};return true;}
 // 公開頁用的格子：每一天一列，每節一格
 function webGrid(doc,free){const keys=new Set(doc.keys||[]),dates=[...new Set((doc.keys||[]).map(k=>splitKey(k)[0]))].sort();free=free||new Set();
-  return dates.map(d=>({date:d,label:fmtDate(d),cells:(doc.ps||[]).filter(p=>keys.has(key(d,p.id))).map(p=>{const k=key(d,p.id);return {k,n:p.n,t:p.t,busy:(doc.busy||{})[k]||'',on:free.has(k)};})}));}
-// 預設勾起來的：上次送出的那些；沒送過一律不勾，讓老師自己點有空的節次（已知有課的會先標灰，仍可以點）
+  return dates.map(d=>({date:d,label:fmtDate(d),cells:(doc.ps||[]).filter(p=>keys.has(key(d,p.id))).map(p=>{const k=key(d,p.id);return {k,n:p.n,t:p.t,on:free.has(k)};})}));}
+// 預設勾起來的：上次送出的那些；沒送過一律不勾，讓老師自己點有空的節次
 function webInit(doc){return new Set(Array.isArray(doc.free)?doc.free:[]);}
 // 回覆情形：誰填了（線上或紙本）、哪幾場必要的人都回了
 function progress(D,R){const list=consolidate(D,R,{all:true}),done=new Map();
@@ -438,9 +492,10 @@ function remindText(D,R,o,url){const n=o.meets.length,first=o.meets[0];
     '，請'+(R.due?'於 '+fmtDate(R.due)+' 前':'儘快')+'打開連結，點選您有空的節次：'+url+'　謝謝！'+(hostLabel(D,R)?'（'+hostLabel(D,R)+'）':'');}
 
 const IEP={token,tokHash,sha256hex,HASH_RE,TOKEN_RE,setRange,expMs,webPeople,ensureTokens,migrateTok,linkTok,regenTok,pubLimits,pubLimitText,PUB_MAX,shortBusy,publicDoc,applyWeb,webGrid,webInit,progress,remindText,KINDS,stuShow,salute,slipItems,quickMeet,ROLES,DEF_REQ,ANS,W,ensure,round,normRound,newRound,addMeet,delMeet,derive,rederive,addPerson,addOther,removePerson,setReq,subjTeachers,subjOptions,
-  tKey,pName,isTeacher,stuOf,stuLabel,key,splitKey,keysOf,slotInfo,fmtDate,dateRange,genSlots,sortSlots,overlap,ctxOf,busyOf,
+  tKey,pName,isTeacher,stuOf,stuLabel,key,splitKey,keysOf,slotInfo,fmtDate,dateRange,genSlots,sortSlots,overlap,ctxOf,busyOf,weekBusy,
   record,fillRest,status,cycle,meetSlots,consolidate,grid,rank,schedule,applyPlan,conflicts,crossConflicts,notices,
-  hostId,hostLabel,mineStu,ownRounds,canEdit,invited,addMeetAs,newRoundAs,selfAnswer};
+  hostId,hostLabel,mineStu,ownRounds,canEdit,invited,addMeetAs,newRoundAs,selfAnswer,
+  hintLists,subjHint,subjNorm,ttCell,baseKeys,hostsOf,tBusy,pickGrid,suggestPick,buildSlots,AVOID_DEF,PREFER_DEF};
 if(typeof module!=='undefined'&&module.exports)module.exports=IEP;
 else root.IEP=IEP;
 })(typeof window!=='undefined'?window:globalThis);

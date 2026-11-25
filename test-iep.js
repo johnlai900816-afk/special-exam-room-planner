@@ -161,8 +161,7 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   ok(!/needs|障|服務|svc/.test(txt),'公開內容沒有障別、服務');
   ok(doc.stu.every(x=>/^\d{3}-\d{2}$/.test(x.c)),'學生只顯示班級座號');
   R.priv='mask';ok(I.publicDoc(D,R,cm,busy).stu[0].c.includes('○'),'也可以選遮住的姓名');
-  ok(Object.values(doc.busy).every(v=>['資源班課','原班課','不排課','已有會議','有事'].includes(v)),'有課只寫種類，不寫組名');
-  ok(Object.keys(doc.busy).length>0,'這位老師已知有課的節次有先標出來（'+Object.keys(doc.busy).length+' 節）');
+  ok(!('busy' in doc)&&!/資源班課|原班課|不排課|已有會議/.test(txt),'公開內容不寫誰哪一節有課（承辦有課的節次在建立時就拿掉了）');
   ok(doc.expMs===new Date(2026,11,5,23,59,59).getTime(),'連結在回覆期限當天 23:59:59 到期');
   // 公開頁的格子
   const G=I.webGrid(doc,new Set([doc.keys[0]]));
@@ -288,6 +287,69 @@ function sample(){const D=C.defaultData(),M=C.compile(D),R=C.solve(M,C.toState(M
   for(let i=0;i<85;i++){const s={id:'z'+i,cls:'701',seat:String(i),name:'學生'+i,caseMgr:'r1',needs:[]};D.students.push(s);I.addMeet(D,R2,s.id);}
   const o2=I.pubLimits(D,R2,now).filter(x=>x.what==='stu');ok(o2.length&&o2.some(x=>x.k==='t:r1'&&x.n>=85)&&/拆成兩次/.test(I.pubLimitText(o2[0])),'同一位要回覆超過 80 位學生：擋下來並建議拆開');
   R2.due='2027-06-30';ok(I.pubLimits(D,R2,now).some(x=>x.what==='due'),'回覆期限超過 120 天後：擋下來');
+}
+
+// 14. 候選時段：承辦（個管）有課的節次先拿掉；公開資料沒有任何忙碌原因
+{
+  const D=sample(),M=C.compile(D),S=C.toState(M,D);
+  const busyS=new Set();M.L.forEach((x,l)=>{const s=S.slot[l],g=M.G[x.g];if(s>=0&&g.t>=0&&D.teachers[g.t].id==='r2')busyS.add(s);});
+  const dates=['2026-12-07','2026-12-08','2026-12-09','2026-12-10','2026-12-11'],ps=D.periods.filter(p=>!p.extra).map(p=>p.id);
+  const R=I.newRoundAs(D,'r2',{stu:D.students.filter(s=>s.caseMgr==='r2').slice(0,2).map(s=>s.id)});R.due='2026-12-04';R.d1='2026-12-07';R.d2='2026-12-11';R.ps=ps;
+  const r=I.buildSlots(D,R),keys=I.keysOf(R);
+  const hit=keys.filter(k=>{const f=I.slotInfo(D,k);return busyS.has(f.w*M.NP+f.pis[0]);});
+  ok(r.base===35&&r.cut>=busyS.size&&r.kept===35-r.cut&&keys.length===r.kept,'候選時段＝日期×節次－承辦有課的（'+r.cut+' 節拿掉，剩 '+r.kept+'）');
+  ok(hit.length===0,'承辦（王老師）的資源班課那幾節不會問任何人');
+  ok(Object.values(r.why).every(w=>/上課|不排課|IEP/.test(w)),'拿掉的原因只在 app 裡看得到（資源班上課…）');
+  const k0=keys[0],f0=I.slotInfo(D,k0);D.teachers.find(t=>t.id==='r2').off=[f0.w+'-'+f0.p];const r2=I.buildSlots(D,R);ok(!I.keysOf(R).includes(k0)&&/不排課/.test(r2.why[k0]),'承辦登記的不排課時段也拿掉');
+  R.inclBusy=1;I.buildSlots(D,R);ok(I.keysOf(R).length===35,'勾「有課的節次也問」就全部都問');R.inclBusy=0;
+  // 別的調查已排定、承辦要出席的會議
+  const RX=I.newRoundAs(D,'r2',{stu:[R.meets[0].s]});RX.meets[0].at='2026-12-09|2';
+  I.buildSlots(D,R);ok(!I.keysOf(R).includes('2026-12-09|2'),'承辦已經排定的 IEP 會議那一節也拿掉');
+  // 放假日
+  D.settings.noClass=['2026-12-10'];const r3=I.buildSlots(D,R);ok(r3.base===28&&!I.keysOf(R).some(k=>k.startsWith('2026-12-10')),'放假日不列入');D.settings.noClass=[];I.buildSlots(D,R);
+  // 只問勾的時段
+  const free=I.keysOf(R);R.pick=[free[0],free[1],'1999-01-01|1'];I.buildSlots(D,R);
+  ok(I.keysOf(R).length===2&&I.keysOf(R)[0]===free[0],'承辦勾了偏好的時段：只問勾的（不在候選裡的勾選忽略）');
+  R.pick=[];I.buildSlots(D,R);ok(I.keysOf(R).length===free.length,'沒勾：全部沒課的時段都問');
+  // 特教組開的、個管不同：每場會議各自扣掉自己個管有課的
+  const RA=I.newRound(D,{stu:['s1','s2']});RA.d1='2026-12-07';RA.d2='2026-12-11';RA.ps=ps;const ra=I.buildSlots(D,RA);
+  ok(ra.hosts.length===0&&ra.cut===0&&RA.meets.every(m=>Array.isArray(m.sl)&&m.sl.length<35),'個管不同時不統一拿掉，每場會議各自扣掉自己個管有課的節次');
+  const RB=I.newRound(D,{stu:['s1','s4']});RB.d1='2026-12-07';RB.d2='2026-12-11';RB.ps=ps;ok(I.buildSlots(D,RB).hosts.join()==='r1','學生都同一位個管：拿他當承辦');
+  // 公開資料、公開頁的格子沒有忙碌
+  R.due='2026-12-04';const o=I.webPeople(D,R)[0],doc=I.publicDoc(D,R,o,I.busyOf(D,R)),txt=JSON.stringify(doc);
+  ok(!('busy' in doc)&&!/上課|不排課|已有會議|資源班課|原班課/.test(txt),'公開內容沒有「有課」「不排課」這類原因');
+  ok(I.webGrid(doc,new Set()).every(d=>d.cells.every(c=>!('busy' in c))),'公開頁的格子沒有忙碌標記');
+  // 排時間仍然把必要的人有課當成不行（內部）
+  const b=I.busyOf(D,R);ok(Object.keys(b).some(k=>k[0]==='t'&&Object.keys(b[k]).length),'排時間時仍然知道其他出席者哪幾節有課');
+}
+
+// 15. 承辦挑時段的格子：原班課表的科目、主科（避開）、適合開會（建議）
+{
+  const L=I.hintLists({settings:{}});
+  ok(L.avoid.join()==='國語文,英語文,數學'&&L.prefer.includes('綜合活動'),'預設：國英數避開；綜合、彈性、社團、輔導、班會建議');
+  ok(I.subjHint('國文',L)==='avoid'&&I.subjHint('英語文',L)==='avoid'&&I.subjHint('數學',L)==='avoid','國文、英文寫法不同也算主科');
+  ok(I.subjHint('綜合活動（輔導）',L)==='prefer'&&I.subjHint('彈性學習',L)==='prefer'&&I.subjHint('班會',L)==='prefer','綜合、彈性、班會是建議時段');
+  ok(I.subjHint('自然',L)===''&&I.subjHint('',L)==='','其他科目不標');
+  ok(I.subjHint('自然',I.hintLists({settings:{iepAvoidSubj:['自然'],iepPreferSubj:['體育']}}))==='avoid'&&I.subjHint('數學',I.hintLists({settings:{iepAvoidSubj:['自然']}}))==='','可以在設定改清單');
+  const D=sample(),reg=D.periods.filter(p=>!p.extra);D.teachers.push({id:'z9',name:'周老師',role:'普通班',off:[]});
+  const row=sj=>reg.map((p,i)=>i===0?{s:sj,t:'張老師（國）'}:i===1?{s:'綜合活動',t:'周老師'}:null);
+  D.tt={'701':{subj:{},grid:[row('國語文'),row('數學'),row('彈性'),row('英語文'),row('社團')]},'702':{subj:{},grid:[row('自然'),row('數學'),row('彈性'),row('英語文'),row('社團')]}};
+  const keys=I.baseKeys(D,'2026-12-07','2026-12-11',reg.map(p=>p.id));
+  ok(keys.length===35&&!keys.some(k=>k.includes('|m')),'候選：週一到五 × 一般節次');
+  const s701=D.students.find(s=>s.cls==='701'),s702=D.students.find(s=>s.cls==='702');
+  let G=I.pickGrid(D,{keys,sids:[s701.id],busy:{'2026-12-07|2':'資源班上課'}});
+  const cell=(G,d,p)=>G.rows.find(r=>r.date===d).cells[G.cols.findIndex(c=>c.p===p)];
+  ok(G.hasTT&&cell(G,'2026-12-07','1').subj==='國語文'&&cell(G,'2026-12-07','1').tint==='avoid','一位學生：格子寫他原班的科目，主科標「避開」');
+  ok(cell(G,'2026-12-07','2').tint==='prefer'&&cell(G,'2026-12-07','2').busy,'綜合活動標「建議」；承辦有課的格子不能選');
+  ok(cell(G,'2026-12-09','1').tint==='prefer'&&cell(G,'2026-12-07','3').subj===''&&cell(G,'2026-12-07','3').tint==='','彈性是建議；課表空白的格子不標');
+  const sug=I.suggestPick(G);ok(sug.includes('2026-12-09|1')&&sug.includes('2026-12-11|2')&&!sug.includes('2026-12-07|2')&&!sug.includes('2026-12-07|1'),'「勾選建議時段」：建議的、承辦有空的');
+  G=I.pickGrid(D,{keys,sids:[s701.id,s702.id]});
+  ok(cell(G,'2026-12-07','1').tint==='avoid','兩位學生：有一位在上主科就標避開');
+  ok(cell(G,'2026-12-09','1').tint==='prefer'&&cell(G,'2026-12-09','1').subj==='彈性','兩位都在上彈性：建議，顯示最多的科目');
+  const B=I.weekBusy(D,I.ctxOf(D)),ti=B.M.tIdx.z9;
+  ok(/原班上課（701綜合活動）/.test(B.tb.get(ti*B.M.NS+0*B.M.NP+D.periods.findIndex(p=>p.id===reg[1].id))||''),'有原班課表時，任課老師在哪幾節上課也算進忙碌（只在內部）');
+  delete D.tt;G=I.pickGrid(D,{keys,sids:[s701.id]});
+  ok(!G.hasTT&&G.rows.every(r=>r.cells.every(c=>c&&c.subj===''&&c.tint===''))&&I.suggestPick(G).length===0,'沒有原班課表：格子都是中性，不標科目');
 }
 
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
