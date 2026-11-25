@@ -115,12 +115,12 @@ function appSetRole(role,tid,o){o=o||{};window.APPROLE=role==='teacher'?'teacher
   window.setRole=function(a,b,c){if(a==='admin'||a==='teacher')return appSetRole(a,b,c);if(typeof cloudSetRole==='function')return cloudSetRole.apply(this,arguments);};})();
 // 外掛頁登記：teacher.js 用；登記的剛好是現在這一頁就重畫
 function registerPage(k,def){PAGES[k]=def;if(page===k)go(k,sub);}
-function stuOpen(id){stuCur=id;go(APPROLE==='teacher'&&PAGES.me_stu&&PAGES.me_stu.caseHere?'me_stu':'stu','case');}
+function stuOpen(id){stuCur=id;go('stu','case');}
 function go(p,s){
   const r=REDIR[p+(s?'/'+s:'')]||REDIR[p];if(r){const a=r.split('/');p=a[0];s=a[1]||s;}
   if(p==='set'&&s==='school')s=lastSub.school||'import';
   const tch=APPROLE==='teacher';
-  if(tch&&p.slice(0,3)!=='me_'&&p!=='iep')p='me_today';   // 老師身分只看「我的」頁面
+  if(tch&&p.slice(0,3)!=='me_'&&p!=='iep'&&!(p==='stu'&&s==='case'))p='me_today';   // 個案頁老師也能看（私密欄位只給自己個管的）   // 老師身分只看「我的」頁面
   if(!tch&&p.slice(0,3)==='me_')p='home';
   if(!PAGES[p]&&p.slice(0,3)!=='me_'&&p!=='iep')p='home';
   const P=PAGES[p]||{t:p==='iep'?'IEP 會議':(NAV.teacher.find(x=>x[0]===p)||[0,''])[1]};page=p;
@@ -197,7 +197,7 @@ function renderHome(){
   h+=`<div class="stats">
     <button class="stt" onclick="go('stu')"><span class="k">學生</span><b>${D.students.length}</b><span class="d${noG?' warn':''}">${noG?noG+' 位沒分組':'都已分組'}</span></button>
     <button class="stt" onclick="go('sched','board')"><span class="k">已排</span><b>${placed}<small>/ ${total} 節</small></b><span class="d ${probs||placed<total?'warn':'ok'}">${probs?probs+' 個衝突':placed<total?'差 '+(total-placed)+' 節':total?'沒有衝突':'還沒開課'}</span></button>
-    <button class="stt" onclick="go('exam')"><span class="k">段考</span>${E&&(E.n||E.title)?`<b>${E.n}<small>位有考評服務</small></b><span class="d">${esc(E.title||'')}</span>`:`<b class="t">未設定</b><span class="d">　</span>`}</button>
+    <button class="stt" onclick="go('exam')"><span class="k">段考</span>${E&&E.n?`<b>${E.n}<small>位有考評服務</small></b><span class="d">${esc(E.title||'')}</span>`:`<b class="t">未設定</b><span class="d">　</span>`}</button>
   </div><div class="cols"><section class="card">${secH(1,isSchool?'今天的課':'下週一的課')}`;
   const by={};M.L.forEach((x,l)=>{const s=ST.slot[l];if(s>=0&&Math.floor(s/M.NP)===d)(by[s%M.NP]=by[s%M.NP]||[]).push(l);});
   if(!placed)h+=emptyBox('還沒有課表。',`<button class="b sm" onclick="go('sched','board')">去排課</button>`);
