@@ -112,24 +112,43 @@ export function SlotGrid({ G, onPick, ro }: { G: PickGrid; onPick(k: string): vo
   );
 }
 
-/** 選學生（只列自己個管的，照班級分組） */
-export function StuPicker({ D, tid, sel, ro, onToggle, onAll }: { D: RcData; tid: string; sel: Set<string>; ro?: boolean; onToggle(sid: string, on: boolean): void; onAll(on: boolean): void }) {
-  const S = IEP.mineStu(D, tid)
+/** 選學生（老師：只列自己個管的；管理者 tid=''：全部，可以照個管篩選），照班級分組。onAll 收到的是畫面上列出來的那些 */
+export function StuPicker({ D, tid, sel, ro, onToggle, onAll }: { D: RcData; tid: string; sel: Set<string>; ro?: boolean; onToggle(sid: string, on: boolean): void; onAll(on: boolean, ids: string[]): void }) {
+  const [cm, setCm] = useState("");
+  const all = IEP.mineStu(D, tid);
+  const cms = tid ? [] : [...new Set(all.map((s) => s.caseMgr).filter(Boolean))].sort((a, b) => IEP.pName(D, null, "t:" + a).localeCompare(IEP.pName(D, null, "t:" + b)));
+  const S = all
+    .filter((s) => tid || !cm || (cm === "-" ? !s.caseMgr : s.caseMgr === cm))
     .slice()
     .sort((a, b) => String(a.cls).localeCompare(String(b.cls)) || (+a.seat || 0) - (+b.seat || 0) || String(a.name).localeCompare(String(b.name)));
   const by = new Map<string, Student[]>();
   S.forEach((s) => by.set(String(s.cls), [...(by.get(String(s.cls)) || []), s]));
-  if (!S.length) return <p className="text-sm text-mute">還沒有你個管的學生</p>;
+  if (!all.length) return <p className="text-sm text-mute">{tid ? "還沒有你個管的學生" : "名冊還沒有學生"}</p>;
   return (
     <>
-      <div className="mb-2 flex gap-2">
-        <Button size="sm" disabled={ro} onClick={() => onAll(true)}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        {!tid && (
+          <label className="flex items-center gap-1.5 text-sm text-mute">
+            個管
+            <Select aria-label="個管" className="min-h-9 py-0 text-sm" value={cm} onChange={(e) => setCm(e.target.value)}>
+              <option value="">全部</option>
+              {cms.map((id) => (
+                <option key={id} value={id}>
+                  {IEP.pName(D, null, "t:" + id)}
+                </option>
+              ))}
+              <option value="-">沒有個管</option>
+            </Select>
+          </label>
+        )}
+        <Button size="sm" disabled={ro} onClick={() => onAll(true, S.map((s) => s.id))}>
           全選
         </Button>
-        <Button size="sm" disabled={ro} onClick={() => onAll(false)}>
+        <Button size="sm" disabled={ro} onClick={() => onAll(false, S.map((s) => s.id))}>
           全不選
         </Button>
       </div>
+      {!S.length && <p className="text-sm text-mute">沒有符合的學生</p>}
       {[...by].map(([c, list]) => (
         <div key={c} className="my-1.5">
           <b className="inline-block min-w-[3.5em]">{c}</b>
@@ -240,10 +259,7 @@ export function Create({ online, canCancel, onCancel, onCreated }: { online: boo
           tid={io.tid}
           sel={new Set(N.sids)}
           onToggle={(sid, on) => set({ sids: N.sids.filter((x) => x !== sid).concat(on ? [sid] : []) })}
-          onAll={(on) => {
-            const S = IEP.mineStu(D, io.tid).map((s) => s.id);
-            set({ sids: on ? [...new Set(N.sids.concat(S))] : N.sids.filter((id) => !S.includes(id)) });
-          }}
+          onAll={(on, S) => set({ sids: on ? [...new Set(N.sids.concat(S))] : N.sids.filter((id) => !S.includes(id)) })}
         />
       </Card>
       <Card title={<>時段 <small className="text-sm font-normal text-mute">{cutLine(D, io.tid, hs, cut, kept, 1)}</small></>}>

@@ -9,9 +9,9 @@ import { Badge, Button, Card, Note, Select } from "@/components/ui";
 import { IEP, type Round } from "@/lib/iep";
 import { closeOnline, publish, regen, urlOf } from "@/lib/nx/iepOnline";
 import type { Per } from "@/lib/nx/iepPrint";
-import { useNx } from "@/lib/nx/session";
 import type { RcData } from "@/lib/types";
 import { useDrawQr } from "./QrSlips";
+import { useIepSource } from "./useIep";
 
 export type Priv = "full" | "cls" | "mask";
 export const PRIV_OPTS: [Priv, string][] = [
@@ -33,10 +33,10 @@ export function Publish({ D, R, ro, onEdit, per, setPer, priv, setPriv, only, se
   setOnly(v: boolean): void;
   onPrint(w: "qr" | "paper"): void;
 }) {
-  const x = useNx();
+  const x = useIepSource();
   const [qr, setQr] = useState("");
   const [busyBtn, setBusyBtn] = useState(false);
-  const ok = !x.demo && !!x.user && !ro;
+  const ok = x.online && !ro;
   const list = IEP.webPeople(D, R);
   const st = new Map(IEP.progress(D, R).people.map((o) => [o.k, o.done]));
   const pub = (R.pub || []).length;
@@ -44,7 +44,7 @@ export function Publish({ D, R, ro, onEdit, per, setPer, priv, setPriv, only, se
   const over = IEP.pubLimits(D, R);
   const noKey = pub ? list.filter((o) => R.tokH?.[o.k] && !urlOf(R, o.k)) : [];
   const teachers = list.filter((o) => o.k.startsWith("t:"));
-  const inv = Object.values(x.data!.records.iepInvite).filter((v) => v.roundId === R.id);
+  const inv = Object.values(x.data.records.iepInvite).filter((v) => v.roundId === R.id);
   const qrRef = useDrawQr(qr);
 
   const run = async (f: () => Promise<void>) => {
@@ -63,7 +63,7 @@ export function Publish({ D, R, ro, onEdit, per, setPer, priv, setPriv, only, se
       if (IEP.expMs(R) < Date.now()) return toast("回覆期限已過，請先改期限");
       let n = 0;
       await onEdit(async (d, r) => {
-        n = await publish(x.scope!, d, r);
+        n = await publish(x.scope, d, r);
       });
       toast("已發布 " + n + " 份");
     });
@@ -110,7 +110,7 @@ export function Publish({ D, R, ro, onEdit, per, setPer, priv, setPriv, only, se
                   confirm("重新產生 " + noKey.length + " 位的連結？舊的連結會失效。") &&
                   run(async () => {
                     await onEdit(async (d, r) => {
-                      await regen(x.scope!, d, r, noKey.map((o) => o.k));
+                      await regen(x.scope, d, r, noKey.map((o) => o.k));
                     });
                   })
                 }
@@ -146,7 +146,7 @@ export function Publish({ D, R, ro, onEdit, per, setPer, priv, setPriv, only, se
                   onClick={() =>
                     confirm("結束線上調查？連結會立刻失效，線上的回覆會刪掉（已讀回的留著）。") &&
                     run(async () => {
-                      await onEdit(async (_, r) => closeOnline(x.scope!, r));
+                      await onEdit(async (_, r) => closeOnline(x.scope, r));
                       toast("舊連結都失效了");
                     })
                   }
@@ -242,7 +242,7 @@ export function Publish({ D, R, ro, onEdit, per, setPer, priv, setPriv, only, se
                             confirm("重新產生 " + o.name + " 的連結？舊的連結會失效。") &&
                             run(async () => {
                               await onEdit(async (d, r) => {
-                                await regen(x.scope!, d, r, [o.k]);
+                                await regen(x.scope, d, r, [o.k]);
                               });
                             })
                           }

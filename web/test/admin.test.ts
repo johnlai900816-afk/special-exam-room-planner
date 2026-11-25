@@ -38,6 +38,21 @@ describe("今天", () => {
     expect(ls[0].list[0].teacherId).toBeTruthy();
     expect(todayLessons(board, "2026-11-28")).toEqual([]); // 週六
   });
+  it("待辦都連到新版（點名、IEP 回覆）：沒有舊版的連結", () => {
+    const R = demoSeed(TODAY);
+    // 一份已發布、還有人沒回的調查
+    const rid = Object.keys(R.iep).find((k) => !JSON.parse(R.iep[k].json).quick)!;
+    const r = JSON.parse(R.iep[rid].json);
+    r.pub = ["h1"];
+    R.iep[rid] = { ...R.iep[rid], json: JSON.stringify(r) };
+    const D = toCoreD(R);
+    const board = buildBoard(D);
+    const ses = todayLessons(board, TODAY)[0].list[0];
+    const list = adminTodos({ D, board, R, today: TODAY, hm: ses.p.start, invites: [] });
+    expect(list.some((t) => t.href === "/admin/checkin/" && t.text.includes("沒簽到"))).toBe(true);
+    expect(list.some((t) => t.href === "/admin/iep/?r=" + encodeURIComponent(rid))).toBe(true);
+    expect(list.every((t) => t.href.startsWith("/admin/"))).toBe(true);
+  });
   it("本月到期", () => {
     const R = demoSeed(TODAY);
     const due = dueThisMonth(R, "2026-12-01");

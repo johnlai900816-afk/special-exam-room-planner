@@ -9,13 +9,12 @@ import { Badge, Button, Card, Input, Select, cx } from "@/components/ui";
 import { IEP, type Round } from "@/lib/iep";
 import { pull, urlOf } from "@/lib/nx/iepOnline";
 import { noticesHtml, paperHtml, perOf, qrSlipsHtml, type Per, type PrintOpt } from "@/lib/nx/iepPrint";
-import { useNx } from "@/lib/nx/session";
 import type { RcData } from "@/lib/types";
 import { SlotGrid, StuPicker, cutLine, md } from "./Create";
 import { PeopleEditor } from "./PeopleEditor";
 import { PRIV_OPTS, Publish, type Priv } from "./Publish";
 import { drawQr } from "./QrSlips";
-import { useIep } from "./useIep";
+import { useIep, useIepSource } from "./useIep";
 
 const SYM: Record<string, string> = { y: "○", n: "╳", m: "△" };
 const F = "text-[13px] text-mute";
@@ -93,7 +92,18 @@ function Adjust({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round
           <span className={F}>回覆期限</span>
           <Input type="date" disabled={ro} value={R.due} onChange={(e) => ed((_, rr) => void (rr.due = e.target.value))} />
           <span className={F}>承辦</span>
-          <span className="font-medium">{IEP.hostLabel(D, R)}</span>
+          {!io.tid && !IEP.hostId(D, R) ? (
+            <Input
+              disabled={ro}
+              placeholder="特教組"
+              aria-label="承辦"
+              defaultValue={String(R.host || "")}
+              key={"h" + (R.host || "")}
+              onBlur={(e) => e.target.value.trim() !== String(R.host || "") && ed((_, rr) => void (rr.host = e.target.value.trim()))}
+            />
+          ) : (
+            <span className="font-medium">{IEP.hostLabel(D, R)}</span>
+          )}
           <span className={F}>地點</span>
           <Input
             disabled={ro}
@@ -225,15 +235,12 @@ function Adjust({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round
               }
             })
           }
-          onAll={(on) => {
-            const S = IEP.mineStu(D, io.tid);
-            if (!on) {
-              const ids = new Set(S.map((s) => s.id));
-              if (R.meets.some((m) => ids.has(m.s)) && !confirm("移除這些學生？名單的修改也會清掉。")) return;
-            }
+          onAll={(on, S) => {
+            const ids = new Set(S);
+            if (!on && R.meets.some((m) => ids.has(m.s)) && !confirm("移除這些學生？名單的修改也會清掉。")) return;
             reb((d, rr) => {
-              if (on) S.forEach((s) => IEP.addMeetAs(d, rr, s.id, io.tid));
-              else rr.meets.filter((m) => S.some((s) => s.id === m.s)).forEach((m) => IEP.delMeet(rr, m.id));
+              if (on) S.forEach((sid) => IEP.addMeetAs(d, rr, sid, io.tid));
+              else rr.meets.filter((m) => ids.has(m.s)).forEach((m) => IEP.delMeet(rr, m.id));
             });
           }}
         />
@@ -282,16 +289,16 @@ function Adjust({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round
 
 /* ── ① 回覆 ── */
 function Answers({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round) => void | false | Promise<void | false>): Promise<boolean> }) {
-  const x = useNx();
+  const x = useIepSource();
   const io = useIep();
   const busy = useMemo(() => io.busyOf(D, R), [io, D, R]);
   const pg = IEP.progress(D, R);
   const pub = (R.pub || []).length;
-  const online = !x.demo && !!x.user;
+  const online = x.online;
   const pulled = useRef(0);
   const doPull = (quiet: boolean) =>
     ed(async (d, r) => {
-      const n = await pull(x.scope!, d, r);
+      const n = await pull(x.scope, d, r);
       if (!quiet || n) toast(n ? "收到 " + n + " 份新的回覆" : "沒有新的回覆");
       if (!n) return false;
     }).catch(() => {});
@@ -549,7 +556,8 @@ export function RoundPage({ D, R, jump }: { D: RcData; R: Round; jump?: string }
   const outRef = useRef<HTMLDivElement>(null);
   const ed = (fn: (D: RcData, R: Round) => void | false | Promise<void | false>) => io.edit(R.id, fn);
   const list = IEP.webPeople(D, R);
-  const host = IEP.hostLabel(D, R);
+  // 舊版 host()：管理者開的、沒有承辦時寫「特教組」
+  const host = IEP.hostLabel(D, R) || (io.tid ? "" : "特教組");
   const fixed = R.meets.filter((m) => m.at);
 
   useEffect(() => {

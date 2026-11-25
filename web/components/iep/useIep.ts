@@ -1,21 +1,59 @@
 "use client";
 /* 我的 IEP 的資料操作：調查單存在 iep/{id}（json＝iep.js 的 round），寫入一律 Repo.put 帶 rev；
    發過填空堂邀請（R.inv）的調查單，每次存檔順便更新 iepInvite（內容一樣的不寫）。 */
-import { useCallback, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { failText, toast } from "@/components/Toast";
 import { IEP, type Busy, type Round } from "@/lib/iep";
 import type { IepRoundDoc } from "@/lib/model";
 import { inviteDocs, inviteWrites, nextOrd, roundDoc } from "@/lib/nx/iepSync";
 import { useNx } from "@/lib/nx/session";
-import { revKey, toCoreD } from "@/lib/repo";
+import { revKey, toCoreD, type Loaded, type Repo, type RepoScope } from "@/lib/repo";
+import type { Board } from "@/lib/schedule";
 import type { RcData } from "@/lib/types";
 
-export function useIep() {
+/** IEP 畫面的資料來源：老師端（我的 IEP，只有自己的）或管理者端（IEP 會議，全部；tid＝''，iep.js 的 SC='' 管理者模式） */
+export interface IepSource {
+  repo: Repo;
+  data: Loaded;
+  D: RcData;
+  board: Board | null;
+  /** 名冊老師 id；''＝管理者（全部的調查、全部的學生、個管篩選、會議設定） */
+  tid: string;
+  ro: boolean;
+  scope: RepoScope;
+  demo: boolean;
+  /** 可以發布線上連結（登入、不是範例資料） */
+  online: boolean;
+  admin: boolean;
+}
+const SrcCtx = createContext<IepSource | null>(null);
+/** 管理者頁面包一層，下面的 IEP 元件就用管理者的資料與範圍 */
+export const IepSourceProvider = SrcCtx.Provider;
+
+export function useIepSource(): IepSource {
+  const s = useContext(SrcCtx);
   const x = useNx();
-  const R0 = x.data!.records;
-  const revs = x.data!.revs;
+  if (s) return s;
+  return {
+    repo: x.repo!,
+    data: x.data!,
+    D: x.D!,
+    board: x.board,
+    tid: x.tid,
+    ro: !x.writable("iep") || x.repo!.readOnly,
+    scope: x.scope!,
+    demo: x.demo,
+    online: !x.demo && !!x.user,
+    admin: false,
+  };
+}
+
+export function useIep() {
+  const x = useIepSource();
+  const R0 = x.data.records;
+  const revs = x.data.revs;
   const tid = x.tid;
-  const ro = !x.writable("iep") || x.repo!.readOnly;
+  const ro = x.ro;
 
   /** iep.js 的 ctx（M、排好的節次、教室）：用畫面上已經算好的課表，不再算一次；weekBusy 會把結果快取在 ctx 上 */
   const ctx = useMemo(() => {
@@ -50,10 +88,10 @@ export function useIep() {
   const syncInvites = useCallback(
     async (D: RcData, R: Round, readers: string[]) => {
       const want = R.inv ? inviteDocs(D, R, readers, busyOf(D, R)) : {};
-      const have = Object.fromEntries(Object.entries(x.data!.records.iepInvite).filter(([, v]) => v.roundId === R.id));
+      const have = Object.fromEntries(Object.entries(x.data.records.iepInvite).filter(([, v]) => v.roundId === R.id));
       const ops = inviteWrites(want, have, R.id);
-      for (const s of ops.set) await x.repo!.put("iepInvite", s.id, s.data, s.isNew ? 0 : x.data!.revs[revKey("iepInvite", s.id)]?.rev || 0);
-      for (const id of ops.del) await x.repo!.remove("iepInvite", id);
+      for (const s of ops.set) await x.repo.put("iepInvite", s.id, s.data, s.isNew ? 0 : x.data.revs[revKey("iepInvite", s.id)]?.rev || 0);
+      for (const id of ops.del) await x.repo.remove("iepInvite", id);
       return ops.set.length;
     },
     [x.repo, x.data, busyOf],
@@ -67,10 +105,10 @@ export function useIep() {
         return false;
       }
       try {
-        const prev: IepRoundDoc | undefined = x.data!.records.iep[R.id];
-        const doc = roundDoc(D, R, nextOrd(x.data!.records.iep), prev);
-        await x.repo!.put("iep", R.id, doc, prev ? x.data!.revs[revKey("iep", R.id)]?.rev || 0 : 0);
-        if (R.inv || Object.values(x.data!.records.iepInvite).some((v) => v.roundId === R.id)) await syncInvites(D, R, doc.readers);
+        const prev: IepRoundDoc | undefined = x.data.records.iep[R.id];
+        const doc = roundDoc(D, R, nextOrd(x.data.records.iep), prev);
+        await x.repo.put("iep", R.id, doc, prev ? x.data.revs[revKey("iep", R.id)]?.rev || 0 : 0);
+        if (R.inv || Object.values(x.data.records.iepInvite).some((v) => v.roundId === R.id)) await syncInvites(D, R, doc.readers);
         return true;
       } catch (e) {
         toast(failText(e));
@@ -83,7 +121,7 @@ export function useIep() {
   /** 改一份調查單：用一份新的 D（不動畫面上的那份），改完存檔 */
   const edit = useCallback(
     async (rid: string, fn: (D: RcData, R: Round) => void | false | Promise<void | false>): Promise<boolean> => {
-      const D = toCoreD(x.data!.records);
+      const D = toCoreD(x.data.records);
       const R = IEP.ensure(D).rounds.find((r) => r.id === rid);
       if (!R || !IEP.canEdit(D, R, tid)) {
         toast("只能改自己開的調查");
@@ -97,7 +135,7 @@ export function useIep() {
 
   const create = useCallback(
     async (fn: (D: RcData) => Round | null): Promise<Round | null> => {
-      const D = toCoreD(x.data!.records);
+      const D = toCoreD(x.data.records);
       IEP.ensure(D);
       const R = fn(D);
       if (!R) return null;
@@ -109,8 +147,8 @@ export function useIep() {
   const remove = useCallback(
     async (rid: string) => {
       try {
-        for (const [id, v] of Object.entries(x.data!.records.iepInvite)) if (v.roundId === rid) await x.repo!.remove("iepInvite", id);
-        await x.repo!.remove("iep", rid);
+        for (const [id, v] of Object.entries(x.data.records.iepInvite)) if (v.roundId === rid) await x.repo.remove("iepInvite", id);
+        await x.repo.remove("iep", rid);
         return true;
       } catch (e) {
         toast(failText(e));
@@ -120,5 +158,5 @@ export function useIep() {
     [x.repo, x.data],
   );
 
-  return { R0, revs, tid, ro, D: x.D!, ctx, busyOf, rebuild, save, edit, create, remove, syncInvites };
+  return { R0, revs, tid, ro, D: x.D, ctx, busyOf, rebuild, save, edit, create, remove, syncInvites, src: x };
 }
