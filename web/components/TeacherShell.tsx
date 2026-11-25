@@ -1,7 +1,7 @@
 "use client";
 /* 老師端外框（IA.md：今天、我的學生、我的 IEP、點名、我的設定）。手機優先：手機是底部五格，桌機是左側欄。
    資料來源是 lib/nx/session.tsx：登入的老師（Firestore）或範例資料（記憶體）。其他狀態（還沒有邀請、找不到老師、管理者）回登入頁。 */
-import { ClipboardCheck, FileHeart, LogIn, LogOut, Settings, Sun, Users } from "lucide-react";
+import { ClipboardCheck, Eye, FileHeart, LayoutDashboard, LogIn, LogOut, Settings, Sun, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, type ReactNode } from "react";
@@ -64,7 +64,9 @@ export function TeacherShell({ title, children }: { title: string; children: Rea
   const x = useNx();
   const path = usePathname();
   const router = useRouter();
-  const ok = x.phase === "demo" || x.phase === "teacher";
+  // 管理者以老師身分預覽（唯讀）也用這個外框
+  const preview = x.phase === "staff" && !!x.previewTid;
+  const ok = x.phase === "demo" || x.phase === "teacher" || preview;
   const away = !ok && x.phase !== "boot" && x.phase !== "signing";
 
   useEffect(() => {
@@ -75,8 +77,9 @@ export function TeacherShell({ title, children }: { title: string; children: Rea
     document.title = title + "｜資源班管理系統";
   }, [title]);
   useEffect(() => {
-    if (away) router.replace("/login/");
-  }, [away, router]);
+    if (x.phase === "staff" && !x.previewTid) router.replace("/admin/");
+    else if (away) router.replace("/login/");
+  }, [away, router, x.phase, x.previewTid]);
 
   const here = (h: string) => (h === "/me/" ? path === "/me" || path === "/me/" : path.startsWith(h.replace(/\/$/, "")));
   const sub = x.demo ? "範例國中" : x.schoolName;
@@ -119,6 +122,10 @@ export function TeacherShell({ title, children }: { title: string; children: Rea
           <div className="no-print flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-sunk px-4 py-2 text-sm text-ink2 md:px-10">
             <span>範例資料</span>
             <DemoPicker />
+            <Link href="/admin/" className="inline-flex min-h-9 items-center gap-1.5 text-blue hover:underline">
+              <LayoutDashboard size={16} />
+              管理者畫面
+            </Link>
             {x.cloud && (
               <Link href="/login/" className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-line2 bg-card px-3.5 text-ink hover:bg-hover">
                 <LogIn size={16} />
@@ -127,7 +134,23 @@ export function TeacherShell({ title, children }: { title: string; children: Rea
             )}
           </div>
         )}
-        {x.repo?.readOnly && (
+        {preview && (
+          <div className="no-print flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-blue-l px-4 py-2 text-sm text-blue md:px-10">
+            <Eye size={16} />
+            <span>預覽：{x.me?.name || ""} 看到的畫面（唯讀）</span>
+            <button
+              type="button"
+              className="ml-auto inline-flex min-h-9 items-center rounded-full border border-line2 bg-card px-3.5 text-ink hover:bg-hover"
+              onClick={() => {
+                x.setPreview("");
+                router.push("/admin/");
+              }}
+            >
+              結束預覽
+            </button>
+          </div>
+        )}
+        {x.repo?.readOnly && !preview && (
           <div className="no-print bg-warn-l px-4 py-2 text-sm text-warn md:px-10">過渡期：資料由舊版同步，這裡只能看</div>
         )}
         <main className="mx-auto w-full max-w-[1000px] flex-1 px-4 pt-6 pb-10 md:px-10 md:pt-8">

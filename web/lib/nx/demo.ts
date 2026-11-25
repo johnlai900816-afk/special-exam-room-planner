@@ -73,3 +73,16 @@ export function demoScope(tid: string): RepoScope {
 export function demoRepo(tid: string): Repo {
   return createMemoryRepo(demoScope(tid), demoStore());
 }
+
+/** 範例資料的管理者視角（同一份記憶體資料庫：管理者改了，切回老師就看得到） */
+export const DEMO_ADMIN_SCOPE: RepoScope = { sid: "demo", termId: "demo", uid: "demo-admin", role: "admin" };
+let adminRepo: Repo | null = null;
+let adminFor: MemoryStore | null = null;
+export function demoAdminRepo(): Repo {
+  const st = demoStore();
+  if (!adminRepo || adminFor !== st) {
+    adminRepo = createMemoryRepo(DEMO_ADMIN_SCOPE, st);
+    adminFor = st;
+  }
+  return adminRepo;
+}

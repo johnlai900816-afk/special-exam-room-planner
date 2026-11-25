@@ -34,6 +34,7 @@ export default function LoginPage() {
   }, []);
   useEffect(() => {
     if (x.phase === "teacher") router.replace("/me/");
+    if (x.phase === "staff") router.replace("/admin/");
   }, [x.phase, router]);
 
   const login = async () => {
@@ -57,7 +58,7 @@ export default function LoginPage() {
   const oldLink = (
     <a href={OLD_APP} className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full border border-ink bg-ink px-4 text-[15px] font-medium text-on-ink">
       <ExternalLink size={16} />
-      管理功能請先用舊版
+      請先用舊版
     </a>
   );
   const signedIn = !!x.user;
@@ -69,7 +70,7 @@ export default function LoginPage() {
           <Brand />
         </div>
         <Card>
-          {x.phase === "boot" || x.phase === "signing" || x.phase === "teacher" ? (
+          {x.phase === "boot" || x.phase === "signing" || x.phase === "teacher" || x.phase === "staff" ? (
             <p className="py-6 text-center text-mute">{x.phase === "signing" ? "確認身分中…" : "連線中…"}</p>
           ) : x.phase === "demo" && !x.cloud ? (
             <div className="space-y-4">
@@ -93,6 +94,9 @@ export default function LoginPage() {
                 <Link href="/me/" className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full px-4 text-[15px] text-ink2 hover:bg-hover">
                   <Sparkles size={16} />
                   先看範例資料（虛構）
+                </Link>
+                <Link href="/admin/" className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full px-4 text-[15px] text-ink2 hover:bg-hover">
+                  範例資料的管理者畫面
                 </Link>
               </div>
             </div>
@@ -129,11 +133,9 @@ export default function LoginPage() {
               <Note tone="warn">學校還沒有設定這學期的資料</Note>
               {out}
             </div>
-          ) : x.phase === "staff" || x.phase === "viewer" ? (
+          ) : x.phase === "viewer" ? (
             <div className="space-y-4">
-              <p className="text-sm text-ink2">
-                {x.user?.email}・{x.phase === "staff" ? (x.claims?.role === "editor" ? "編輯" : "管理者") : "檢視"}
-              </p>
+              <p className="text-sm text-ink2">{x.user?.email}・檢視</p>
               {oldLink}
               {out}
             </div>

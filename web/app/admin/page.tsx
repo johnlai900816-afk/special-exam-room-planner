@@ -1,157 +1,186 @@
 "use client";
-import { AlertTriangle, CalendarRange, GraduationCap, UserRound } from "lucide-react";
+/* 管理者「今天」：今天全部老師的課（現在這一節標出來）、待辦（衝突、沒排、待編組、沒個管、本月到期、交接、邀請）、資源班老師的節數。
+   舊版 app.js renderHome。待辦還要到舊版處理的（排課、編組）連到舊版對應的頁面。 */
+import { ChevronRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
-import { AppShell } from "@/components/AppShell";
-import { Badge, Card, Note, PageHeader, Stat } from "@/components/ui";
-import { emailOfTeacher } from "@/lib/accounts";
-import { CORE } from "@/lib/core";
-import { buildBoard } from "@/lib/schedule";
-import { useSession } from "@/lib/session";
-import type { RcData } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { AdminShell, useAdmin } from "@/components/AdminShell";
+import { OLD_APP } from "@/components/Planned";
+import { SectionTitle, Stat, cx } from "@/components/ui";
+import type { InviteDoc } from "@/lib/model";
+import { adminTodos, teacherLoads, todayLessons } from "@/lib/nx/admin";
+import { useNow } from "@/lib/nx/hooks";
+import { listInvites } from "@/lib/nx/members";
+import { addDays, hmOf, ymd } from "@/lib/nx/today";
 
-function Overview({ D }: { D: RcData }) {
-  const s = useSession();
-  const board = useMemo(() => buildBoard(D), [D]);
-  const { M } = board;
+function Today() {
+  const { x, R, D, board } = useAdmin();
+  const now = useNow();
+  const td = ymd(now);
+  const hm = hmOf(now);
+  const wd = now.getDay();
+  const school = wd >= 1 && wd <= 5;
+  const day = school ? td : addDays(td, wd === 6 ? 2 : 1);
+  const [invites, setInvites] = useState<InviteDoc[] | null>(null);
+  const sid = x.admin?.role === "admin" && !x.demo ? x.claims?.sid || "" : "";
+  useEffect(() => {
+    if (!sid) return;
+    listInvites(sid).then(setInvites, () => setInvites(null));
+  }, [sid]);
 
-  const byGrade = useMemo(() => {
-    const m = new Map<number, Map<string, number>>();
-    D.students.forEach((st) => {
-      const g = CORE.gradeOfCls(st.cls);
-      const c = m.get(g) || new Map<string, number>();
-      c.set(st.cls, (c.get(st.cls) || 0) + 1);
-      m.set(g, c);
-    });
-    return [...m.entries()].sort((a, b) => a[0] - b[0]);
-  }, [D]);
+  const lessons = useMemo(() => (board ? todayLessons(board, day) : []), [board, day]);
+  const todo = useMemo(() => (board ? adminTodos({ D, board, R, today: td, hm, invites }) : []), [D, board, R, td, hm, invites]);
+  const loads = useMemo(() => (board ? teacherLoads(D, board) : []), [D, board]);
+  const mx = Math.max(1, ...loads.map((t) => Math.max(t.per, t.hours)));
+  const inG = new Set(D.groups.flatMap((g) => g.students));
+  const noG = D.students.filter((s) => !inG.has(s.id)).length;
+  const probs = board ? board.problems.filter((p) => p.k !== "un").length : 0;
 
-  const load = useMemo(() => {
-    const n = new Map<string, number>();
-    M.L.forEach((x, l) => {
-      const g = M.G[x.g];
-      if (g.t >= 0 && board.S.slot[l] >= 0) n.set(M.T[g.t].id, (n.get(M.T[g.t].id) || 0) + 1);
-    });
-    return n;
-  }, [M, board]);
-
-  const cm = useMemo(() => {
-    const n = new Map<string, number>();
-    D.students.forEach((st) => st.caseMgr && n.set(st.caseMgr, (n.get(st.caseMgr) || 0) + 1));
-    return n;
-  }, [D]);
-
-  const warns = M.G.flatMap((g) => g.warn.map((w) => g.name + "：" + w));
-  const res = D.teachers.filter((t) => t.role === "資源班");
+  if (!D.students.length && !D.groups.length)
+    return (
+      <div>
+        <h1 className="mb-6 text-[1.75rem] font-bold tracking-[-0.02em]">今天</h1>
+        <div className="flex flex-wrap items-center gap-3 text-mute">
+          還沒有資料
+          <Link href="/admin/settings/school/?step=import" className="inline-flex min-h-10 items-center rounded-full bg-ink px-4 font-medium text-on-ink">
+            匯入 Excel
+          </Link>
+        </div>
+      </div>
+    );
 
   return (
-    <>
-      <PageHeader title="總覽" lead={D.title || "未命名學期"} />
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="學生" value={D.students.length} hint={byGrade.map(([g, c]) => (CORE.GRADE[g] || "其他") + " " + [...c.values()].reduce((a, b) => a + b, 0)).join("・")} />
-        <Stat label="老師" value={D.teachers.length} hint={"資源班 " + res.length + " 位"} />
-        <Stat label="課程" value={D.groups.filter((g) => g.on !== false).length} hint={"共 " + board.total + " 節"} />
-        <Stat
-          label="已排入"
-          value={board.placed + " / " + board.total}
-          hint={M.viol ? <span className="text-bad">{M.viol} 個衝突</span> : <span className="text-ok">沒有衝突</span>}
-        />
+    <div>
+      <div className="mb-5">
+        <span className="text-sm text-mute">
+          {now.getMonth() + 1} 月 {now.getDate()} 日　週{"日一二三四五六"[wd]}
+          {D.title ? "　" + D.title : ""}
+        </span>
+        <h1 className="mt-0.5 text-[1.75rem] leading-tight font-bold tracking-[-0.02em]">今天</h1>
       </div>
 
-      {(warns.length > 0 || board.problems.length > 0) && (
-        <Card title="需要處理" icon={<AlertTriangle size={18} />} className="mt-4">
-          <ul className="max-h-60 list-disc space-y-1 overflow-y-auto pl-5 text-md">
-            {warns.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-            {board.problems.slice(0, 30).map((p, i) => (
-              <li key={i}>{p.m}</li>
-            ))}
-          </ul>
-          <Link href="/schedule/" className="mt-3 inline-flex min-h-10 items-center gap-1 text-md text-acc">
-            <CalendarRange size={16} />
-            到排課
-          </Link>
-        </Card>
-      )}
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Link href="/admin/students/" className="block hover:opacity-90">
+          <Stat label="學生" value={D.students.length} hint={noG ? noG + " 位沒分組" : "都已分組"} />
+        </Link>
+        <a href={OLD_APP + "#sched/board"} className="block hover:opacity-90">
+          <Stat
+            label="已排"
+            value={
+              <>
+                {board?.placed ?? 0}
+                <small className="text-sm font-normal text-mute"> / {board?.total ?? 0} 節</small>
+              </>
+            }
+            hint={probs ? <span className="text-bad">{probs} 個衝突</span> : board && board.placed < board.total ? "差 " + (board.total - board.placed) + " 節" : "沒有衝突"}
+          />
+        </a>
+        <Stat label="老師" value={D.teachers.length} hint={D.teachers.filter((t) => t.role === "資源班").length + " 位資源班"} />
+      </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card title="老師" icon={<UserRound size={18} />}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-md">
-              <thead>
-                <tr className="border-b border-line text-left text-sm text-mute">
-                  <th className="py-1.5 pr-2 font-normal">姓名</th>
-                  <th className="py-1.5 pr-2 font-normal">身分</th>
-                  <th className="py-1.5 pr-2 text-right font-normal">排課／應授</th>
-                  <th className="py-1.5 pr-2 text-right font-normal">個管</th>
-                  <th className="py-1.5 font-normal">帳號</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...D.teachers]
-                  .sort((a, b) => (a.role === "資源班" ? 0 : 1) - (b.role === "資源班" ? 0 : 1))
-                  .map((t) => {
-                    const n = load.get(t.id) || 0;
-                    const email = emailOfTeacher(s.access, t.id);
-                    return (
-                      <tr key={t.id} className="border-b border-line">
-                        <td className="py-1.5 pr-2">{t.name}</td>
-                        <td className="py-1.5 pr-2">
-                          <Badge tone={t.role === "資源班" ? "acc" : "default"}>{t.role}</Badge>
-                        </td>
-                        <td className={"py-1.5 pr-2 text-right " + (t.hours && n !== t.hours ? "text-warn" : "")}>
-                          {t.role === "資源班" || n ? n + " / " + (t.hours || "—") : "—"}
-                        </td>
-                        <td className="py-1.5 pr-2 text-right">{cm.get(t.id) || ""}</td>
-                        <td className="max-w-[10rem] truncate py-1.5 text-sm text-mute">{email || (s.cloud === "on" ? "未綁定" : "")}</td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <Card title="學生（依班級）" icon={<GraduationCap size={18} />}>
-          {byGrade.length ? (
-            <div className="space-y-3">
-              {byGrade.map(([g, c]) => (
-                <div key={g}>
-                  <div className="mb-1 text-md font-medium">{CORE.GRADE[g] || "其他"}</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[...c.entries()]
-                      .sort((a, b) => a[0].localeCompare(b[0]))
-                      .map(([cls, n]) => (
-                        <span key={cls} className="rounded-lg border border-line bg-sunk px-2 py-1 text-md">
-                          {cls} <span className="text-mute">{n} 人</span>
-                        </span>
+      <div className="grid gap-x-8 gap-y-2 lg:grid-cols-[1.2fr_1fr]">
+        <section>
+          <SectionTitle no={1}>{school ? "今天的課" : "週一的課"}</SectionTitle>
+          {lessons.length ? (
+            <div className="flex flex-col gap-2">
+              {lessons.map(({ pi, list }) => {
+                const p = list[0].p;
+                const cur = school && hm >= p.start && hm < p.end;
+                return (
+                  <div
+                    key={pi}
+                    className={cx("flex gap-3 rounded-2xl border bg-card px-4 py-3", cur ? "border-blue shadow-[inset_0_0_0_2px_var(--blue)]" : "border-line")}
+                    aria-current={cur ? "time" : undefined}
+                  >
+                    <div className="flex min-w-[4.2em] flex-col">
+                      <b>{p.name}</b>
+                      <small className="text-[13px] text-mute tabular-nums">{p.start}</small>
+                    </div>
+                    <ul className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      {list.map((s) => (
+                        <li key={s.key} className="flex flex-wrap items-baseline gap-x-2">
+                          <b>{s.name}</b>
+                          <small className="text-sm text-mute">
+                            {[D.teachers.find((t) => t.id === s.teacherId)?.name, s.room, s.sids.length + " 人"].filter(Boolean).join("・")}
+                          </small>
+                        </li>
                       ))}
+                    </ul>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <p className="text-ink2">名冊上還沒有學生。</p>
+            <p className="text-sm text-mute">{board && board.placed ? "沒有課" : "還沒有課表"}</p>
           )}
-        </Card>
-      </div>
+        </section>
 
-      {s.source.kind === "demo" && (
-        <div className="mt-4">
-          <Note>這是虛構的範例資料。到「資料與帳號」讀取備份檔，或登入學校的雲端，就會看到你們自己的資料。</Note>
+        <div>
+          <SectionTitle no={2}>待辦</SectionTitle>
+          {todo.length ? (
+            <ul className="flex flex-col gap-2">
+              {todo.map((t, i) => {
+                const old = t.href.startsWith("old:");
+                const cls = cx("flex min-h-12 items-center gap-2.5 rounded-2xl border bg-card px-4 py-2.5 hover:bg-hover", t.level === "bad" ? "border-bad/40" : "border-line");
+                const inner = (
+                  <>
+                    <span className={cx("min-w-0 flex-1", t.level === "bad" && "text-bad")}>{t.text}</span>
+                    <em className="flex items-center gap-1 text-sm whitespace-nowrap text-blue not-italic">
+                      {t.act}
+                      {old ? <ExternalLink size={14} /> : <ChevronRight size={16} />}
+                    </em>
+                  </>
+                );
+                return (
+                  <li key={i}>
+                    {old ? (
+                      <a href={OLD_APP + t.href.slice(4)} className={cls}>
+                        {inner}
+                      </a>
+                    ) : (
+                      <Link href={t.href} className={cls}>
+                        {inner}
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-mute">沒有待辦</p>
+          )}
+
+          {loads.length > 0 && (
+            <>
+              <SectionTitle no={3} className="mt-8">
+                資源班老師
+              </SectionTitle>
+              <ul className="flex flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
+                {loads.map((t) => (
+                  <li key={t.id} className="grid grid-cols-[5em_1fr_auto] items-center gap-3 text-[15px]">
+                    <span className="truncate">{t.name}</span>
+                    <span className="h-2 overflow-hidden rounded-full bg-sunk" aria-hidden>
+                      <i className="block h-full rounded-full bg-blue" style={{ width: Math.round((t.per / mx) * 100) + "%" }} />
+                    </span>
+                    <small className="text-sm whitespace-nowrap text-mute tabular-nums">
+                      {t.per}
+                      {t.hours ? "/" + (t.hours - t.reduce) : ""} 節・{t.cases} 案
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
-export default function AdminPage() {
-  const s = useSession();
+export default function AdminTodayPage() {
   return (
-    <AppShell allow={["admin"]} title="總覽">
-      {s.D && <Overview D={s.D} />}
-    </AppShell>
+    <AdminShell title="今天">
+      <Today />
+    </AdminShell>
   );
 }
