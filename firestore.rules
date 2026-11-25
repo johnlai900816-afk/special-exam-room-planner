@@ -1,44 +1,113 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ★ 學校自己架設時：把下面的信箱改成主持人的 Gmail（網站「學校自己的雲端 › 複製安全規則」會自動填好）。
+    //   只有這個帳號能第一次建立共用名單（config/access），避免別人搶先登入變成主持人。
+    //   已經有共用名單的專案不受影響。
+    function adminEmail() { return 'CHANGE-ME@example.com'; }
+
     function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
     function email() { return request.auth.token.email; }
     function access() { return get(/databases/$(database)/documents/config/access).data; }
     function member() { return signedIn() && email() in access().emails; }
     function editor() { return member() && !(email() in access().get('viewers', [])); }
+    function incoming() { return request.resource.data; }
 
-    // 共用名單：第一位登入者成為主持人，之後只有主持人能改名單與權限
+    // 存整份 json 的文件（rc/main、exams/main、exams/notice）：
+    // 只能有 json、by、at、rev；json 是文字、小於 1MB；by 是自己；at 是伺服器時間
+    function jsonDoc() {
+      return incoming().keys().hasOnly(['json', 'by', 'at', 'rev'])
+        && incoming().json is string && incoming().json.size() < 1048000
+        && incoming().by == email()
+        && incoming().at == request.time;
+    }
+    // 版本號：有帶 rev 就一定要是上一版 +1（舊版程式沒帶 rev 也還能寫）
+    function nextRev() {
+      return !('rev' in incoming())
+        || (incoming().rev is int && incoming().rev == (resource == null ? 0 : resource.data.get('rev', 0)) + 1);
+    }
+    // 誰在線上：每個人只能改自己那一格（key＝自己的 uid），內容只能是自己的信箱、名字、時間
+    function presOk(p) {
+      return p is map && p.keys().hasOnly(['email', 'name', 'at'])
+        && p.email == email() && p.name is string && p.name.size() <= 100
+        && (p.at is int || p.at is float);
+    }
+    function presWrite() {
+      return member() && incoming().size() <= 300
+        && (resource == null
+              ? incoming().keys().hasOnly([request.auth.uid])
+              : incoming().diff(resource.data).affectedKeys().hasOnly([request.auth.uid]))
+        && (!(request.auth.uid in incoming()) || presOk(incoming()[request.auth.uid]));
+    }
+    function accessShape() {
+      return incoming().keys().hasOnly(['admin', 'emails', 'viewers', 'link'])
+        && incoming().admin is string
+        && incoming().emails is list && incoming().emails.size() <= 100
+        && incoming().get('viewers', []) is list && incoming().get('viewers', []).size() <= 100
+        && incoming().get('link', '') is string && incoming().get('link', '').matches('([0-9a-f]{32})?');
+    }
+
+    // 共用名單：只有 adminEmail() 能第一次建立；之後只有主持人能改名單與權限
     // emails＝全部成員；viewers＝其中只能檢視的人（主持人不能被設成檢視）
+    // 主持人可以把主持人交給名單裡已經有的成員
     // 名冊、排課、段考考場共用這一份名單
     match /config/access {
       allow get: if signedIn() && (resource == null || email() in resource.data.emails);
-      allow create: if signedIn() && request.resource.data.admin == email() && request.resource.data.emails == [email()];
-      allow update: if signedIn() && resource.data.admin == email() && request.resource.data.admin == email()
-        && email() in request.resource.data.emails && !(email() in request.resource.data.get('viewers', []));
+      allow list: if false;
+      allow create: if signedIn() && email().lower() == adminEmail().lower() && accessShape()
+        && incoming().admin == email() && incoming().emails == [email()] && incoming().get('viewers', []) == [];
+      allow update: if signedIn() && resource.data.admin == email() && accessShape()
+        && incoming().admin in incoming().emails
+        && !(incoming().admin in incoming().get('viewers', []))
+        && (incoming().admin == email() || incoming().admin in resource.data.emails);
+      allow delete: if false;
     }
 
-    // 名冊與排課（rc/main）、誰在線上（rc/presence）
+    // 名冊與排課：rc/main（不能刪除）
+    match /rc/main {
+      allow read: if member();
+      allow create, update: if editor() && jsonDoc() && nextRev();
+      allow delete: if false;
+    }
+    // 誰在線上：rc/presence
     match /rc/presence {
-      allow read, write: if member();
-    }
-    match /rc/{id} {
       allow read: if member();
-      allow write: if editor();
+      allow create, update: if presWrite();
+      allow delete: if false;
+    }
+    // 點名紀錄：rc/att-YYYY-MM-DD，一天一份；其他名稱的 rc 文件都不能建立
+    match /rc/{id} {
+      allow read: if member() && id.matches('att-[0-9]{4}-[0-9]{2}-[0-9]{2}');
+      allow create, update: if editor() && id.matches('att-[0-9]{4}-[0-9]{2}-[0-9]{2}') && incoming().size() <= 300;
+      allow delete: if false;
     }
 
-    // ── 以下和「段考特殊試場排列機」的規則相同，段考考場頁沿用 ──
+    // ── 以下是段考考場頁（exam.html）用的 ──
     match /exams/presence {
-      allow read, write: if member();
-    }
-    // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），知道鑰匙才讀得到單一文件，不能列出
-    match /view/{t} {
-      allow get: if true;
-      allow write: if editor() && access().get('link', '') != ''
-        && (t == access().link || t == access().link + '_n');
-    }
-    match /exams/{id} {
       allow read: if member();
-      allow write: if editor();
+      allow create, update: if presWrite();
+      allow delete: if false;
+    }
+    // 考場資料 exams/main、通知單 exams/notice（不能刪除，也不能建立其他名稱的文件）
+    match /exams/{id} {
+      allow read: if member() && id in ['main', 'notice'];
+      allow create, update: if editor() && id in ['main', 'notice'] && jsonDoc() && nextRev();
+      allow delete: if false;
+    }
+    // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），後面可以接「_班級」或「_n」的分班副本。
+    // 知道鑰匙才讀得到單一文件，不能列出；文件一定要有到期時間 exp（Firestore 時間），過期就讀不到。
+    function linkKey() { return access().get('link', ''); }
+    function linkDoc(t) {
+      return linkKey().matches('[0-9a-f]{32}')
+        && (t == linkKey() || t.matches(linkKey() + '_[^/]{1,40}'));
+    }
+    match /view/{t} {
+      allow get: if resource.data.get('exp', null) is timestamp && resource.data.exp > request.time;
+      allow list: if false;
+      allow create, update: if editor() && linkDoc(t)
+        && incoming().get('exp', null) is timestamp
+        && incoming().exp > request.time && incoming().exp < request.time + duration.value(400, 'd');
+      allow delete: if editor() && linkDoc(t);
     }
   }
 }
