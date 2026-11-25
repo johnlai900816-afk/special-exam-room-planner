@@ -519,7 +519,7 @@ function diff(before, after, cols) {
     if (canon(content(before.term)) !== canon(content(after.term))) set.push({ col: 'term', id: '', data: after.term });
   }
   (cols || COLS).forEach((c) => {
-    if (!has(after, c)) return;
+    if (c === 'term' || !has(after, c)) return;
     const a = after[c] || {};
     const b = before[c] || {};
     Object.keys(a).forEach((id) => {
