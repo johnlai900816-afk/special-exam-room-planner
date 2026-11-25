@@ -655,7 +655,7 @@ function suggestCaseMgr(D,opt){
     if(keep&&s.caseMgr===t.id)x-=6;
     x-=2.5*(teach[s.id+'|'+t.id]||0);
     if(mine.length){x-=2*mine.filter(o=>grade(o)===grade(s)).length/mine.length;x-=0.8*Math.min(3,mine.filter(o=>String(o.cls)===String(s.cls)).length);}
-    const over=load[t.id]+W(s)-cap[t.id];if(over>0)x+=4*over;   // 超過上限扣很多
+    const over=load[t.id]+W(s)-cap[t.id];if(over>0)x+=40*over;   // 上限幾乎當成硬規定：除非大家都滿了
     return x;};
   const res=new Map();
   // 先放已經有個管的；再依「有教到他的老師越少越難安排」的順序放其他學生
@@ -664,7 +664,7 @@ function suggestCaseMgr(D,opt){
   order.forEach(s=>{let best=null,bs=Infinity;T.forEach(t=>{const x=score(s,t);if(x<bs-1e-9){bs=x;best=t;}});res.set(s.id,best.id);load[best.id]+=W(s);byT[best.id].push(s);});
   // 微調：兩兩交換，整體變好就換
   const tot=()=>S.reduce((a,s)=>{const t=res.get(s.id);return a+(keep&&s.caseMgr===t?-6:0)-2.5*(teach[s.id+'|'+t]||0);},0)
-    +T.reduce((a,t)=>{const m=byT[t.id];return a+Math.max(0,load[t.id]-cap[t.id])*4+new Set(m.map(grade)).size*1.2+new Set(m.map(o=>String(o.cls))).size*0.4;},0);
+    +T.reduce((a,t)=>{const m=byT[t.id];return a+Math.max(0,load[t.id]-cap[t.id])*40+new Set(m.map(grade)).size*1.2+new Set(m.map(o=>String(o.cls))).size*0.4;},0);
   let cur=tot();
   for(let pass=0;pass<4&&S.length<=400;pass++){let imp=false;
     for(let i=0;i<S.length;i++)for(let j=i+1;j<S.length;j++){const a=S[i],b=S[j],ta=res.get(a.id),tb=res.get(b.id);if(ta===tb)continue;
