@@ -185,6 +185,8 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
       setPhase("signing");
       try {
         let c = claimsOf((await u.getIdTokenResult()).claims);
+        // 快取的 token 可能是領角色以前的：先強制換一次再判斷
+        if (!c) c = claimsOf((await u.getIdTokenResult(true)).claims);
         if (!c) {
           try {
             await callNx("nxAcceptInvite", {});
