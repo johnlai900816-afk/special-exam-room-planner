@@ -83,7 +83,7 @@ export function defaultData(): NoticeData {
           "1-3": { loc: "環教中心", shade: true, s: "10:45" },
         },
         notes: "考試兩天都要帶[[通知單]]來考試。\n星期三第6節要帶==課本==來學習中心自習==(14：50考試)==\n檢查文具(黑筆、2B鉛筆、立可帶、橡皮擦)是否帶齊。",
-      } as NoticeStudent,
+      } as unknown as NoticeStudent,
       {
         demo: true,
         cls: "903",
@@ -91,7 +91,7 @@ export function defaultData(): NoticeData {
         name: "張小安",
         c: { "0-0": { loc: "技藝大樓電腦教室/(特教辦公室集合)", shade: true }, "1-1": { loc: "技藝大樓電腦教室/(特教辦公室集合)", shade: true } },
         notes: "星期三作文：__7：50__先到特教辦公室集合。\n星期四國文：__9：00__先到特教辦公室集合。\n檢查文具(黑筆、2B鉛筆、立可帶、橡皮擦)是否帶齊。",
-      } as NoticeStudent,
+      } as unknown as NoticeStudent,
       {
         demo: true,
         cls: "802",
@@ -99,7 +99,7 @@ export function defaultData(): NoticeData {
         name: "黃小傑",
         c: { "0-0": { loc: "學習中心三" }, "0-1": { loc: "學習中心三" }, "0-3": { loc: "學習中心二" }, "0-6": { loc: "學習中心二" }, "1-1": { loc: "學習中心三" }, "1-3": { loc: "學習中心二" } },
         notes: null,
-      } as NoticeStudent,
+      } as unknown as NoticeStudent,
     ],
   };
 }

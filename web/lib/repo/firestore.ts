@@ -59,6 +59,9 @@ function split(data: DocumentData): { doc: Record<string, unknown>; meta: Versio
   return { doc, meta: { rev: +data.rev || 0, updatedBy: String(data.updatedBy || ""), updatedAt: toDate(data.updatedAt) } };
 }
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
+/** 段考的試場、學生考場只有一份段考（exam/main，和舊版 exams/main 一樣）；records 的 key 是 `main/${docId}` */
+export const EXAM_EID = "main";
+const inExam = (id: string) => EXAM_EID + "/" + id;
 
 export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: FirestoreRepoOptions = {}): Repo {
   const T = `schools/${scope.sid}/terms/${scope.termId}`;
@@ -73,7 +76,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
   /** 每一個來源（一個查詢或一份文件）→ 它在 records 裡的位置 */
   type Src =
     | { kind: "doc"; col: "term"; ref: DocumentReference }
-    | { kind: "query"; col: Collection; q: Query; key?: (id: string, data: DocumentData) => string };
+    | { kind: "query"; col: Collection; q: Query; key?: (id: string) => string };
   function sources(): Src[] {
     const c = (name: string) => collection(db, T + "/" + name);
     const s: Src[] = [{ kind: "doc", col: "term", ref: doc(db, T) }];
@@ -81,6 +84,8 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
     if (staff) {
       (["students", "iep", "iepInvite", "versions", "lockLog", "staff"] as const).forEach((n) => s.push({ kind: "query", col: n, q: c(n) }));
       s.push({ kind: "query", col: "attendance", q: query(c("attendance"), where("date", ">=", since)) });
+      s.push({ kind: "query", col: "examPlace", q: c("exam/" + EXAM_EID + "/placements"), key: inExam });
+      s.push({ kind: "query", col: "examSeat", q: c("exam/" + EXAM_EID + "/seats"), key: inExam });
     } else if (tid) {
       s.push({ kind: "query", col: "students", q: query(c("students"), where("teacherIds", "array-contains", tid)) });
       s.push({ kind: "query", col: "students", q: query(c("students"), where("caseMgrId", "==", tid)) });
@@ -89,6 +94,9 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
       // 填空堂：邀請我的、我發的
       s.push({ kind: "query", col: "iepInvite", q: query(c("iepInvite"), where("teacherId", "==", tid)) });
       s.push({ kind: "query", col: "iepInvite", q: query(c("iepInvite"), where("readers", "array-contains", tid)) });
+      // 段考：我監考的試場（交卷名單）、讀得到的學生的考場
+      s.push({ kind: "query", col: "examPlace", q: query(c("exam/" + EXAM_EID + "/placements"), where("proctorIds", "array-contains", tid)), key: inExam });
+      s.push({ kind: "query", col: "examSeat", q: query(c("exam/" + EXAM_EID + "/seats"), where("teacherIds", "array-contains", tid)), key: inExam });
     }
     return s;
   }
@@ -100,7 +108,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
     });
     if (staff)
       Object.keys(R.exam).forEach((eid) =>
-        ["data", "notice"].forEach((d) => out.push({ col: "examPrivate", id: eid + "/" + d, ref: ref("examPrivate", eid + "/" + d) })),
+        ["data", "notice", "view"].forEach((d) => out.push({ col: "examPrivate", id: eid + "/" + d, ref: ref("examPrivate", eid + "/" + d) })),
       );
     return out;
   }
@@ -121,7 +129,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
     await Promise.all(
       sources().map(async (s) => {
         if (s.kind === "doc") put1(L, "term", "", await getDoc(s.ref));
-        else (await getDocs(s.q)).forEach((d) => put1(L, s.col, d.id, d));
+        else (await getDocs(s.q)).forEach((d) => put1(L, s.col, s.key ? s.key(d.id) : d.id, d));
       }),
     );
     await Promise.all(privateRefs(L.records).map(async (p) => put1(L, p.col, p.id, await getDoc(p.ref))));
@@ -140,7 +148,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
       srcs.forEach((s, i) => {
         const x = state[i]!;
         if (s.kind === "doc") put1(L, "term", "", x as DocumentSnapshot);
-        else (x as QuerySnapshot).forEach((d) => put1(L, s.col, d.id, d));
+        else (x as QuerySnapshot).forEach((d) => put1(L, s.col, s.key ? s.key(d.id) : d.id, d));
       });
       // private 的監看跟著學生名單增減
       const want = privateRefs(L.records);

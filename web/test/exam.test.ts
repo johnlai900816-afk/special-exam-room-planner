@@ -83,10 +83,10 @@ function bigExam(seed: number): ExamD {
     const k = rnd();
     if (k < 0.25) sv.ext = "*";
     else if (k < 0.4) sv.small = "*";
-    else if (k < 0.55) (sv.read = "*"), (sv.oral = ["國文", "作文"]);
+    else if (k < 0.55) Object.assign(sv, { read: "*", oral: ["國文", "作文"] });
     else if (k < 0.65) sv.pc = ["作文"];
-    else if (k < 0.8) (sv.ext = [pick(subs), pick(subs)]), (sv.read = "*");
-    else if (k < 0.9) (sv.small = "*"), (sv.ext = "*");
+    else if (k < 0.8) Object.assign(sv, { ext: [pick(subs), pick(subs)], read: "*" });
+    else if (k < 0.9) Object.assign(sv, { small: "*", ext: "*" });
     else sv.oral = [pick(subs)];
     D.students.push({ id: "s" + i, cls, seat: String(1 + i).padStart(2, "0"), name: "學生" + "甲乙丙丁戊己庚辛"[i % 8] + i, sv: sv as never, memo: i % 7 ? "" : "備註" + i, on: i !== 5 });
   }

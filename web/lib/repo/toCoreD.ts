@@ -5,7 +5,7 @@ import type { TermRecords } from "../model";
 import type { RcData } from "../types";
 
 /** 新版才有、舊格式 D 沒有的集合（functions/nx-split.js 不認得，搬移與同步不會碰） */
-const NATIVE_ONLY = ["iepInvite"] as const;
+const NATIVE_ONLY = ["iepInvite", "examPlace", "examSeat"] as const;
 function withNative(R: TermRecords): TermRecords {
   NATIVE_ONLY.forEach((c) => {
     if (!R[c]) (R as unknown as Record<string, unknown>)[c] = {};

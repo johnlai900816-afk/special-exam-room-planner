@@ -1,6 +1,6 @@
 "use client";
 /* 管理者「今天」：今天全部老師的課（現在這一節標出來）、待辦（衝突、沒排、待編組、沒個管、本月到期、交接、邀請）、資源班老師的節數。
-   舊版 app.js renderHome。待辦都連到新版的頁面（點名、導師週報、IEP 會議、排課…）；只有段考還在舊版。 */
+   舊版 app.js renderHome。待辦都連到新版的頁面（點名、導師週報、IEP 會議、排課、段考…）。 */
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";

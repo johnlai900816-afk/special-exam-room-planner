@@ -1,6 +1,7 @@
 "use client";
 /* 我的設定：不排課時段（Repo.saveMyOff）、我的監考（exam/{eid} 的監考對照）、外觀（深色、字級）、公用電腦模式。舊版 teacher.js rSet。 */
 import { LogOut } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { failText, toast } from "@/components/Toast";
@@ -114,7 +115,9 @@ function Proctor() {
       ) : (
         <p className="text-sm text-mute">{exams.length ? "沒有排到監考" : "還沒有段考資料"}</p>
       )}
-      <p className="mt-2 text-sm text-mute">交卷名單之後在這裡看</p>
+      <Link href="/me/exam/" className="mt-3 inline-flex min-h-10 items-center rounded-full border border-line2 bg-card px-4 text-[15px] hover:bg-hover">
+        交卷名單、我的學生在哪裡考
+      </Link>
     </>
   );
 }

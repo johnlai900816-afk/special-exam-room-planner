@@ -27,6 +27,8 @@ export const COL_NAME: Record<string, string> = {
   iepInvite: "IEP 填空堂",
   exam: "段考",
   examPrivate: "段考名單",
+  examPlace: "段考試場",
+  examSeat: "學生考場",
   versions: "版本",
   lockLog: "鎖課紀錄",
   staff: "其他設定",

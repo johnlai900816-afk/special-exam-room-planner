@@ -538,9 +538,11 @@ function pathOf(sid, termId, col, id) {
   const T = 'schools/' + sid + '/terms/' + termId;
   if (col === 'term') return T;
   if (col === 'privates') return T + '/students/' + id + '/private/profile';
-  if (col === 'examPrivate') {
+  // 段考底下的子集合：id＝`${eid}/${docId}`（examPlace、examSeat 是新版才有的，搬移與同步不碰）
+  const SUB = { examPrivate: 'private', examPlace: 'placements', examSeat: 'seats' };
+  if (SUB[col]) {
     const i = id.indexOf('/');
-    return T + '/exam/' + id.slice(0, i) + '/private/' + id.slice(i + 1);
+    return T + '/exam/' + id.slice(0, i) + '/' + SUB[col] + '/' + id.slice(i + 1);
   }
   return T + '/' + col + '/' + id;
 }

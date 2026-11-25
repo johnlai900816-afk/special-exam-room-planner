@@ -1,6 +1,7 @@
 /* 管理者端的純邏輯：今天的待辦、學生名單的篩選、個管分配、批次指定個管。
    行為照舊版 app.js（renderHome、renderStu、cmOpen／cmRun／cmApply、bulkCM），資料改成分拆後的 records。
    改資料的一律回傳 planOnD 的結果（試跑＋要寫的文件），畫面確認後再 applyOps。單元測試：test/admin.test.ts。 */
+import { examTodo } from "./examData";
 import { CORE } from "../core";
 import { NX } from "../legacy";
 import type { InviteDoc, StudentDoc, StudentPrivateDoc, TermRecords } from "../model";
@@ -123,6 +124,9 @@ export function adminTodos(x: AdminTodayInput): AdminTodo[] {
   const H = handover(D, today);
   const hb = H.items.filter((i) => i.k !== "due" && i.k !== "cm");
   if (hb.length) out.push({ level: hb.some((i) => i.level === "bad") ? "bad" : "info", text: "學年交接 " + hb.length + " 項要確認", act: "交接", href: "/admin/settings/school/?step=handover" });
+  // 段考還有幾科次沒排考場（舊 app.js examInfo）
+  const ex = examTodo(R);
+  if (ex && ex.total > ex.placed) out.push({ level: "warn", text: "段考還有 " + (ex.total - ex.placed) + " 科次沒排考場", act: "段考", href: "/admin/exam/?step=board" });
   const inv = (x.invites || []).filter((v) => !v.exp || v.exp.getTime() > Date.now());
   if (inv.length) out.push({ level: "info", text: inv.length + " 份邀請還沒領取", act: "帳號", href: "/admin/settings/accounts/" });
   return out;

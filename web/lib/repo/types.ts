@@ -4,6 +4,8 @@ import type {
   AttendanceDoc,
   ClassDoc,
   ExamDoc,
+  ExamPlaceDoc,
+  ExamSeatDoc,
   Collection,
   GroupDoc,
   IepInviteDoc,
@@ -42,6 +44,8 @@ export type WritableCol =
   | "iepInvite"
   | "exam"
   | "examPrivate"
+  | "examPlace"
+  | "examSeat"
   | "versions"
   | "lockLog"
   | "staff";
@@ -58,6 +62,8 @@ export interface DocTypes {
   iepInvite: IepInviteDoc;
   exam: ExamDoc;
   examPrivate: JsonBlobDoc;
+  examPlace: ExamPlaceDoc;
+  examSeat: ExamSeatDoc;
   versions: JsonBlobDoc;
   lockLog: JsonBlobDoc;
   staff: JsonBlobDoc;

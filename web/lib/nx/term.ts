@@ -71,7 +71,7 @@ export function planNewTerm(records: TermRecords, opt: NewTermOpt): NewTermPlan 
   D.handoverBase = (CORE as unknown as { handoverBase(D: RcData): unknown }).handoverBase(toCoreD(records));
   const Dn = CORE.normalize(D);
   const R = splitD(Dn);
-  const out: TermRecords = { ...emptyRecords(), ...R, attendance: {}, iepInvite: {}, versions: {}, lockLog: {}, exam: {}, examPrivate: {}, iep: {} };
+  const out: TermRecords = { ...emptyRecords(), ...R, attendance: {}, iepInvite: {}, versions: {}, lockLog: {}, exam: {}, examPrivate: {}, examPlace: {}, examSeat: {}, iep: {} };
   return {
     records: out,
     D: Dn,

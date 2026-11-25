@@ -31,6 +31,8 @@ export function visible(scope: RepoScope, R: TermRecords): TermRecords {
     lockLog: none,
     staff: none,
     examPrivate: none,
+    examPlace: tid ? pickBy(R.examPlace || {}, (v) => (v.proctorIds || []).includes(tid)) : none,
+    examSeat: tid ? pickBy(R.examSeat || {}, (v) => (v.teacherIds || []).includes(tid)) : none,
   };
 }
 

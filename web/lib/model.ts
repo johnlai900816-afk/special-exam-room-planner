@@ -13,7 +13,9 @@
        attendance/{date_gid@pid}                  AttendanceDoc  管理者／編輯與那門課的老師
        iep/{roundId}                              IepRoundDoc    管理者／編輯＋readers（發起人、個管）
        iepInvite/{roundId}_{teacherId}            IepInviteDoc   被邀請的老師填空堂（老師本人＋readers）
-       exam/{eid}  (+ private/{data|notice})      ExamDoc        考程、試場、監考；學生名單在 private
+       exam/{eid}  (+ private/{data|notice|view})  ExamDoc        考程、試場、監考；學生名單在 private
+         placements/{ses|room}                    ExamPlaceDoc   一間試場一節：監考老師讀得到自己的（交卷名單）
+         seats/{studentId}                        ExamSeatDoc    一位學生的考場：teacherIds 的老師讀得到
        versions/{id}, lockLog/{id}, staff/{id}    只有管理者／編輯
      publicViews/{token}, auditLogs/{id}          只有後端寫
 
@@ -237,6 +239,38 @@ export interface ExamDoc {
   packed?: Record<string, string>;
 }
 
+/** exam/{eid}/placements/{sesId|roomId}：一節一間試場（交卷名單）。監考與支援老師（proctorIds）讀得到；
+    內容只有那一間的學生（班級座號、姓名、服務簡稱、延長時間），由管理者存段考時一起產生。 */
+export interface ExamPlaceDoc {
+  ses: string;
+  room: string;
+  date: string;
+  dow: string;
+  per: string;
+  /** 科目（補考節加「（補）」） */
+  lab: string;
+  /** 考試時間（有延長學生時是延長後的） */
+  t: string;
+  roomName: string;
+  proctor: string;
+  support: string;
+  /** 監考、支援老師的名冊 id（用姓名對到的；對不到的不在裡面） */
+  proctorIds: string[];
+  /** 這一間考試的學生：c 班級、s 座號、n 姓名、sv 服務、x 延長後的時間 */
+  stu: { c: string; s: string; n: string; sv: string; x: string }[];
+  /** 改到補考節、這一節在這裡自習的學生（j＝哪一科補考） */
+  wait: { c: string; s: string; n: string; j: string }[];
+}
+/** exam/{eid}/seats/{studentId}：一位學生每一科在哪裡考。讀得到這位學生的老師（teacherIds，和學生文件一樣）讀得到；
+    欄位和舊版「班級查考場連結」一樣少（不含服務內容與備註）。 */
+export interface ExamSeatDoc {
+  teacherIds: string[];
+  cls: string;
+  seat: string;
+  name: string;
+  rows: { date: string; dow: string; lab: string; per: string; t: string; ext: boolean; room: string; proc: string }[];
+}
+
 export interface JsonBlobDoc {
   json: string;
   [k: string]: unknown;
@@ -260,6 +294,9 @@ export interface TermRecords {
   examPrivate: Record<string, JsonBlobDoc>;
   /** IEP 填空堂邀請（新版才有，不在舊格式 D 裡；搬移與同步不碰） */
   iepInvite: Record<string, IepInviteDoc>;
+  /** 段考的試場（交卷名單）與學生考場（新版才有，存段考時產生）；key＝`${eid}/${docId}` */
+  examPlace: Record<string, ExamPlaceDoc>;
+  examSeat: Record<string, ExamSeatDoc>;
 }
 
 export type Collection = Exclude<keyof TermRecords, "term">;
