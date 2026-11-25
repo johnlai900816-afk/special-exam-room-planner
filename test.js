@@ -323,6 +323,7 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   const E=C.normalize({students:[{id:'x',cls:'701',name:'甲',note:'情緒障礙，需要冷靜角'}],settings:{}});
   ok(E.students[0].privNote==='情緒障礙，需要冷靜角'&&!E.students[0].note&&C.normalize(Object.assign(E,{students:[Object.assign(E.students[0],{note:'帶課本'})]})).students[0].note==='帶課本','舊的備註先搬到私密備註，之後寫的公開提醒不會再被搬走');
   const F=C.defaultData();C.importStudents(F,'班級\t座號\t姓名\t備註\n701\t03\t王小明\t服藥中');ok(F.students[0].privNote==='服藥中'&&!F.students[0].note,'名單上的備註匯入成私密備註');
+}
 // 19. 個管分配建議
 {
   console.log('\n19. 個管分配建議');
