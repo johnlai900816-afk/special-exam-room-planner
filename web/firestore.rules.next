@@ -277,6 +277,20 @@ service cloud.firestore {
         && incoming().readers is list && incoming().readers.size() <= 200
         && str(incoming().json, 500000);
     }
+    // IEP 填空堂邀請：發起人（readers）寫公開的部分；被邀請的老師只寫 free、note、ansAt
+    function INV_ANS() { return ['free', 'note', 'ansAt']; }
+    function invShape(iid) {
+      return incoming().keys().hasAll(['roundId', 'teacherId', 'readers', 'keys'])
+        && incoming().keys().hasOnly(['roundId', 'teacherId', 'readers', 'name', 'round', 'kind', 'host', 'd1', 'd2', 'due',
+               'keys', 'ps', 'busy', 'stu', 'meets'].concat(INV_ANS()).concat(META()))
+        && str(incoming().roundId, 60) && str(incoming().teacherId, 60) && iid == incoming().roundId + '_' + incoming().teacherId
+        && incoming().readers is list && incoming().readers.size() <= 200
+        && incoming()['keys'] is list && incoming()['keys'].size() <= 400
+        && optStr('name', 100) && optStr('round', 100) && optStr('kind', 40) && optStr('host', 60)
+        && optStr('d1', 20) && optStr('d2', 20) && optStr('due', 20)
+        && optList('ps', 30) && optMap('busy', 400) && optList('stu', 80) && optList('meets', 80)
+        && optList('free', 400) && optStr('note', 300) && (!('ansAt' in incoming()) || incoming().ansAt is number);
+    }
     // 只給管理者／編輯的雜項文件：versions、lockLog、staff、exam/{eid}/private
     function blobShape() {
       return incoming().keys().hasAll(['json']) && str(incoming().json, 900000)
@@ -379,12 +393,32 @@ service cloud.firestore {
           allow create: if revCreate() && iepShape() && (isStaff(sid) || (isTeacher(sid) && myTid() in incoming().readers));
           allow update: if revUpdate() && iepShape() && (isStaff(sid)
             || (isTeacher(sid) && myTid() in resource.data.readers && myTid() in incoming().readers));
-          allow delete: if isStaff(sid);
+          // 老師可以刪自己開、只有自己一個 reader 的調查單（只有自己個管的學生；刪了不影響別人）
+          allow delete: if isStaff(sid) || (isTeacher(sid) && resource.data.readers == [myTid()]);
           match /responses/{h} {
             allow read: if isStaff(sid)
               || (isTeacher(sid) && myTid() in get(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/iep/$(roundId)).data.readers);
             allow write: if false;
           }
+        }
+
+        // IEP 填空堂：id＝調查單_老師。被邀請的老師讀寫自己的（只能改回覆）；調查單的 readers 讀、建、改公開部分、刪
+        match /iepInvite/{iid} {
+          function roundReaders(rid) {
+            return getAfter(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/iep/$(rid)).data.readers;
+          }
+          allow get: if isStaff(sid) || (isTeacher(sid) && (resource == null
+            || resource.data.teacherId == myTid() || myTid() in resource.data.readers));
+          allow list: if isStaff(sid) || (isTeacher(sid) && (resource.data.teacherId == myTid() || myTid() in resource.data.readers));
+          allow create: if revCreate() && invShape(iid) && (isStaff(sid)
+            || (isTeacher(sid) && myTid() in incoming().readers && myTid() in roundReaders(incoming().roundId)));
+          allow update: if revUpdate() && invShape(iid) && incoming().roundId == resource.data.roundId
+            && incoming().teacherId == resource.data.teacherId && (isStaff(sid)
+            || (isTeacher(sid) && myTid() in resource.data.readers && myTid() in incoming().readers
+                && myTid() in roundReaders(incoming().roundId)
+                && !incoming().diff(resource.data).affectedKeys().hasAny(INV_ANS()))
+            || (isTeacher(sid) && resource.data.teacherId == myTid() && changedOnly(INV_ANS())));
+          allow delete: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.readers);
         }
 
         // 段考：考程、試場、監考對照大家讀；學生名單與調整（private）只有管理者／編輯

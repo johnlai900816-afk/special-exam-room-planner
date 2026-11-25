@@ -257,3 +257,48 @@ describe("只給管理者的文件與 IEP", () => {
     await assertFails(getDoc(doc(r1(), T + "/iep/r1")));
   });
 });
+
+describe("IEP：老師自己開的調查、填空堂邀請、線上回覆（新版老師端）", () => {
+  const S = serverTimestamp;
+  const inv = (o: Record<string, unknown> = {}) => ({
+    roundId: "r1", teacherId: "k1", readers: ["r2"], name: "陳老師", round: "期初", kind: "IEP 期初會議", host: "王老師",
+    d1: "2026-12-01", d2: "2026-12-05", due: "2026-11-30", keys: ["2026-12-01|1"], ps: [], busy: {}, stu: [], meets: [], ...o,
+  });
+  const stamp = (uid: string, rev: number) => ({ rev, updatedBy: uid, updatedAt: S() });
+  it("老師建立自己是 reader 的調查單；只有自己一個 reader 時可以刪", async () => {
+    const R = { ord: 1, name: "我的", due: "", stuIds: ["s1"], readers: ["r1"], json: "{}" };
+    await assertSucceeds(setDoc(doc(r1(), T + "/iep/m1"), { ...R, ...stamp("uR1", 1) }));
+    await assertFails(setDoc(doc(r1(), T + "/iep/m2"), { ...R, readers: ["r2"], ...stamp("uR1", 1) }));
+    await assertSucceeds(deleteDoc(doc(r1(), T + "/iep/m1")));
+    // 不是 reader 的不能刪；有別的 reader（別位個管）也不能刪
+    await assertFails(deleteDoc(doc(r1(), T + "/iep/r1")));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), T + "/iep/r9"), { ...R, readers: ["r1", "r2"], ...meta(1) }));
+    await assertFails(deleteDoc(doc(r1(), T + "/iep/r9")));
+  });
+  it("發起人（readers）建立邀請；不是 reader 的不行；id 要等於 調查單_老師", async () => {
+    await assertSucceeds(setDoc(doc(r2(), T + "/iepInvite/r1_k1"), { ...inv(), ...stamp("uR2", 1) }));
+    await assertFails(setDoc(doc(r1(), T + "/iepInvite/r1_r1"), { ...inv({ teacherId: "r1", readers: ["r1"] }), ...stamp("uR1", 1) }));
+    await assertFails(setDoc(doc(r2(), T + "/iepInvite/r1_xx"), { ...inv(), ...stamp("uR2", 1) }));
+    await assertFails(setDoc(doc(r2(), T + "/iepInvite/r1_r1"), { ...inv({ teacherId: "r1", extra: 1 }), ...stamp("uR2", 1) }));
+  });
+  it("被邀請的老師讀得到自己的、只能改回覆；別人的讀不到；發起人改不了回覆", async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), T + "/iepInvite/r1_k1"), { ...inv(), ...meta(1) }));
+    await assertSucceeds(getDoc(doc(k1(), T + "/iepInvite/r1_k1")));
+    await assertSucceeds(getDocs(query(collection(k1(), T + "/iepInvite"), where("teacherId", "==", "k1"))));
+    await assertFails(getDoc(doc(r1(), T + "/iepInvite/r1_k1")));
+    await assertFails(getDocs(collection(k1(), T + "/iepInvite")));
+    await assertSucceeds(updateDoc(doc(k1(), T + "/iepInvite/r1_k1"), { free: ["2026-12-01|1"], note: "可以調課", ansAt: 5, ...stamp("uK1", 2) }));
+    await assertFails(updateDoc(doc(k1(), T + "/iepInvite/r1_k1"), { keys: ["2026-12-02|1"], ...stamp("uK1", 3) }));
+    await assertFails(updateDoc(doc(r2(), T + "/iepInvite/r1_k1"), { free: [], ...stamp("uR2", 3) }));
+    await assertSucceeds(updateDoc(doc(r2(), T + "/iepInvite/r1_k1"), { due: "2026-12-02", ...stamp("uR2", 3) }));
+    await assertSucceeds(getDocs(query(collection(r2(), T + "/iepInvite"), where("readers", "array-contains", "r2"))));
+    await assertFails(deleteDoc(doc(k1(), T + "/iepInvite/r1_k1")));
+    await assertSucceeds(deleteDoc(doc(r2(), T + "/iepInvite/r1_k1")));
+  });
+  it("線上回覆（Function 從 iepResp 抄過來的）只有 readers 讀得到，誰都不能從網頁寫", async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), T + "/iep/r1/responses/" + "a".repeat(64)), { pk: "t:k1", free: [] }));
+    await assertSucceeds(getDocs(collection(r2(), T + "/iep/r1/responses")));
+    await assertFails(getDocs(collection(r1(), T + "/iep/r1/responses")));
+    await assertFails(setDoc(doc(r2(), T + "/iep/r1/responses/" + "b".repeat(64)), { pk: "x" }));
+  });
+});

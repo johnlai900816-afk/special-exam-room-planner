@@ -77,13 +77,16 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
     const s: Src[] = [{ kind: "doc", col: "term", ref: doc(db, T) }];
     (["teachers", "classes", "groups", "exam"] as const).forEach((n) => s.push({ kind: "query", col: n, q: c(n) }));
     if (staff) {
-      (["students", "iep", "versions", "lockLog", "staff"] as const).forEach((n) => s.push({ kind: "query", col: n, q: c(n) }));
+      (["students", "iep", "iepInvite", "versions", "lockLog", "staff"] as const).forEach((n) => s.push({ kind: "query", col: n, q: c(n) }));
       s.push({ kind: "query", col: "attendance", q: query(c("attendance"), where("date", ">=", since)) });
     } else if (tid) {
       s.push({ kind: "query", col: "students", q: query(c("students"), where("teacherIds", "array-contains", tid)) });
       s.push({ kind: "query", col: "students", q: query(c("students"), where("caseMgrId", "==", tid)) });
       s.push({ kind: "query", col: "attendance", q: query(c("attendance"), where("teacherId", "==", tid), where("date", ">=", since)) });
       s.push({ kind: "query", col: "iep", q: query(c("iep"), where("readers", "array-contains", tid)) });
+      // 填空堂：邀請我的、我發的
+      s.push({ kind: "query", col: "iepInvite", q: query(c("iepInvite"), where("teacherId", "==", tid)) });
+      s.push({ kind: "query", col: "iepInvite", q: query(c("iepInvite"), where("readers", "array-contains", tid)) });
     }
     return s;
   }

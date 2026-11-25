@@ -12,6 +12,7 @@
        students/{id}/private/profile              StudentPrivateDoc   只有個管老師與管理者／編輯
        attendance/{date_gid@pid}                  AttendanceDoc  管理者／編輯與那門課的老師
        iep/{roundId}                              IepRoundDoc    管理者／編輯＋readers（發起人、個管）
+       iepInvite/{roundId}_{teacherId}            IepInviteDoc   被邀請的老師填空堂（老師本人＋readers）
        exam/{eid}  (+ private/{data|notice})      ExamDoc        考程、試場、監考；學生名單在 private
        versions/{id}, lockLog/{id}, staff/{id}    只有管理者／編輯
      publicViews/{token}, auditLogs/{id}          只有後端寫
@@ -187,6 +188,33 @@ export interface IepRoundDoc {
   json: string;
 }
 
+/** iep/{roundId} 邀請到的一位老師的「填空堂」單（id＝`${roundId}_${teacherId}`）：
+    發起人（readers）寫公開的部分，被邀請的老師只寫自己的回覆 free／note／ansAt。
+    內容和線上連結（iepTok）同一套：學生只有班級座號（或遮字）、有課只寫種類，不放別的學生、障別或服務。 */
+export interface IepInviteDoc {
+  roundId: string;
+  teacherId: string;
+  /** 抄一份調查單的 readers（規則不用 get() 就知道誰能改、能讀） */
+  readers: string[];
+  name: string;
+  round: string;
+  kind: string;
+  host: string;
+  d1: string;
+  d2: string;
+  due: string;
+  keys: string[];
+  ps: { id: string; n: string; t: string }[];
+  busy: Record<string, string>;
+  stu: { c: string; r: string; q: number; cm: string }[];
+  /** 已排定、要我出席的場次 */
+  meets: { id: string; at: string; label: string; time: string; room: string; stu: string; req: number }[];
+  free?: string[];
+  note?: string;
+  /** 老師送出的時間（毫秒）；沒有＝還沒填 */
+  ansAt?: number;
+}
+
 export interface ExamDoc {
   title?: string;
   sessions?: unknown[];
@@ -218,6 +246,8 @@ export interface TermRecords {
   exam: Record<string, ExamDoc>;
   /** key＝`${eid}/${docId}` */
   examPrivate: Record<string, JsonBlobDoc>;
+  /** IEP 填空堂邀請（新版才有，不在舊格式 D 裡；搬移與同步不碰） */
+  iepInvite: Record<string, IepInviteDoc>;
 }
 
 export type Collection = Exclude<keyof TermRecords, "term">;

@@ -26,6 +26,7 @@ export function visible(scope: RepoScope, R: TermRecords): TermRecords {
     privates: tid ? pickBy(R.privates, (p) => p.caseMgrId === tid) : none,
     attendance: tid ? pickBy(R.attendance, (a) => a.teacherId === tid) : none,
     iep: tid ? pickBy(R.iep, (r) => (r.readers || []).includes(tid)) : none,
+    iepInvite: tid ? pickBy(R.iepInvite || {}, (v) => v.teacherId === tid || (v.readers || []).includes(tid)) : none,
     versions: none,
     lockLog: none,
     staff: none,
@@ -35,6 +36,8 @@ export function visible(scope: RepoScope, R: TermRecords): TermRecords {
 
 const PRIV_TEACHER = ["privNote", "iepDate", "reviewDate", "certExp", "examSvc", "contacts"];
 const ATT_TEACHER = ["marks", "roster", "info"];
+/** 被邀請的老師自己填的欄位（發起人不能改這幾個） */
+export const INV_ANSWER = ["free", "note", "ansAt"];
 
 function changedKeys(a: Record<string, unknown> | null, b: Record<string, unknown> | null): string[] {
   const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
@@ -54,7 +57,12 @@ export function writeDenied(
   if (scope.role !== "teacher" || !scope.tid) return "只有管理者或編輯可以修改";
   const tid = scope.tid;
   const only = (keys: string[]) => changedKeys(before, after).every((k) => keys.includes(k));
-  if (after == null) return "只有管理者或編輯可以刪除";
+  if (after == null) {
+    // 老師可以刪：只有自己一個 reader 的調查單（自己開的、只有自己個管的學生）；自己是 readers 的邀請
+    if (col === "iep" && before && JSON.stringify(before.readers) === JSON.stringify([tid])) return null;
+    if (col === "iepInvite" && before && ((before.readers as string[]) || []).includes(tid)) return null;
+    return "只有管理者或編輯可以刪除";
+  }
   switch (col) {
     case "teachers":
       return before && id === tid && only(["off"]) ? null : "老師只能改自己的不排課時段";
@@ -71,6 +79,16 @@ export function writeDenied(
       const inA = ((after.readers as string[]) || []).includes(tid);
       const inB = !before || ((before.readers as string[]) || []).includes(tid);
       return inA && inB ? null : "不是這份調查單的發起人或個管";
+    }
+    case "iepInvite": {
+      if (id !== after.roundId + "_" + after.teacherId) return "邀請的編號不對";
+      const round = R.iep[String(after.roundId)];
+      const owner = !!round && (round.readers || []).includes(tid) && ((after.readers as string[]) || []).includes(tid);
+      if (!before) return owner ? null : "不是這份調查單的發起人或個管";
+      if (owner && ((before.readers as string[]) || []).includes(tid) && changedKeys(before, after).every((k) => !INV_ANSWER.includes(k)))
+        return null;
+      if (before.teacherId === tid && only(INV_ANSWER)) return null;
+      return "只能填自己的空堂";
     }
     default:
       return "只有管理者或編輯可以修改";

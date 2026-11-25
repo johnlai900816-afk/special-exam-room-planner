@@ -2,57 +2,106 @@
 
 /* 設計 token（視覺審查採用版）：淺色暖調為主，系統深色模式時切換。
    顏色用 CSS 變數，Tailwind 類別名稱：bg-bg、bg-card、text-ink2、text-mute、bg-acc、bg-acc-l、text-warn、bg-bad-l… */
+/* 設計 token：repo 根目錄 DESIGN.md（和舊版 app.css 同一組）。米白底、白卡片、深藍黑主要按鈕、紅色區段編號。
+   深色：跟系統（自動），或 html[data-theme="dark"]；html[data-theme="light"] 強制淺色。要印的紙一律白底黑字。
+   舊名稱 acc／acc-d／acc-l／info 對到品牌藍，讓基礎版的頁面不用改。 */
 :root {
-  --bg: #f6f2ea;
-  --sunk: #efe9dc;
-  --card: #fffdf8;
+  --bg: #f7f5f1;
+  --card: #ffffff;
+  --sunk: #efece6;
   --field: #ffffff;
-  --hover: #ece5d6;
-  --line: #e6dfd2;
-  --line2: #d3c9b8;
-  --ink: #2a2620;
-  --ink2: #4d463c;
-  --mute: #6f6556;
-  --acc: #2f6a5b;
-  --acc-d: #235044;
-  --acc-l: #e3efe9;
-  --ok: #2f6a5b;
-  --warn: #96590a;
-  --warn-l: #fcf1dc;
-  --bad: #a8321f;
-  --bad-l: #fbe9e4;
-  --focus: #d8a93a;
-  /* 原班鎖課的課塊用（審查沒有指定，從 acc 的色相推出來的冷色） */
-  --info: #3d5f80;
-  --info-l: #e5ecf2;
+  --hover: #f1eee8;
+  --line: #e7e3db;
+  --line2: #d6d0c5;
+  --ink: #1f2430;
+  --ink2: #4a5060;
+  --mute: #6b6f7a;
+  --red: #b8423a;
+  --blue: #2f5c8a;
+  --blue-l: #e9eff6;
+  --on-ink: #ffffff;
+  --acc: var(--blue);
+  --acc-d: var(--blue);
+  --acc-l: var(--blue-l);
+  --ok: #2f7a5b;
+  --ok-l: #e6f2ec;
+  --warn: #9a5b0b;
+  --warn-l: #fbf0dc;
+  --bad: #b3382d;
+  --bad-l: #fbe8e5;
+  --focus: #2f5c8a;
+  --info: var(--blue);
+  --info-l: var(--blue-l);
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1c1a17;
-    --sunk: #171513;
-    --card: #25221e;
-    --field: #2c2924;
-    --hover: #322e28;
-    --line: #3a352e;
-    --line2: #4a443b;
-    --ink: #ece6da;
-    --ink2: #cfc7b8;
-    --mute: #9c9384;
-    --acc: #6fb09c;
-    --acc-d: #8cc4b2;
-    --acc-l: #24352f;
-    --ok: #6fb09c;
-    --warn: #e0a548;
-    --warn-l: #3a2e1a;
-    --bad: #e98a76;
-    --bad-l: #3d2420;
-    --focus: #d8a93a;
-    --info: #8fb0d0;
-    --info-l: #222c36;
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171c;
+    --card: #1e2128;
+    --sunk: #191b21;
+    --field: #171a20;
+    --hover: #262a33;
+    --line: #2c3039;
+    --line2: #3a3f4a;
+    --ink: #eceef2;
+    --ink2: #c3c7d0;
+    --mute: #9096a3;
+    --red: #e0776c;
+    --blue: #7fa8d6;
+    --blue-l: #1f2a38;
+    --on-ink: #15171c;
+    --ok: #6cc39b;
+    --ok-l: #18302a;
+    --warn: #e3a957;
+    --warn-l: #33281a;
+    --bad: #ee8576;
+    --bad-l: #3a201d;
+    --focus: #7fa8d6;
     color-scheme: dark;
   }
+}
+@media screen {
+  :root[data-theme="dark"] {
+    --bg: #15171c;
+    --card: #1e2128;
+    --sunk: #191b21;
+    --field: #171a20;
+    --hover: #262a33;
+    --line: #2c3039;
+    --line2: #3a3f4a;
+    --ink: #eceef2;
+    --ink2: #c3c7d0;
+    --mute: #9096a3;
+    --red: #e0776c;
+    --blue: #7fa8d6;
+    --blue-l: #1f2a38;
+    --on-ink: #15171c;
+    --ok: #6cc39b;
+    --ok-l: #18302a;
+    --warn: #e3a957;
+    --warn-l: #33281a;
+    --bad: #ee8576;
+    --bad-l: #3a201d;
+    --focus: #7fa8d6;
+    color-scheme: dark;
+  }
+}
+
+/* 要印的紙（IEP 調查表、小通知單）：和舊版 app.css 一樣，深色模式下也用淺色那一組 */
+#outArea,
+.pg {
+  --bg: #f7f5f1;
+  --card: #ffffff;
+  --sunk: #efece6;
+  --line: #e7e3db;
+  --line2: #d6d0c5;
+  --ink: #1f2430;
+  --ink2: #4a5060;
+  --mute: #6b6f7a;
+  --red: #b8423a;
+  --blue: #2f5c8a;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -77,9 +126,15 @@
   --color-focus: var(--focus);
   --color-info: var(--info);
   --color-info-l: var(--info-l);
+  --color-red: var(--red);
+  --color-blue: var(--blue);
+  --color-blue-l: var(--blue-l);
+  --color-on-ink: var(--on-ink);
+  --color-ok-l: var(--ok-l);
 
-  --font-sans: var(--font-noto-sans-tc), "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
-  --font-serif: var(--font-noto-serif-tc), "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  --font-sans: var(--font-noto-sans-tc), "Noto Sans TC", system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  /* DESIGN.md：全部用無襯線，不再用明體（舊的 font-serif 類別也指到無襯線） */
+  --font-serif: var(--font-noto-sans-tc), "Noto Sans TC", system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
   /* 標楷體：只用在要列印的正式公文、通知單 */
   --font-kai: "DFKai-SB", "BiauKai", "標楷體", "Kaiti TC", serif;
 }
@@ -121,9 +176,8 @@ body {
 h1,
 h2,
 h3 {
-  font-family: var(--font-serif);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 :focus-visible {
@@ -138,12 +192,55 @@ textarea {
   color: var(--ink);
 }
 
+/* 品牌標誌：兩個疊在一起的圓角方塊（紅、藍），和舊版 app.css .logo 一樣 */
+.logo {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+.logo i {
+  position: absolute;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+}
+.logo i:first-child {
+  left: 0;
+  top: 0;
+  background: var(--red);
+}
+.logo i:last-child {
+  right: 0;
+  bottom: 0;
+  background: var(--blue);
+  opacity: 0.9;
+}
+
 @media print {
-  .no-print {
+  html,
+  html[data-font] {
+    font-size: 100%;
+  }
+  .no-print,
+  .iepui {
     display: none !important;
   }
   body {
     background: #fff;
     color: #000;
+  }
+  /* 和舊版 app.css 的列印一樣：一張紙一頁 */
+  .pg {
+    page-break-after: always;
+    break-after: page;
+  }
+  .pg:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  #outArea h2,
+  .pg h2 {
+    font-size: 16pt;
   }
 }

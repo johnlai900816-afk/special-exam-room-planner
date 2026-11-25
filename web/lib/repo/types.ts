@@ -5,6 +5,7 @@ import type {
   ClassDoc,
   Collection,
   GroupDoc,
+  IepInviteDoc,
   IepRoundDoc,
   JsonBlobDoc,
   MemberRole,
@@ -28,7 +29,7 @@ export interface RepoScope {
 }
 
 /** 可以寫的集合（'term'＝學期文件本身） */
-export type WritableCol = "term" | "teachers" | "classes" | "groups" | "students" | "privates" | "attendance" | "iep";
+export type WritableCol = "term" | "teachers" | "classes" | "groups" | "students" | "privates" | "attendance" | "iep" | "iepInvite";
 
 export interface DocTypes {
   term: TermDoc;
@@ -39,6 +40,7 @@ export interface DocTypes {
   privates: StudentPrivateDoc;
   attendance: AttendanceDoc;
   iep: IepRoundDoc;
+  iepInvite: IepInviteDoc;
 }
 export type DocOf<C extends WritableCol> = DocTypes[C];
 
