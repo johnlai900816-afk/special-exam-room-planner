@@ -430,13 +430,14 @@ function renderBoard(){
   const show=shownL,gOff=gv?new Set(D.offBy[view]||[]):null,gname=gv?GRADE[gv]:'';
   const at={},un=[];M.L.forEach((x,l)=>{if(!show(l))return;const s=ST.slot[l];if(s<0)un.push(l);else(at[s]=at[s]||[]).push(l);});
   let h=`<p class="guide">按<b>一鍵排課</b>，系統會先排出每位老師的課，再把「待安排」的學生編進不衝堂的課，最後確認老師、學生、教室都不撞。排完可以直接拖曳調整（或點一下組別、再點要放的格子）；動過的會<b>固定</b>住，再按一次排課時不會被移走。</p>
-  <div class="bar"><button class="b pri big" onclick="runSolve(false)">${gv?'排'+gname:'一鍵排課'}</button><button class="b" onclick="runSolve(true)">${gv?gname+'重排':'全部重排'}</button><button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><button class="b" onclick="aiOpen()">用 AI 排</button><button class="b danger" onclick="clearAll()">清空排法</button>
+  <div class="bar"><button class="b pri big" onclick="runSolve(false)">${gv?'排'+gname:'一鍵排課'}</button><button class="b" onclick="runSolve(true)">${gv?gname+'重排':'全部重排'}</button><span class="vsep"></span><button class="b" onclick="undo()">復原</button><button class="b" onclick="unpinAll()">解除全部固定</button><span class="vsep"></span><button class="b" onclick="aiOpen()">用 AI 排</button>
     <span class="stat">已排 <b>${placed}</b> / ${total} 節</span><span class="stat${out.length?' bad':''}">問題 <b>${out.length}</b></span><span class="grow"></span>
-    <select onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select></div>`;
+    <select onchange="view=this.value;selL=-1;render()"><option value="">全部年級</option>${[...new Set(M.G.flatMap(g=>g.grades))].filter(g=>GRADE[g]).sort().map(g=>`<option value="g:${g}"${view==='g:'+g?' selected':''}>只看、只排${GRADE[g]}</option>`).join('')}${D.teachers.map(t=>`<option value="${esc(t.id)}"${t.id===view?' selected':''}>只看 ${esc(t.name)}</option>`).join('')}</select><span class="vsep"></span><button class="b danger" onclick="clearAll()">清空排法</button></div>`;
   if(!total)h+=`<div class="probs">還沒有要排的組，請先到「老師開課」建立。</div>`;
   else if(!out.length&&!warns.length&&placed===total)h+=`<div class="probs ok">全部排好了，沒有衝突。</div>`;
   else if(out.length||warns.length)h+=`<div class="probs">`+warns.map(w=>`<div>${esc(w)}</div>`).join('')+[...msg].map(([m,e])=>`<div class="err${e.k==='un'?'':' go'}" data-l="${e.l}" onclick="pickL(+this.dataset.l)">${esc(m)}${e.n>1?'（'+e.n+' 節）':''}</div>`).join('')+`</div>`;
-  if(total)h+=`<div class="chk"><b>衝堂檢查</b>`+CK.map(([k,n])=>`<span class="${cnt[k]?'bad':'ok'}">${n} ${cnt[k]||0}</span>`).join('')+(M.flex?(A=>`<span class="${A.open.length?'mid':'ok'}" title="有學生被抽離、但原班鎖不到任何主科的班級節次。詳細在「課表輸出 › 鎖課表」">鎖不到課 ${A.open.length}／${A.pulled}</span>`)(assignLocks(M,ST.slot)):'')+`<small>每次調整都會重新檢查；點上面的紅字會跳到那一節</small></div>`;
+  if(total){const A=M.flex?assignLocks(M,ST.slot):null,bad=CK.filter(([k])=>cnt[k]);
+    h+=bad.length||A&&A.open.length?`<div class="chk"><b>衝堂檢查</b>`+bad.map(([k,n])=>`<span class="bad">${n} ${cnt[k]}</span>`).join('')+(A&&A.open.length?`<span class="mid" title="有學生被抽離、但原班鎖不到任何主科的班級節次。詳細在「課表輸出 › 鎖課表」">鎖不到課 ${A.open.length}／${A.pulled}</span>`:'')+`<small>每次調整都會重新檢查；點上面的紅字會跳到那一節</small></div>`:`<div class="chk"><span class="ok">衝堂檢查全數通過</span></div>`;}
   if(selL>=0&&selL<M.L.length){const g=M.G[M.L[selL].g],s=ST.slot[selL],fx=ST.rfix[selL];
     h+=`<div class="selbar"><b>${esc(g.name)}</b><span>${s>=0?esc(M.sn(s)):'還沒排'}</span><label>教室 <select onchange="setLRoom(this.value)"><option value="-1">自動${s>=0&&fx<0&&ROOM[selL]>=0?'（'+esc(D.rooms[ROOM[selL]].name)+'）':''}</option>${D.rooms.map((r,i)=>`<option value="${i}"${i===fx?' selected':''}>${esc(r.name)}</option>`).join('')}</select></label>
       ${s>=0?`<button class="b sm" onclick="togPin()">${ST.pin[selL]?'解除固定':'固定在這一節'}</button><button class="b sm" onclick="moveLesson(selL,-1)">拿下來</button>`:''}<span class="note" style="margin:0">點要放的格子可以移動；綠色是不會衝堂的位置</span><span class="grow"></span><button class="b sm" onclick="selL=-1;render()">取消選取</button></div>`;}
@@ -494,8 +495,8 @@ function clearAll(){if(!confirm('確定清空目前的排法？（可以按「�
 /* ───── 排課｜課表輸出 ───── */
 let outG='';
 const LOCKN={國文:'國語文',英文:'英語文'};
-const TCOL=['#d96a00','#d81e1e','#8a3b12','#4b1a8c','#111111','#0a9fd2','#e02fb4','#7a7a7a','#0b6b1e','#1a2be0','#0d857a','#9a6f00'];
-const SUBC={'':['#eef5ee','#5aa06f','#22603a'],國:['#fdecec','#e86a6a','#a11d1d'],數:['#eaf1fa','#6a9ad8','#234a94'],英:['#fdf7dc','#f0c000','#8a5a00'],社:['#f3ecfa','#9a6fd0','#4b2a8c']};
+const TCOL=['#b4541a','#b02a2a','#7a4a22','#5a3a8c','#2a2620','#1f7fa8','#a83a86','#6f6556','#2f6a3a','#2f47a8','#1f7a70','#8a6a10'];// 與 app.css 的 .t0～.t11 同一組
+const SUBC={'':['#eef5ee','#5aa06f','#22603a'],國:['#fdecec','#e86a6a','#a11d1d'],數:['#eaf1fa','#6a9ad8','#234a94'],英:['#fdf7dc','#c99a1a','#8a5a00'],社:['#f3ecfa','#9a6fd0','#4b2a8c']};
 // 總課表上的組別代號：組名如果帶著科目（8A國文）就只留代號（8A）
 function shortName(g){const n=String(g.name||''),j=String(g.subject||'');return j&&n.length>j.length&&n.endsWith(j)?n.slice(0,-j.length):j&&n.length>j.length&&n.startsWith(j)?n.slice(j.length):n;}
 function slotsText(list){const by={};list.forEach(s=>{const d=Math.floor(s/M.NP);(by[d]=by[d]||[]).push(M.P[s%M.NP].name);});
