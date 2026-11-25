@@ -10,7 +10,8 @@
         - 這次的「之後」比記錄舊 → 不做（較新的已經處理過）
         - 記錄剛好等於這次的「之前」→ 照第 1 步只寫差異（快）
         - 其他（中間漏了事件）→ 拿這次的「之後」和新位置現在的內容整個比一次（慢但一定對）
-   新版那邊有人改過、又被舊版蓋掉的文件記在 auditLogs（action: nxSyncConflict）。過渡期新版是唯讀，正常不會發生。 */
+   新版那邊有人改過、又被舊版蓋掉的文件記在 auditLogs（action: nxSyncConflict）。過渡期新版是唯讀，正常不會發生。
+   nxLink/main.native（集合名稱陣列，例 ['attendance']）：那些集合已改由新版當正本，同步跳過。 */
 'use strict';
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
@@ -28,6 +29,12 @@ async function link() {
   return d && d.mode === 'legacy' && d.sid && d.termId ? d : null;
 }
 const dataOf = (snap) => (snap && snap.exists ? snap.data() : null);
+/** nxLink/main.native＝已經改由新版當正本的集合（例：['attendance']）：同步不再碰它們 */
+function dropNative(L, ops) {
+  const n = new Set(Array.isArray(L.native) ? L.native : []);
+  if (!n.size) return ops;
+  return { set: ops.set.filter((o) => !n.has(o.col)), del: ops.del.filter((o) => !n.has(o.col)) };
+}
 
 async function logConflicts(sid, conflicts, src) {
   if (!conflicts.length) return;
@@ -55,7 +62,7 @@ async function syncMain(L, before, after) {
     ops = C.withCascade(NX.diff(ex.records, want, ['term'].concat(cols)), ex.records);
     revs = ex.revs;
   }
-  const res = await C.applyOps(db(), deps, L.sid, L.termId, ops, C.BY_SYNC, revs);
+  const res = await C.applyOps(db(), deps, L.sid, L.termId, dropNative(L, ops), C.BY_SYNC, revs);
   await stRef.set({ json: JSON.stringify(plan.ver), rev: ((st && st.rev) || 0) + 1, updatedBy: C.BY_SYNC, updatedAt: deps.serverTime() });
   await logConflicts(L.sid, res.conflicts, 'rc/main');
   return res;
@@ -65,7 +72,7 @@ async function syncAtt(L, date, before, after) {
   const gq = await db().collection('schools/' + L.sid + '/terms/' + L.termId + '/groups').get();
   const gt = {};
   gq.docs.forEach((d) => (gt[NX.decId(d.id)] = String(d.data().teacherId || '')));
-  const ops = C.planAttendance(date, before, after, gt);
+  const ops = dropNative(L, C.planAttendance(date, before, after, gt));
   const res = await C.applyOps(db(), deps, L.sid, L.termId, ops, C.BY_SYNC, null);
   await logConflicts(L.sid, res.conflicts, 'rc/att-' + date);
   return res;
@@ -88,9 +95,9 @@ const nxSyncExamFromLegacy = onDocumentWritten({ ...OPTS, document: 'exams/{docI
   if (id !== 'main' && id !== 'notice') return;
   const L = await link();
   if (!L) return;
-  const ops = C.planExam(id, dataOf(event.data && event.data.before), dataOf(event.data && event.data.after));
+  const ops = dropNative(L, C.planExam(id, dataOf(event.data && event.data.before), dataOf(event.data && event.data.after)));
   const res = await C.applyOps(db(), deps, L.sid, L.termId, ops, C.BY_SYNC, null);
   await logConflicts(L.sid, res.conflicts, 'exams/' + id);
 });
 
-module.exports = { nxSyncFromLegacy, nxSyncExamFromLegacy, _internal: { syncMain, syncAtt } };
+module.exports = { nxSyncFromLegacy, nxSyncExamFromLegacy, _internal: { syncMain, syncAtt, dropNative } };

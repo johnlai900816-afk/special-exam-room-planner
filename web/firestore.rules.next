@@ -358,7 +358,9 @@ service cloud.firestore {
 
         // 點名：一節課一份（id＝日期_課程@節次）；管理者／編輯與那門課的老師
         match /attendance/{aid} {
-          allow get, list: if isStaff(sid) || (isTeacher(sid) && resource.data.teacherId == myTid());
+          // 還不存在的文件也讓老師 get（交易裡先讀再建立）；不會洩漏內容
+          allow get: if isStaff(sid) || (isTeacher(sid) && (resource == null || resource.data.teacherId == myTid()));
+          allow list: if isStaff(sid) || (isTeacher(sid) && resource.data.teacherId == myTid());
           allow create: if revCreate() && attShape(aid) && (isStaff(sid)
             || (isTeacher(sid) && incoming().teacherId == myTid()
                 && get(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/groups/$(incoming().gid)).data.teacherId == myTid()));
@@ -369,7 +371,8 @@ service cloud.firestore {
 
         // IEP 會議時間調查：管理者／編輯＋readers（發起人、學生的個管）。回覆只由 Function 寫
         match /iep/{roundId} {
-          allow get, list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.readers);
+          allow get: if isStaff(sid) || (isTeacher(sid) && (resource == null || myTid() in resource.data.readers));
+          allow list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.readers);
           allow create: if revCreate() && iepShape() && (isStaff(sid) || (isTeacher(sid) && myTid() in incoming().readers));
           allow update: if revUpdate() && iepShape() && (isStaff(sid)
             || (isTeacher(sid) && myTid() in resource.data.readers && myTid() in incoming().readers));
