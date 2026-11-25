@@ -372,3 +372,47 @@ describe("管理者端的寫入（phase 3a）：老師、班級、學生、priva
     await assertSucceeds(deleteDoc(doc(admin(), T2)));
   });
 });
+
+describe("排課（phase 3b）：草稿、確定（課程 slots＋版本＋鎖課紀錄＋學期 lockLast 一批）", () => {
+  const st = (uid: string, rev: number) => ({ rev, updatedBy: uid, updatedAt: serverTimestamp() });
+  const draft = (uid: string, rev: number, a = "{}") => ({ kind: "draft", label: "試排 11/26 10:30", at: 1, json: JSON.stringify({ a: JSON.parse(a), label: "試排", at: 1 }), ...st(uid, rev) });
+  for (const [who, d, uid] of [
+    ["管理者", admin, "uAdmin"],
+    ["編輯", editor, "uEditor"],
+  ] as const)
+    it(who + "：寫草稿（versions/draft、staff/sched）、改草稿、確定時一批寫 slots＋版本＋lockLog＋學期、刪草稿", async () => {
+      const db = d();
+      const b = writeBatch(db);
+      b.set(doc(db, T + "/versions/draft"), draft(uid, 1));
+      b.set(doc(db, T + "/staff/sched"), { json: "{}", ...st(uid, 1) });
+      b.update(doc(db, T), { settings: { seed: 2 }, ...st(uid, 2) });
+      await assertSucceeds(b.commit());
+      await assertSucceeds(updateDoc(doc(db, T + "/versions/draft"), { json: JSON.stringify({ a: { g1: "0-1*" } }), ...st(uid, 2) }));
+      const c = writeBatch(db);
+      c.update(doc(db, T + "/groups/g1"), { slots: [{ s: "0-1", pin: true }], ...st(uid, 2) });
+      c.set(doc(db, T + "/versions/v000"), { kind: "ver", ord: 0, label: "期初課表", at: 2, json: "{}", ...st(uid, 1) });
+      c.set(doc(db, T + "/lockLog/L000"), { ord: 0, at: 2, json: JSON.stringify({ label: "期初課表", added: [], removed: [] }), ...st(uid, 1) });
+      c.update(doc(db, T), { packed: { lockLast: "{}" }, ...st(uid, 3) });
+      c.delete(doc(db, T + "/versions/draft"));
+      await assertSucceeds(c.commit());
+    });
+  it("老師、檢視不能寫草稿、版本、鎖課紀錄，也讀不到；不能改課程的 slots", async () => {
+    for (const [d, uid] of [
+      [r1(), "uR1"],
+      [viewer(), "uView"],
+    ] as const) {
+      await assertFails(setDoc(doc(d, T + "/versions/draft"), draft(uid, 1)));
+      await assertFails(setDoc(doc(d, T + "/lockLog/L000"), { ord: 0, at: 1, json: "{}", ...st(uid, 1) }));
+      await assertFails(setDoc(doc(d, T + "/staff/sched"), { json: "{}", ...st(uid, 1) }));
+      await assertFails(updateDoc(doc(d, T + "/groups/g1"), { slots: [{ s: "0-1" }], ...st(uid, 2) }));
+      await assertFails(getDocs(collection(d, T + "/lockLog")));
+    }
+  });
+  it("草稿形狀不對被拒（多出欄位、沒有 json）；rev 沒有 +1 被拒", async () => {
+    const db = admin();
+    await assertFails(setDoc(doc(db, T + "/versions/draft"), { ...draft("uAdmin", 1), extra: 1 }));
+    await assertFails(setDoc(doc(db, T + "/versions/draft"), { kind: "draft", ...st("uAdmin", 1) }));
+    await assertSucceeds(setDoc(doc(db, T + "/versions/draft"), draft("uAdmin", 1)));
+    await assertFails(updateDoc(doc(db, T + "/versions/draft"), { label: "x", ...st("uAdmin", 1) }));
+  });
+});

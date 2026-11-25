@@ -342,10 +342,10 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 全校課表（名冊／匯入：文字與掃描 PDF） | `/setup` ① | 骨架 | `ttParseAll`、`ttGuessClass`、學生名單對照；PDF 文字擷取與 OCR 放到 Function（大檔不在手機上跑） |
 | 匯入：分組表、任課老師、不排課、手排鎖課（排課／名冊） | `/setup` ①、`/schedule` ①③ | 骨架 | `importCourseTable`、`importOff`、`importLocks`、`canonSubj`；匯入前自動保留版本 |
 | 匯入與新學期（名冊 › 匯入與新學期） | `/accounts` | 骨架 | `newTerm`（升年級、清空）；全部清空要打出學校名稱確認；版本快照 |
-| 排課：分組（排課） | `/schedule` ①③ | 骨架 | 老師開課、學生編組（`needList`、`candidates`、`placeStudents`） |
+| 排課：分組（排課） | `/admin/sched/?step=groups`、`?step=need` | 完成 | 老師開課、學生編組（`needList`、`candidates`、`placeStudents`） |
 | 排課：不排課時段（排課） | `/schedule` ②、老師 `/me/off` | 部分 | 老師自己的已完成（過渡期送出→組長套用）；年級／班級／群組／個人層次的編輯待做 |
-| 排課：排課板、一鍵排課、衝堂檢查（排課） | `/schedule` ④ | 唯讀 | 已用 core.js 顯示總表、篩選、衝突清單。待接：拖曳（`data-lesson`／`data-slot`、`BoardHooks`、`canPlace`）、一鍵排課（`solve`，建議放 Web Worker）、試排／確定（另一位開發者在 core/app.js 做） |
-| 課表輸出（排課 › 課表輸出） | `/schedule` ⑤ | 骨架 | 老師課表、鎖課表（`lockTable`）、班級抽離表、學生個人課表、總課表（板橋格式）、列印 CSS（標楷體） |
+| 排課：排課板、一鍵排課、衝堂檢查（排課） | `/admin/sched/?step=board` | 完成（見 §9b）；舊的 `/schedule` ④ 唯讀總表留著 | 已用 core.js 顯示總表、篩選、衝突清單。待接：拖曳（`data-lesson`／`data-slot`、`BoardHooks`、`canPlace`）、一鍵排課（`solve`，建議放 Web Worker）、試排／確定（另一位開發者在 core/app.js 做） |
+| 課表輸出（排課 › 課表輸出） | `/admin/sched/?step=out` | 完成（和舊版逐字相同） | 老師課表、鎖課表（`lockTable`）、班級抽離表、學生個人課表、總課表（板橋格式）、列印 CSS（標楷體） |
 | 我的課表（新功能） | `/me` | 完成 | 資源班老師看自己的課，普通班老師看被鎖在原班的節次 |
 | 我的學生（新功能） | `/me/students` | 完成 | 個管、在我課裡、原班該科任課；敏感欄位只給個管看 |
 | 段考考場（`exam.html`） | `/exam` | 骨架 | 照 exam.html 的步驟拆：考程、學生與調整、試場、排試場與監考、輸出。它的排列邏輯建議先抽成 `exam-core.js`（比照 core.js 共用）再搬 |
@@ -439,7 +439,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 設定 › 學校資料 | `/admin/settings/school/?step=` | ① 匯入 Excel（SheetJS CDN、認工作表、試跑看差異、一批寫入）② 全校課表（唯讀，`classes.ttJson`）③ 老師與任課（含減授、超鐘點上限、`classes.subj`）④ 不排課時段（全校、年級、群組、班級、不能鎖課、學生、老師）⑤ 教室與作息 ⑥ 排課規則 ⑦ 學年交接 |
 | 設定 › 帳號與共用 | `/admin/settings/accounts/` | 成員（角色、綁定老師、停用）、邀請、舊名單轉邀請（先看清單）、搬移狀態與 `nxMigrateLegacy`（先試算） |
 | 設定 › 資料與備份 | `/admin/settings/data/` | 下載備份（讀得到的全部 records）、加密備份（和舊版同一個 AES-GCM 格式）、從備份還原（新版或舊版備份；先檢查、看差異）、版本、開始新學期 |
-| 排課、段考、IEP 會議、點名、統計 | `/admin/schedule/` 等 | 「這一頁請先用舊版」＋舊版對應的 hash（phase 3b） |
+| 段考、IEP 會議、點名、統計 | `/admin/exam/` 等 | 「這一頁請先用舊版」＋舊版對應的 hash（phase 3b） |
 
 - **寫入**：一律 `lib/nx/apply.ts`：在 `toCoreD(records)` 的副本上跑舊的純函式 → `splitD` 前後比對 → `Repo.batch` 寫有變的文件（每份帶 rev）。私密欄位直接 `patch("privates")`。
 - **以老師身分看**：側欄底部（手機在「更多」）。登入時是唯讀預覽：用管理者讀到的資料做一份記憶體版 Repo，權限照規則過濾（`access.visible`），老師頁原封不動；範例資料時直接切到那位老師。
@@ -458,4 +458,23 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 
 **測試**：`npm test`（`apply.test.ts` 比對與一批寫入、`import.test.ts` 匯入、`admin.test.ts` 待辦／篩選／個管／新學期／備份、`nx-admin.test.ts`）、`npm run test:rules`、`npm run test:e2e`（`e2e-admin.test.ts`：管理者登入、匯入範例表、分配個管，兩位老師登入只讀得到自己的學生；檔案改成一個一個跑）。
 
-**Phase 3b 還沒做**：排課（開課、編組、排課板拖曳、一鍵排課、試排草稿與確定、輸出）、段考、IEP 會議（管理者）、點名（管理者、紀錄、導師週報）、統計；全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。
+**Phase 3b 之後還沒做**：段考、IEP 會議（管理者）、點名（管理者、紀錄、導師週報）、統計；全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。
+
+---
+
+## 9b. Phase 3b：排課（`/admin/sched/?step=groups|need|board|out`）
+
+| 步驟 | 做什麼（對照舊版 app.js） |
+|---|---|
+| ① 開課 | renderGroups／grpCard：老師基本鐘點、已開節數、超鐘點摘要；建議分配（`suggestOvertime`，勾選的才套用）；認領核准／不核准（`claimDecide`）；固定時段（fixOpen）；選學生（pickList，拿掉後問「不上／待安排」）；原班任課老師 |
+| ② 編組 | renderNeed：每位學生每科去哪一門；自動編組（`placeStudents`）、復原、年級篩選 |
+| ③ 排課表 | renderBoard：一鍵試排／重排／全部重排（Web Worker，進度、「停止並保留目前最好的」）、草稿比較、確定採用（版本名稱）、放棄、拿回已確定的版本；拖曳（pointer 事件，滑鼠與觸控）與點一下再點格子、可放／衝突標示與原因、連點兩下固定、教室、拿下來、復原（40 步）；更多：解除全部固定、用 AI 排、用文字調整、請 AI 說明問題、清空；教室偏好的說明在組別的提示文字 |
+| ④ 輸出 | renderOut 全部 10 種（鎖課清單含「特教鎖課整理」、彈性鎖課的鎖不到／手排沒用到）；`lib/nx/schedOut.ts` 產生和舊版一樣的 HTML，列印樣式 `components/sched/out.css` 從 app.css 逐字複製；`?mode=` 可以直接開某一種 |
+
+- **純邏輯**：`lib/nx/sched.ts`（trySolveD、confirmDraftD、recordLocksD〔extras.js onScheduleConfirmed 的純函式版〕、moveLessonD、restoreVerD、setDraftD…），全部在 `toCoreD(records)` 上跑，寫入一律 `planOnD(records, fn, SCHED_COLS)` → `applyOps`（一批、每份帶 rev）。
+- **草稿與版本**：照 `functions/nx-split.js` 已有的對應——草稿 `versions/draft`、版本 `versions/v000…`、其他 `D.sched` 欄位 `staff/sched`、鎖課紀錄 `lockLog/L000…`、上次確定的鎖課 `term.packed.lockLast`；都只有管理者／編輯讀寫（規則原本就允許，`test/rules.test.ts` 加了草稿、確定一批、老師被拒的測試）。草稿只寫 `versions/draft`，確定才寫 `groups.slots`。
+- **背景求解**：`lib/nx/solver.worker.ts`。core.solve 沒有回呼，不改它；進度用 M.H 的 setter 數步數，目前最好的排法攔 `Int16Array.prototype.set`（只在 Worker 裡）。只看不改，結果和直接呼叫一樣（`test/solver-worker.test.ts`）。
+- **AI**：`lib/ai.ts` 直接 import repo 根目錄的 gemini.js、ai.js；代理模式用新版 Firebase 登入的 ID token 呼叫已部署的 `aiGenerate`／`aiListModels`，或老師自己的金鑰。設定存在這台瀏覽器（和舊版同一組 localStorage 鍵）。
+- **過渡期**：`schools/{sid}.mode=='legacy'` 且 `native` 沒有 `'sched'` 時排課頁只讀（頂端提示＋到舊版的連結）；`AdminSide.canWrite('sched')`。
+- **和舊版不同的地方**：用文字調整時，有草稿就移草稿裡的課（舊版會移正式課表）；AI 的排法一律放進試排（舊版沒有草稿功能時可以直接套用）；停止求解時保留的是那一刻最好的排法，不做後面的編組與原班鎖課微調。
+- **測試**：`test/sched.test.ts`（舊版 app.js 原文放沙盒：同一個種子，試排／重排／全部重排／只排一個年級／先編組／彈性鎖課的草稿一模一樣；確定、拿回、拖曳、復原一樣；記憶體版 Repo 的草稿→確定→版本→鎖課紀錄→老師看到）、`test/sched-out.test.ts`（10 種輸出＋彈性鎖課逐字比對、out.css 每一行都在 app.css）、`test/e2e-sched.test.ts`（模擬器：管理者試排、拖、確定，老師登入看到新課表、讀不到草稿與版本）。
