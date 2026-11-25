@@ -91,7 +91,42 @@ function normalize(D){
   if(!D.settings.noteSplit){D.students.forEach(s=>{if(s.note&&!s.privNote){s.privNote=s.note;s.note='';}});D.settings.noteSplit=1;}
   D.groups.forEach(g=>{if(!Array.isArray(g.students))g.students=[];g.per=Math.max(0,Math.min(15,+g.per||0));if(!g.mode)g.mode='抽離';if(g.on==null)g.on=true;g.grade=g.grade?String(g.grade):'';});
   if(D.title==null)D.title='';
+  sanitizeIds(D);
   return D;
+}
+
+/* id 只能是英數字、底線、減號（1～40 字）。畫面會把 id 放進 HTML 屬性與事件，不合格的（引號、角括號、中文…）一律換掉，
+   換法固定（同一份資料在每台電腦換出來一樣），並把引用它的地方一起改：個管、任課老師、組別成員、教室、排法、不排課時段… */
+const ID_RE=/^[A-Za-z0-9_-]{1,40}$/;
+const okId=v=>(typeof v==='string'||typeof v==='number')&&ID_RE.test(String(v));
+function safeId(v,used){const b=String(v==null?'':v).replace(/[^A-Za-z0-9_-]/g,'_').slice(0,40)||'x';let id=b,n=2;
+  while(used.has(id)){const suf='_'+(n++);id=b.slice(0,40-suf.length)+suf;}used.add(id);return id;}
+// 一張清單裡不合格的 id 換掉；回傳 Map(舊 id 字串 → 新 id)。同一個舊 id 出現兩次也換成同一個
+function fixIds(list){const used=new Set(),map=new Map();if(!Array.isArray(list))return map;
+  list.forEach(x=>{if(x&&okId(x.id))used.add(String(x.id));});
+  list.forEach(x=>{if(!x||typeof x!=='object'||okId(x.id))return;const k=String(x.id==null?'':x.id);if(!map.has(k))map.set(k,safeId(k,used));x.id=map.get(k);});
+  return map;}
+function sanitizeIds(D){
+  const mS=fixIds(D.students),mT=fixIds(D.teachers),mG=fixIds(D.groups),mR=fixIds(D.rooms),mP=fixIds(D.periods),mX=fixIds(D.sets);
+  if(![mS,mT,mG,mR,mP,mX].some(m=>m.size))return 0;
+  const r=(m,v)=>v!=null&&m.has(String(v))?m.get(String(v)):v;
+  const slot=k=>{const s=String(k),i=s.indexOf('-');return i<1||!mP.size?k:s.slice(0,i+1)+r(mP,s.slice(i+1));};
+  const slots=a=>Array.isArray(a)?a.map(slot):a;
+  const pk=k=>{const s=String(k);return /^t:/.test(s)?'t:'+r(mT,s.slice(2)):/^s:/.test(s)?'s:'+r(mS,s.slice(2)):s;};
+  const rekey=(o,f)=>{if(!o||typeof o!=='object'||Array.isArray(o))return o;const n={};Object.keys(o).forEach(k=>{n[f(k)]=o[k];});return n;};
+  D.students.forEach(s=>{if(s&&s.caseMgr!=null)s.caseMgr=r(mT,s.caseMgr);});
+  D.teachers.forEach(t=>{if(!t)return;t.off=slots(t.off);if(Array.isArray(t.prefRooms))t.prefRooms=t.prefRooms.map(x=>r(mR,x));});
+  D.groups.forEach(g=>{if(!g)return;g.teacher=r(mT,g.teacher);g.room=r(mR,g.room);if(Array.isArray(g.students))g.students=g.students.map(x=>r(mS,x));});
+  D.sets.forEach(x=>{if(!x)return;x.students=x.students.map(y=>r(mS,y));x.off=slots(x.off);});
+  D.blocked=slots(D.blocked);
+  for(const k in D.classSubj)D.classSubj[k]=r(mT,D.classSubj[k]);
+  D.offBy=rekey(D.offBy,pk);for(const k in D.offBy)D.offBy[k]=slots(D.offBy[k]);
+  D.assign=rekey(D.assign,k=>r(mG,k));
+  for(const k in D.assign){const a=D.assign[k];if(Array.isArray(a))a.forEach(e=>{if(e&&typeof e==='object'){if(e.s)e.s=slot(e.s);if(e.r!=null)e.r=r(mR,e.r);}});}
+  if(D.contacts)D.contacts=rekey(D.contacts,k=>r(mS,k));
+  const I=D.iep;if(I&&Array.isArray(I.rounds))I.rounds.forEach(R=>{if(R&&Array.isArray(R.meets))R.meets.forEach(m=>{if(!m)return;m.s=r(mS,m.s);if(Array.isArray(m.p))m.p.forEach(x=>{if(Array.isArray(x))x[0]=pk(x[0]);});});});
+  if(I&&I.cfg&&Array.isArray(I.cfg.admin))I.cfg.admin.forEach(a=>{if(Array.isArray(a))a[0]=pk(a[0]);});
+  return [mS,mT,mG,mR,mP,mX].reduce((n,m)=>n+m.size,0);
 }
 
 const GRADE={7:'七年級',8:'八年級',9:'九年級',1:'一年級',2:'二年級',3:'三年級',4:'四年級',5:'五年級',6:'六年級',10:'高一',11:'高二',12:'高三'};
@@ -868,7 +903,7 @@ function suggestCaseMgr(D,opt){
   const summary=T.map(t=>{const m=byT[t.id];return {id:t.id,name:t.name,n:m.length,cap:cap[t.id],capSet:+t.cmCap>0,grades:[...new Set(m.map(grade))].sort(),classes:new Set(m.map(o=>String(o.cls))).size,taught:m.filter(o=>teach[o.id+'|'+t.id]).length};});
   return {list,summary};
 }
-const CORE={suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash,promoteCls,packAssign,unpackAssign,schedStats,schedDiff};
+const CORE={sanitizeIds,ID_RE,okId,suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable,aiHash,promoteCls,packAssign,unpackAssign,schedStats,schedDiff};
 /* ───── 額外功能（extras.js 的畫面用；這裡只算，不碰畫面）：導師週報、學年交接、老師工作量、教室使用率、鎖課異動、家長聯絡 ───── */
 Object.assign(CORE,(function(){
 const xYmd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');

@@ -547,6 +547,33 @@ const synth=(seed,K,OFF)=>{K=K||3;OFF=OFF||3;const r=rng(seed),ri=n=>Math.floor(
   const R=C.solve(M,S,{seed:3});ok(R.slot[l]===s,'一鍵排課不會移動固定時段的課');
 }
 
+// 46. id 只能是英數字、底線、減號：不合格的換掉，引用它的地方一起改（防止 id 夾帶程式碼進到畫面的事件裡）
+{
+  const D=C.defaultData(),bad="x');alert(1)//",badT='t"><img src=x onerror=alert(1)>',badG='組 1',badR="r'1",badP='p<1>';
+  const s=D.students[0],t=D.teachers[1],g=D.groups[0],rm=D.rooms[0],p=D.periods[1],oldT=t.id,oldS=s.id;
+  D.students.forEach(x=>{if(x.caseMgr===oldT)x.caseMgr=badT;});D.groups.forEach(x=>{if(x.teacher===oldT)x.teacher=badT;x.students=x.students.map(y=>y===oldS?bad:y);});
+  D.classSubj['701|國文']=badT;
+  s.id=bad;t.id=badT;g.id=badG;g.room=badR;rm.id=badR;p.id=badP;
+  D.offBy['s:'+bad]=['0-'+badP];D.offBy['t:'+badT]=['1-'+badP];t.off=['2-'+badP];D.blocked=['3-'+badP];
+  D.assign={[badG]:[{s:'0-'+badP,pin:true,r:badR}]};D.contacts={[bad]:[{id:'c1',date:'2026-01-01'}]};
+  D.sets[0].students.push(bad);
+  const n=C.normalize(D);const ids=[].concat(n.students,n.teachers,n.groups,n.rooms,n.periods,n.sets).map(x=>x.id);
+  ok(ids.every(x=>C.ID_RE.test(String(x))),'所有 id 都只剩英數字、底線、減號');
+  ok(n.students[0].id==='x___alert_1___'&&/^[A-Za-z0-9_-]{1,40}$/.test(n.teachers[1].id),'不合格的 id 換成固定的安全寫法');
+  const nt=n.teachers[1].id,ns=n.students[0].id,np=n.periods[1].id;
+  ok(n.students.filter(x=>x.caseMgr===nt).length>0&&!n.students.some(x=>x.caseMgr===badT),'個管跟著換');
+  ok(n.groups.some(x=>x.teacher===nt)&&n.groups.some(x=>x.students.includes(ns))&&!n.groups.some(x=>x.students.includes(bad)),'課程的老師、學生跟著換');
+  ok(Object.values(n.classSubj).includes(nt)&&!Object.values(n.classSubj).includes(badT),'各班任課老師跟著換');
+  ok(n.offBy['s:'+ns]&&n.offBy['s:'+ns][0]==='0-'+np&&n.offBy['t:'+nt]&&!n.offBy['s:'+bad],'不排課時段的鍵與節次跟著換');
+  ok(n.teachers[1].off[0]==='2-'+np&&n.blocked[0]==='3-'+np,'老師的不排課、全校不排課的節次跟著換');
+  ok(n.assign[n.groups[0].id]&&n.assign[n.groups[0].id][0].s==='0-'+np&&n.assign[n.groups[0].id][0].r===n.rooms[0].id&&n.groups[0].room===n.rooms[0].id,'排法與教室跟著換');
+  ok(n.contacts[ns]&&n.sets[0].students.includes(ns),'家長聯絡紀錄、學生群組跟著換');
+  const again=JSON.stringify(C.normalize(JSON.parse(JSON.stringify(n))));ok(again===JSON.stringify(n),'再整理一次不會再變（每台電腦換出來一樣）');
+  const E=JSON.stringify(C.normalize(C.defaultData()));ok(C.sanitizeIds(JSON.parse(E))===0,'正常的資料完全不動');
+  const dup={students:[{id:'a"'},{id:'a_'}],teachers:[],groups:[],rooms:[],periods:[{id:'1',name:'1',start:'08:00',end:'08:45'}]};C.normalize(dup);
+  ok(dup.students[0].id!==dup.students[1].id&&dup.students[1].id==='a_','換完不會和已經有的 id 撞在一起');
+}
+
 // 40～45. 額外功能（導師週報、學年交接、老師工作量、教室使用率、鎖課異動、家長聯絡）：見 test-extras.js
 require('./test-extras.js').run(ok);
 
