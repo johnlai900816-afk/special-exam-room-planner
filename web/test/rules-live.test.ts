@@ -156,6 +156,12 @@ for (const [label, file] of files) {
         await assertFails(getDoc(doc(anon(), "view/" + LINK + "_701")));
         await assertFails(getDocs(collection(anon(), "view")));
       });
+      it("鑰匙換掉後，舊文件就算沒過期也讀不到（get 要 linkDoc）", async () => {
+        await env.withSecurityRulesDisabled(async (ctx) => {
+          await setDoc(doc(ctx.firestore(), "view/" + "e".repeat(32)), { exp: future(), rows: [] });
+        });
+        await assertFails(getDoc(doc(anon(), "view/" + "e".repeat(32))));
+      });
       it("只有編輯能用名單上的鑰匙寫，exp 一定要在 400 天內", async () => {
         await assertSucceeds(setDoc(doc(ed(), "view/" + LINK + "_801"), { exp: future(), rows: [] }));
         await assertFails(setDoc(doc(vw(), "view/" + LINK + "_801"), { exp: future(), rows: [] }));
@@ -173,6 +179,12 @@ for (const [label, file] of files) {
         await assertFails(setDoc(doc(vw(), "iepTok/" + "c".repeat(64)), tok));
         await assertFails(setDoc(doc(ed(), "iepTok/short"), tok));
         await assertFails(setDoc(doc(ed(), "iepTok/" + "d".repeat(64)), { ...tok, who: "x" }));
+      });
+      it("iepTok：到期最多 120 天後；keys 一定是陣列", async () => {
+        const tok = { r: "r1", exp: future(), keys: [], stu: [], who: "p" };
+        await assertSucceeds(setDoc(doc(ed(), "iepTok/" + "1".repeat(64)), { ...tok, exp: Timestamp.fromMillis(Date.now() + 100 * 864e5) }));
+        await assertFails(setDoc(doc(ed(), "iepTok/" + "2".repeat(64)), { ...tok, exp: Timestamp.fromMillis(Date.now() + 130 * 864e5) }));
+        await assertFails(setDoc(doc(ed(), "iepTok/" + "3".repeat(64)), { ...tok, keys: "x" }));
       });
       it("iepResp：成員讀得到，誰都不能從網頁寫；編輯可以刪", async () => {
         const p = "iepResp/r1/r/" + "a".repeat(64);

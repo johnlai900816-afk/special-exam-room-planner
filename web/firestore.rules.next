@@ -114,13 +114,14 @@ service cloud.firestore {
     }
     // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），後面可以接「_班級」或「_n」的分班副本。
     // 知道鑰匙才讀得到單一文件，不能列出；文件一定要有到期時間 exp（Firestore 時間），過期就讀不到。
+    // 讀取也要求文件名稱還是目前的鑰匙（linkDoc）：主持人換掉鑰匙或關掉連結後，就算舊文件沒刪掉也讀不到。
     function linkKey() { return access().get('link', ''); }
     function linkDoc(t) {
       return linkKey().matches('[0-9a-f]{32}')
         && (t == linkKey() || t.matches(linkKey() + '_[^/]{1,40}') || t in access().get('vk', []));
     }
     match /view/{t} {
-      allow get: if resource.data.get('exp', null) is timestamp && resource.data.exp > request.time;
+      allow get: if linkDoc(t) && resource.data.get('exp', null) is timestamp && resource.data.exp > request.time;
       allow list: if false;
       allow create, update: if editor() && linkDoc(t)
         && incoming().get('exp', null) is timestamp
@@ -129,13 +130,15 @@ service cloud.firestore {
     }
 
     // IEP 會議線上時間調查（functions/iep.js）：iepTok 只有編輯的人能建，網頁讀不到；回覆只由伺服器寫入；iepRate 只給伺服器
+    // 到期最多 120 天後；欄位名稱 keys 和 Map 的 keys() 同名，用 ['keys'] 取欄位
     match /iepTok/{h} {
       allow read: if false;
       allow create, update: if editor()
         && h.matches('^[0-9a-f]{64}$')
         && request.resource.data.exp is timestamp
+        && request.resource.data.exp < request.time + duration.value(120, 'd')
         && request.resource.data.r is string && request.resource.data.r.matches('^[A-Za-z0-9_-]{1,60}$')
-        && request.resource.data.keys is list && request.resource.data.keys.size() <= 400
+        && request.resource.data['keys'] is list && request.resource.data['keys'].size() <= 400
         && request.resource.data.stu is list && request.resource.data.stu.size() <= 80
         && request.resource.data.who in ['t', 'p'];
       allow delete: if editor();
