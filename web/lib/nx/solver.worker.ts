@@ -22,3 +22,5 @@ ctx.onmessage = (e) => {
     ctx.postMessage({ type: "error", message: String((err as Error)?.message || err) });
   }
 };
+// 打包器的 Worker 是非同步載入的：載好了才說「可以了」，畫面收到才送題目（不然訊息會在 onmessage 設好之前送到而不見）
+ctx.postMessage({ type: "ready" });

@@ -24,7 +24,8 @@ export function runSolve(D0: RcData, mode: SolveMode, view: string, at: number, 
     settle = { ok, no };
     w.onmessage = (e: MessageEvent) => {
       const m = e.data;
-      if (m.type === "progress") {
+      if (m.type === "ready") w.postMessage({ D, mode, view, at });
+      else if (m.type === "progress") {
         last = m as Progress;
         onProgress?.(last);
       } else if (m.type === "phase") onProgress?.({ phase: m.phase, done: 0, total: 1, best: last?.best || null });

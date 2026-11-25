@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { toast } from "@/components/Toast";
 import { Button, Input, Select } from "@/components/ui";
 import { CORE } from "@/lib/core";
+import { useQuery } from "@/lib/nx/hooks";
 import { GRADE } from "@/lib/nx/sched";
 import { OUT_GROUPS, OUT_MODES, outBoard, outHtml, type OutMode } from "@/lib/nx/schedOut";
 import { Tip, useSched } from "./common";
@@ -14,7 +15,8 @@ import "./out.css";
 
 export function OutStep() {
   const { D, edit, canEdit } = useSched();
-  const [mode, setMode] = useState<OutMode>("teacher");
+  const q = useQuery();
+  const [mode, setMode] = useState<OutMode>(() => (OUT_MODES.some((m) => m[0] === q.get("mode")) ? (q.get("mode") as OutMode) : "teacher"));
   const [outG, setOutG] = useState("");
   const html = useMemo(() => {
     const { M, S, ROOM } = outBoard(D);
