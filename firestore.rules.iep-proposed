@@ -1,0 +1,42 @@
+// IEP 會議線上時間調查：建議加進 firestore.rules 的規則（尚未部署）
+// 說明見 IEP-DESIGN.md「雲端：Cloud Functions 與 Firestore」。
+// 把下面三個 match 區塊放進 firestore.rules 的 `match /databases/{database}/documents { ... }` 裡，
+// 與既有的 signedIn()／member()／editor() 共用。部署前先用 Firestore 模擬器測。
+//
+// 公開頁（iep.html）完全不直接讀寫 Firestore，只呼叫 Cloud Functions（iepGetSurvey、iepSubmit）。
+// Functions 用 Admin SDK，不受這些規則限制。
+
+    // 鑰匙文件：文件名稱是鑰匙的 SHA-256（不是鑰匙本身）。
+    // 用戶端一律讀不到（連成員也不行：成員要看內容就看自己 app 裡的名冊資料），只有可編輯的成員能發布、更新、作廢。
+    match /iepTok/{h} {
+      allow read: if false;
+      allow create, update: if editor()
+        && h.matches('^[0-9a-f]{64}$')
+        && request.resource.data.exp is timestamp
+        && request.resource.data.r is string && request.resource.data.r.matches('^[A-Za-z0-9_-]{1,60}$')
+        && request.resource.data.keys is list && request.resource.data.keys.size() <= 400
+        && request.resource.data.stu is list && request.resource.data.stu.size() <= 80
+        && request.resource.data.who in ['t', 'p'];
+      allow delete: if editor();
+    }
+
+    // 回覆：只有 Function 寫；成員（個管、管理者）可以讀、可以在結束調查時刪
+    match /iepResp/{round}/r/{h} {
+      allow read: if member();
+      allow create, update: if false;
+      allow delete: if editor();
+    }
+
+    // 次數限制的計數：只有 Function 用
+    match /iepRate/{k} {
+      allow read, write: if false;
+    }
+
+// 備註：
+// - 「只有個管與管理者讀得到」：目前的權限模型是整份共用名單（config/access），成員都看得到全部名冊，
+//   所以回覆也是成員都讀得到。等 Next.js 版有「管理者／老師」角色與帳號綁定後，
+//   iepResp 的 read 改成「管理者，或這一輪調查的個管」：在 iepRound/{round} 存 owners: [email…]，
+//   allow read: if isAdmin() || request.auth.token.email in get(/databases/$(database)/documents/iepRound/$(round)).data.owners;
+// - iepRate 建議在 Firebase 主控台設 TTL 政策（欄位 exp），過期的計數會自動刪掉。
+// - 之前的「只靠規則」版本（iepSurvey/{token} 公開讀、拿鑰匙的人直接寫回覆）已經不用：
+//   兩套安全模型要一起顧太容易出錯；Functions 掛掉時改用紙本時段表，由個管手動登錄。

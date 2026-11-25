@@ -12,6 +12,7 @@ try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark'
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css?v=17">
+<link rel="stylesheet" href="iep.css?v=17">
 </head>
 <body>
 <aside class="side">
@@ -22,6 +23,7 @@ try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark'
     <button data-p="sched"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>排課</button>
     <button data-p="exam"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>段考考場</button>
     <button data-p="checkin"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>簽到退</button>
+    <button data-p="iep"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/><circle cx="9" cy="15" r="1.6"/><circle cx="15" cy="15" r="1.6"/></svg>IEP 會議</button>
   </nav>
   <div class="grow"></div>
   <button class="b aiset" onclick="gmSettings()" title="Gemini 金鑰與模型，只存在這個瀏覽器">AI 設定</button>
@@ -61,6 +63,7 @@ try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark'
 <script src="checkin.js?v=17"></script>
 <script src="gemini.js?v=17"></script>
 <script src="ai.js?v=17"></script>
+<script src="iep.js?v=17"></script>
 <script src="app.js?v=17"></script>
 </body>
 </html>
