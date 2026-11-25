@@ -5,8 +5,20 @@ let D,M,ST,ROOM,undoStack=[],page='home',sub='',offSel='*',view='',outMode='teac
 const lastSub={};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// 放進 onclick="f(…)" 裡的資料：先轉成 JSON 字串，再轉成 HTML 屬性可用的字元（瀏覽器會先還原 &#39; 等字元才執行）
+const jsArg=v=>esc(JSON.stringify(v==null?'':v));
 function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
-function localSave(){let j;try{j=JSON.stringify(D);localStorage.setItem(KEY,j);}catch(e){}try{const a=snaps(),l=a[a.length-1];if(j&&(!l||new Date(l.at).toDateString()!==new Date().toDateString()))snapshot('每天自動保留',j);}catch(e){}}
+// 存不進去（空間滿了）：先從最舊的開始丟掉存在 localStorage 的版本再試；還是不行就一直顯示警告
+function localSave(){let j;try{j=JSON.stringify(D);}catch(e){return;}
+  let ok=lsTry(KEY,j);while(!ok&&snapEvictLS())ok=lsTry(KEY,j);
+  storeWarn(!ok);if(!ok)return;
+  try{const a=snaps(),l=a[a.length-1];if(!l||new Date(l.at).toDateString()!==new Date().toDateString())snapshot('每天自動保留',j);}catch(e){}}
+function lsTry(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}}
+function storeWarn(on,src){const f=storeWarn.f=storeWarn.f||{};f[src||'main']=!!on;on=Object.values(f).some(Boolean);
+  let el=$('storeBar');if(!on){if(el)el.remove();return;}
+  if(!el){el=document.createElement('div');el.id='storeBar';el.setAttribute('role','alert');
+    el.style.cssText='position:fixed;left:0;right:0;top:0;z-index:9999;padding:10px 14px;background:#b42318;color:#fff;font-weight:bold;display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+    el.innerHTML='<span style="flex:1">這台電腦的儲存空間滿了，資料沒有存進去，請立刻下載備份檔</span><button class="b" onclick="exportJson()">下載備份檔</button>';document.body.appendChild(el);}}
 function save(){if(isRO()){clearTimeout(save.h);save.h=setTimeout(roRevert,0);return;}localSave();cloudPush();}
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>{t.style.display='none';},2600);}
 function setST(S){ST=S;if(!ST.rfix)ST.rfix=new Int16Array(M.L.length).fill(-1);M.lroom=ST.rfix;}
@@ -40,6 +52,8 @@ function render(){
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.p===page));
   $('pgTitle').textContent=P.t;
   $('sub').innerHTML=(P.subs||[]).map(([k,n])=>`<button class="${k===sub?'on':''}" onclick="go('${page}','${k}')">${n}</button>`).join('');
+  const gate=typeof cloudGateHtml==='function'?cloudGateHtml():'';   // 用過雲端的電腦登出時不顯示學生資料
+  if(gate){$('page').hidden=false;$('examFrame').hidden=true;$('page').innerHTML=gate;return;}
   const ex=page==='exam',f=$('examFrame');$('page').hidden=ex;f.hidden=!ex;
   if(ex){if(!f.getAttribute('src'))f.src='exam.html?embed';return;}
   ({home:renderHome,'roster/stu':renderStu,'roster/tea':renderTea,'roster/env':renderEnv,'roster/tt':renderTT,'roster/data':renderData,'sched/groups':renderGroups,'sched/need':renderNeed,'sched/off':renderOff,'sched/teach':renderTeach,'sched/board':renderBoard,'sched/out':renderOut,'checkin/now':renderCheckin,'checkin/log':renderAttLog,'checkin/cards':renderCards})[page+(sub?'/'+sub:'')]();
@@ -573,19 +587,53 @@ function copyOut(){const el=$('outArea');if(!el)return;const r=document.createRa
 
 /* ───── 名冊｜匯入與新學期：讓學校自己把每學期的資料帶進來 ───── */
 const SNKEY='resource-class-snap',LBKEY='resource-class-lastbackup';
-function snaps(){try{return JSON.parse(localStorage.getItem(SNKEY))||[];}catch(e){return [];}}
-// 自動版本：最多留 12 份（每天一份，加上大動作之前各一份），空間不夠就丟掉最舊的
-function snapshot(label,json){let a=snaps();a.push({at:Date.now(),label,json:json||JSON.stringify(D)});a=a.slice(-12);
-  while(a.length){try{localStorage.setItem(SNKEY,JSON.stringify(a));return;}catch(e){a.shift();}}}
+// 自動版本：最多留 12 份（每天一份，加上大動作之前各一份），空間不夠就丟掉最舊的。
+// 存在 IndexedDB（總量上限約 30MB）；瀏覽器不支援時退回 localStorage（上限約 1.5MB，才不會擠掉名冊本身）。
+// 公用電腦模式：只留在這次開著的頁面，不寫進這台電腦。
+const SNMAX=12,SNCAP_IDB=30*1024*1024,SNCAP_LS=1.5*1024*1024;
+let SNAPS=null,snapDB=null,snapLS=false;
+function snaps(){if(!SNAPS){try{SNAPS=JSON.parse(localStorage.getItem(SNKEY))||[];}catch(e){SNAPS=[];}}return SNAPS;}
+const snapBytes=a=>a.reduce((n,x)=>n+(x.json||'').length*2,0);
+// 超過份數或總量就從最舊的開始丟（最新的一份留著）；回傳丟掉的
+function snapTrim(a,cap){const rm=[];while(a.length>1&&(a.length>SNMAX||snapBytes(a)>cap))rm.push(a.shift());return rm;}
+function snapLSWrite(a){while(a.length){if(lsTry(SNKEY,JSON.stringify(a)))return;a.shift();}try{localStorage.removeItem(SNKEY);}catch(e){}}
+// 名冊存不進 localStorage 時：丟掉一份存在 localStorage 的最舊版本，回傳有沒有丟
+function snapEvictLS(){let a;try{a=JSON.parse(localStorage.getItem(SNKEY))||[];}catch(e){a=[];}if(!a.length)return false;
+  a.shift();if(a.length)lsTry(SNKEY,JSON.stringify(a));else try{localStorage.removeItem(SNKEY);}catch(e){}
+  if(snapLS&&SNAPS)SNAPS.splice(0,SNAPS.length-a.length);return true;}
+function snapshot(label,json){const a=snaps(),l=a[a.length-1];let at=Date.now();if(l&&l.at>=at)at=l.at+1;
+  const x={at,label:String(label||''),json:json||JSON.stringify(D)};
+  if(snapLS&&$('storeBar'))return;   // 空間已經滿了：先不要再存版本
+  a.push(x);const rm=snapTrim(a,snapLS?SNCAP_LS:SNCAP_IDB);
+  if(typeof pcMode==='function'&&pcMode())return;
+  if(snapDB)snapTx('readwrite',st=>{st.put(x);rm.forEach(r=>st.delete(r.at));}).catch(()=>{});
+  else if(snapLS)snapLSWrite(a.slice());}
+function snapTx(mode,fn){return new Promise((ok,no)=>{const t=snapDB.transaction('s',mode),r=fn(t.objectStore('s'));t.oncomplete=()=>ok(r&&r.result);t.onerror=t.onabort=()=>no(t.error);});}
+function snapOpen(){return new Promise((ok,no)=>{if(!window.indexedDB)return no(new Error('no idb'));const r=indexedDB.open('rc-snap',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('s',{keyPath:'at'});r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);r.onblocked=()=>no(new Error('blocked'));});}
+// 啟動時：打開 IndexedDB，把舊的 localStorage 版本搬過去
+async function snapInit(){
+  if(typeof pcMode==='function'&&pcMode()){snapWipe();return;}
+  try{snapDB=await snapOpen();const old=await snapTx('readonly',st=>st.getAll());let leg=[];try{leg=JSON.parse(localStorage.getItem(SNKEY))||[];}catch(e){}
+    const map=new Map();[].concat(old||[],leg,SNAPS||[]).forEach(x=>{if(x&&x.at&&typeof x.json==='string')map.set(x.at,x);});
+    const a=[...map.values()].sort((p,q)=>p.at-q.at);snapTrim(a,SNCAP_IDB);
+    await snapTx('readwrite',st=>{st.clear();a.forEach(x=>st.put(x));});
+    try{localStorage.removeItem(SNKEY);}catch(e){}SNAPS=a;}
+  catch(e){snapDB=null;snapLS=true;snapLSWrite(snaps().slice());}
+  if(page==='roster'&&sub==='data')render();}
+// 清除所有自動保留的版本（公用電腦模式、清除這台電腦上的資料）
+function snapWipe(){SNAPS=[];try{localStorage.removeItem(SNKEY);}catch(e){}
+  if(snapDB)snapTx('readwrite',st=>{st.clear();}).catch(()=>{});else if(window.indexedDB)try{indexedDB.deleteDatabase('rc-snap');}catch(e){}}
 function restoreSnap(i){const a=snaps(),x=a[i];if(!x)return;if(!confirm('要回到 '+fmtTime(x.at)+'（'+x.label+'）的版本嗎？\n目前的資料會先自動保留一份，之後還可以再換回來。'))return;
   snapshot('回到舊版本之前');try{D=normalize(JSON.parse(x.json));}catch(e){toast('這個版本讀不出來');return;}undoStack=[];changed();$('title').value=D.title;paintSchool();render();toast('已回到 '+fmtTime(x.at)+' 的版本');}
 function fmtTime(t){const d=new Date(t),p=n=>String(n).padStart(2,'0');return (d.getMonth()+1)+'/'+d.getDate()+' '+p(d.getHours())+':'+p(d.getMinutes());}
 
 // 讀學校原本的 Excel（在這台電腦的瀏覽器裡讀，不會上傳）
-const XLSX_SRC=['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'];
+// 只用 SheetJS 官方 CDN 的 0.20.3（npm 上的 0.18.5 有已知漏洞 CVE-2023-30533、CVE-2024-22363，不再當備用）
+const XLSX_SRC=[['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js','sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT']];
 const XLT={stu:'學生名單',tl:'任課老師名單',course:'課程一覽表',off:'不排課時段',lock:'手排鎖課'};
 let XL=[];
-async function needXLSX(){if(window.XLSX)return;for(const s of XLSX_SRC){try{await loadScript(s);if(window.XLSX)return;}catch(e){}}throw new Error('xlsx');}
+async function needXLSX(){if(window.XLSX)return;for(const [s,i] of XLSX_SRC){try{await loadScript(s,i);if(window.XLSX)return;}catch(e){}}throw new Error('xlsx');}
 function sheetType(rows){
   const top=rows.slice(0,6),has=re=>top.some(r=>r.some(c=>re.test(c)));
   if(has(/起始星期/)&&has(/首節/))return 'off';
@@ -667,7 +715,7 @@ function renderData(){
     ['手排鎖課（選填）',st(1,(D.lockFix||[]).length?D.lockFix.length+' 節，排課時盡量沿用':'沒有，系統自己配'),'特教鎖課需求 › 資料輸入或資料輸出',`<button class="b sm" onclick="pasteLocks()">貼上</button>${(D.lockFix||[]).length?`<button class="b sm" onclick="clearLocks()">清除</button>`:''}`],
     ['資源班老師個人不排課',st(rOff===res.length&&res.length,rOff+' / '+res.length+' 位有設定'),'各位老師自己點',`<button class="b sm" onclick="go('sched','off')">不排課時段</button>`],
     ['年級共同時段（社團等）',st(Object.keys(D.offBy).some(k=>k[0]==='g'&&D.offBy[k].length),Object.keys(D.offBy).filter(k=>k[0]==='g'&&D.offBy[k].length).map(k=>GRADE[k.slice(2)]).join('、')||'沒有設定'),'教學組',`<button class="b sm" onclick="offSel='g:7';go('sched','off')">不排課時段</button>`],
-    ['鎖課方式與上限',st(1,D.settings.lockMode==='flex'?'彈性鎖課'+(D.settings.lockCap?'（'+Object.keys(D.settings.lockCap).map(k=>k+D.settings.lockCap[k]).join(' ')+'）':''):'同一科同時上'),'和教學組確認',`<button class="b sm" onclick="go('roster','env')">規則</button>`]];
+    ['鎖課方式與上限',st(1,D.settings.lockMode==='flex'?'彈性鎖課'+(D.settings.lockCap?'（'+esc(Object.keys(D.settings.lockCap).map(k=>k+D.settings.lockCap[k]).join(' '))+'）':''):'同一科同時上'),'和教學組確認',`<button class="b sm" onclick="go('roster','env')">規則</button>`]];
   let h=`<p class="guide">每學期照下面的順序，把學校本來就有的表格帶進來，就能自己排課，不需要找人幫忙：<b>①</b> 視需要按「開始新學期」<b>②</b> 上傳學校的 Excel（或在各列按「貼上」）<b>③</b> 補上資源班老師自己的不排課時段 <b>④</b> 到「排課」按一鍵排課。</p>
   <h3>上傳學校的 Excel</h3><p class="note">可以一次選好幾個檔案。系統會自己認出裡面的<b>學生名單、任課老師名單（教師名單）、課程一覽表、班級不排課、教師不排課、手排鎖課（資料輸入或資料輸出）</b>，其他工作表會略過。Google 試算表請先按「檔案 › 下載 › Microsoft Excel」。檔案只在這台電腦的瀏覽器裡讀，不會上傳到任何地方。</p>
   <div class="bar"><input type="file" id="xlsIn" accept=".xlsx,.xls,.xlsm,.csv,.ods" multiple style="display:none" onchange="readXls(this)"><button class="b pri" onclick="$('xlsIn').click()">選擇 Excel 檔</button></div>`;
@@ -694,22 +742,93 @@ function renderData(){
 
 /* ───── 備份與還原（名冊、排課、段考考場、通知單一起） ───── */
 function reloadExam(){const f=$('examFrame');if(f.getAttribute('src'))f.src='exam.html?embed';}
-function exportJson(){const o=Object.assign({},D),g=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
-  o._exam=g(EXKEY);o._notice=g(NKEY);o._att=ATT;try{localStorage.setItem(LBKEY,String(Date.now()));}catch(e){}
-  const a=document.createElement('a'),d=new Date(),p=n=>String(n).padStart(2,'0');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,1)],{type:'application/json'}));a.download='資源班管理系統_備份_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'.json';
+function backupObj(){const o=Object.assign({},D),g=k=>{try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}};
+  o._exam=g(EXKEY);o._notice=g(NKEY);o._att=ATT;return o;}
+function download(name,text){try{localStorage.setItem(LBKEY,String(Date.now()));}catch(e){}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));a.download=name;
   document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);}
-function importJson(inp){const f=inp.files[0];if(!f)return;const rd=new FileReader();
-  rd.onload=()=>{inp.value='';let o;try{o=JSON.parse(rd.result);}catch(e){toast('這不是備份檔');return;}
-    if(!o||!Array.isArray(o.students)||!Array.isArray(o.groups)){toast('這不是資源班管理系統的備份檔');return;}
-    if(isRO()){toast('你是檢視權限，不能還原');return;}
-    if(!confirm('還原後會取代目前的名冊、排課、段考考場與點名紀錄，確定嗎？'))return;
-    const ex=o._exam,nt=o._notice,at=o._att;delete o._exam;delete o._notice;delete o._att;if(at&&typeof at==='object'){ATT=at;attSave();}
-    try{if(ex)localStorage.setItem(EXKEY,JSON.stringify(ex));if(nt)localStorage.setItem(NKEY,JSON.stringify(nt));}catch(e){}
-    snapshot('從備份檔還原之前');D=normalize(o);undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();if($('dlg').open)closeDlg();reloadExam();render();toast('已還原');};
-  rd.readAsText(f);}
+const bkDate=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate());};
+function exportJson(){download('資源班管理系統_備份_'+bkDate()+'.json',JSON.stringify(backupObj(),null,1));}
+// 加密備份：AES-GCM 256，金鑰由密碼經 PBKDF2-SHA256（31 萬次）產生；密碼忘了就打不開
+const ENC_ITER=310000;
+function b64(u){const a=new Uint8Array(u);let s='';for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode.apply(null,a.subarray(i,i+0x8000));return btoa(s);}
+function unb64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+async function encKey(pw,salt,iter){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
+async function encPack(text,pw){const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12)),key=await encKey(pw,salt,ENC_ITER);
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(text));
+  return {rcEnc:1,app:'資源班管理系統',alg:'AES-GCM-256/PBKDF2-SHA256',iter:ENC_ITER,salt:b64(salt),iv:b64(iv),data:b64(ct)};}
+async function encOpen(o,pw){const it=+o.iter;if(!(it>=100000&&it<=5000000)||typeof o.salt!=='string'||typeof o.iv!=='string'||typeof o.data!=='string')throw new Error('format');
+  const key=await encKey(pw,unb64(o.salt),it);return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(o.iv)},key,unb64(o.data)));}
+// 輸入密碼的小視窗；取消回傳 null
+function askPw(title,twice){shareOpen=false;return new Promise(res=>{let done=false;const fin=v=>{if(!done){done=true;res(v);}};
+  openDlg('<h3>'+esc(title)+'</h3>'+(twice?'<p class="note">請設一組至少 8 個字的密碼，並另外記下來。<b>密碼忘了，這個備份檔就打不開</b>，系統也沒辦法幫你找回。</p>':'<p class="note">請輸入下載這個備份檔時設的密碼。</p>')+
+    '<div class="bar"><input type="password" id="pw1" autocomplete="'+(twice?'new-password':'current-password')+'" placeholder="密碼" style="flex:1;min-width:0"></div>'+
+    (twice?'<div class="bar"><input type="password" id="pw2" autocomplete="new-password" placeholder="再輸入一次" style="flex:1;min-width:0"></div>':'')+
+    '<div class="bar" style="margin:8px 0 0"><span class="grow"></span><button class="b pri" id="pwOk">確定</button><button class="b" onclick="closeDlg()">取消</button></div>',()=>fin(null));
+  const ok=()=>{const a=$('pw1').value;if(!a)return;if(twice){if(a.length<8){toast('密碼至少要 8 個字');return;}if(a!==$('pw2').value){toast('兩次輸入的密碼不一樣');return;}}
+    dlgDone=null;closeDlg();fin(a);};
+  $('pwOk').onclick=ok;['pw1','pw2'].forEach(id=>{const el=$(id);if(el)el.onkeydown=e=>{if(e.key==='Enter')ok();};});setTimeout(()=>$('pw1').focus(),50);});}
+async function exportEnc(){if(!(window.crypto&&crypto.subtle)){toast('這個瀏覽器不能加密（網址要是 https）');return;}
+  const pw=await askPw('下載加密備份檔',true);if(!pw)return;
+  try{const o=await encPack(JSON.stringify(backupObj()),pw);download('資源班管理系統_加密備份_'+bkDate()+'.json',JSON.stringify(o));toast('已下載加密備份檔，請記好密碼');}
+  catch(e){toast('加密失敗：'+(e.message||e));}}
+// 備份檔的格式檢查：型別、清單、數量上限、文字欄位是文字
+const BK_MAX_BYTES=30*1024*1024;
+function checkBackup(o){
+  const err=[],isObj=v=>!!v&&typeof v==='object'&&!Array.isArray(v),txt=(v,n)=>v==null||((typeof v==='string'||typeof v==='number')&&String(v).length<=n);
+  if(!isObj(o))return {ok:false,err:['這不是備份檔']};
+  if(!Array.isArray(o.students)||!Array.isArray(o.groups))return {ok:false,err:['這不是資源班管理系統的備份檔（沒有學生或課程清單）']};
+  const LIM={students:5000,teachers:3000,groups:3000,rooms:300,periods:40,sets:1000,blocked:2000,lockFix:20000};
+  for(const k in LIM){const v=o[k];if(v==null)continue;if(!Array.isArray(v)){err.push(k+' 應該是清單');continue;}
+    if(v.length>LIM[k])err.push(k+' 筆數太多（'+v.length+'）');else if(k!=='blocked'&&v.some(x=>!isObj(x)))err.push(k+' 裡有格式不對的資料');}
+  if(err.length)return {ok:false,err};
+  const row=(list,name,f)=>{const i=list.findIndex(x=>!f(x));if(i>=0)err.push(name+'第 '+(i+1)+' 筆的格式不對');};
+  row(o.students,'學生',s=>txt(s.id,80)&&txt(s.name,100)&&txt(s.cls,20)&&txt(s.seat,10)&&txt(s.note,2000)&&txt(s.caseMgr,80)&&(s.needs==null||Array.isArray(s.needs)));
+  row(o.teachers||[],'老師',t=>txt(t.id,80)&&txt(t.name,100)&&txt(t.role,40)&&txt(t.note,2000)&&(t.off==null||Array.isArray(t.off)));
+  row(o.groups,'課程',g=>txt(g.id,80)&&txt(g.name,200)&&txt(g.subject,100)&&txt(g.teacher,80)&&txt(g.room,80)&&txt(g.mode,20)&&(g.students==null||Array.isArray(g.students)));
+  row(o.rooms||[],'教室',r=>txt(r.id,80)&&txt(r.name,100));
+  row(o.periods||[],'作息',p=>txt(p.id,40)&&txt(p.name,40)&&txt(p.start,10)&&txt(p.end,10));
+  if(!txt(o.title,200))err.push('學期名稱的格式不對');
+  ['classSubj','assign','settings','offBy','tt'].forEach(k=>{if(o[k]!=null&&!isObj(o[k]))err.push(k+' 的格式不對');});
+  if(o._att!=null){if(!isObj(o._att))err.push('點名紀錄的格式不對');
+    else{let bad=false,n=0;
+      for(const d in o._att){const day=o._att[d];if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!isObj(day)){bad=true;break;}
+        for(const k in day){const g=day[k];if(!isObj(g)){bad=true;break;}
+          for(const sid in g){n++;const r=g[sid];if(!isObj(r)||!txt(r.st,10)||!txt(r.tin,10)||!txt(r.tout,10)||!txt(r.note,500)){bad=true;break;}}
+          if(bad)break;}
+        if(bad)break;}
+      if(bad)err.push('點名紀錄的格式不對');else if(n>500000)err.push('點名紀錄太多');}}
+  if(o._exam!=null&&!(isObj(o._exam)&&Array.isArray(o._exam.students)))err.push('段考考場資料的格式不對');
+  if(o._notice!=null&&!isObj(o._notice))err.push('通知單資料的格式不對');
+  return {ok:!err.length,err:err.slice(0,6)};
+}
+function bkSum(o){return {t:String(o.title||'').trim()||'（沒有名稱）',s:(o.students||[]).length,te:(o.teachers||[]).length,g:(o.groups||[]).length,a:Object.keys(o._att||{}).length,e:!!o._exam};}
+function importJson(inp){const f=inp.files[0];if(!f)return;inp.value='';
+  if(f.size>BK_MAX_BYTES){toast('檔案太大（超過 30MB），不像是備份檔');return;}
+  const rd=new FileReader();rd.onload=()=>{let o;try{o=JSON.parse(rd.result);}catch(e){toast('這不是備份檔');return;}restoreFrom(o);};rd.readAsText(f);}
+async function restoreFrom(o){
+  if(isRO()){toast('你是檢視權限，不能還原');return;}
+  if(o&&o.rcEnc){const pw=await askPw('打開加密備份檔',false);if(!pw)return;
+    try{o=JSON.parse(await encOpen(o,pw));}catch(e){toast('密碼不對，或檔案壞掉了');return;}}
+  const v=checkBackup(o);if(!v.ok){toast('備份檔有問題，沒有還原：'+v.err.join('；'));return;}
+  let ex0=null;try{ex0=JSON.parse(localStorage.getItem(EXKEY));}catch(e){}
+  const a=bkSum(Object.assign({},D,{_att:ATT,_exam:ex0})),b=bkSum(o);
+  if(!confirm('要用這個備份檔還原嗎？\n\n　　　　目前 → 備份檔\n學期名稱：'+a.t+' → '+b.t+'\n學生：'+a.s+' → '+b.s+' 位\n老師：'+a.te+' → '+b.te+' 位\n課程：'+a.g+' → '+b.g+' 門\n點名紀錄：'+a.a+' → '+b.a+' 天\n段考考場：'+(a.e?'有':'沒有')+' → '+(b.e?'有':'沒有')+
+    '\n\n還原會取代目前的名冊、排課、段考考場與點名紀錄。還原前會先自動保留一份目前的資料。'))return;
+  if(cloudState==='on'&&!confirm('你正在和其他老師共用雲端「'+((window.FIREBASE_CONFIG||{}).projectId||'')+'」。\n還原會取代「所有共用的老師」看到的名冊與排課，不只是這台電腦。\n\n真的要還原嗎？'))return;
+  snapshot('從備份檔還原之前');
+  const ex=o._exam,nt=o._notice,at=o._att;delete o._exam;delete o._notice;delete o._att;
+  if(at){ATT=at;attSave();}
+  try{if(ex)localStorage.setItem(EXKEY,JSON.stringify(ex));if(nt)localStorage.setItem(NKEY,JSON.stringify(nt));}catch(e){}
+  D=normalize(o);undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();if($('dlg').open)closeDlg();reloadExam();render();toast('已還原');}
 function resetAll(){if(isRO()){toast('你是檢視權限，不能清空');return;}
-  if(!confirm('確定全部清空？\n目前的名冊、分組、排法、段考考場與點名紀錄都會被清掉'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。'))return;
+  if(cloudState==='on'&&!isAdmin()){toast('共用中只有主持人可以全部清空');return;}
+  const t=String(D.title||'').trim(),pc=typeof pcMode==='function'&&pcMode();
+  const w=prompt('全部清空會清掉目前的名冊、分組、排法、段考考場與點名紀錄'+(cloudState==='on'?'，共用中的其他老師也會一起被清掉':'')+'。\n'+
+    '清空前會先自動保留一份，在「名冊 › 匯入與新學期 › 自動保留的版本」可以找回'+(pc?'（公用電腦模式只留到關掉分頁為止）':'')+'。\n\n'+
+    '確定要清空，請輸入「清空」'+(t?'或學期名稱「'+t+'」':'')+'：','');
+  if(w==null)return;if(w.trim()!=='清空'&&!(t&&w.trim()===t)){toast('輸入的字不對，沒有清空');return;}
   snapshot('全部清空之前');try{localStorage.removeItem(EXKEY);localStorage.removeItem(NKEY);}catch(e){}
   ATT={};attSave();D=emptyData();undoStack=[];offSel='*';view='';changed();$('title').value=D.title;paintSchool();closeDlg();reloadExam();go('home');}
 
@@ -721,10 +840,20 @@ window.addEventListener('storage',e=>{
 });
 
 /* ───── 全校課表：讀學校每班一頁的課程表 PDF（文字檔直接讀，掃描檔用文字辨識），得到各班各科老師 ───── */
-const PDFJS_SRC='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/',TESS_SRC='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+// pdf.js 4.10.38（3.11.174 有 CVE-2024-4367：惡意 PDF 可以執行程式）。4 版只有 ES module，用 legacy 版支援較舊的瀏覽器；
+// 先用 fetch 帶檢查碼（SRI）下載、核對無誤才載入，worker 也一樣。exam.html 用同一版。
+const PDFJS_SRC='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/',PDFJS_SRI={
+  'legacy/build/pdf.min.mjs':'sha384-z/XbAtvhBXJoK+yvYimnFuTCF6/2wTCDSIFD09/HtIfwFtvDKOMdAe5Z3wOChkmW',
+  'legacy/build/pdf.worker.min.mjs':'sha384-vbNBYP03jHFPlgtK4qSXtazEmGfmpTWlSsfq9OiU20MroW/Q9TbaEXiM7PpeWg+6'};
+const TESS_SRC='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',TESS_SRI='sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F';
 let TTJOB=null;const TTIMG={};   // 辨識時截下的統計區圖片，只留在這次開著的頁面，方便核對
-async function ttPdf(){if(!window.pdfjsLib){await loadScript(PDFJS_SRC+'pdf.min.js');pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_SRC+'pdf.worker.min.js';}}
-async function ttWorkers(){if(!window.Tesseract)await loadScript(TESS_SRC);
+async function sriBlob(f){const r=await fetch(PDFJS_SRC+f,{integrity:PDFJS_SRI[f],credentials:'omit'});if(!r.ok)throw new Error('pdf.js '+r.status);
+  return URL.createObjectURL(new Blob([await r.text()],{type:'text/javascript'}));}
+async function ttPdf(){if(window.pdfjsLib)return;
+  const [lib,wk]=await Promise.all([sriBlob('legacy/build/pdf.min.mjs'),sriBlob('legacy/build/pdf.worker.min.mjs')]);
+  const m=await import(lib);m.GlobalWorkerOptions.workerPort=new Worker(wk,{type:'module'});window.pdfjsLib=m;}
+const PDF_OPT={cMapUrl:PDFJS_SRC+'cmaps/',cMapPacked:true,standardFontDataUrl:PDFJS_SRC+'standard_fonts/',isEvalSupported:false,enableXfa:false};
+async function ttWorkers(){if(!window.Tesseract)await loadScript(TESS_SRC,TESS_SRI);
   if(!ttWorkers.zh){ttWorkers.zh=await Tesseract.createWorker('chi_tra');await ttWorkers.zh.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});}
   if(!ttWorkers.en){ttWorkers.en=await Tesseract.createWorker('eng');await ttWorkers.en.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});}}
 function ttCrop(c,xa,xb,ya,yb,th){const W=c.width,H=c.height,d=document.createElement('canvas');d.width=Math.round((xb-xa)*W);d.height=Math.round((yb-ya)*H);const x=d.getContext('2d');
@@ -734,7 +863,7 @@ function ttThumb(c){const w=Math.min(1100,c.width),d=document.createElement('can
 async function readTT(inp){const fs=[...inp.files];inp.value='';if(!fs.length||TTJOB)return;
   TTJOB={done:0,total:0,msg:'讀取 PDF…',pages:[]};render();
   try{await ttPdf();
-    for(const f of fs){const pdf=await pdfjsLib.getDocument({data:await f.arrayBuffer(),cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true}).promise;
+    for(const f of fs){const pdf=await pdfjsLib.getDocument(Object.assign({data:new Uint8Array(await f.arrayBuffer())},PDF_OPT)).promise;
       TTJOB.total+=pdf.numPages;
       for(let n=1;n<=pdf.numPages;n++){const pg=await pdf.getPage(n),tc=await pg.getTextContent();
         const items=tc.items.filter(i=>i.str.trim()),src=f.name+' 第 '+n+' 頁';
@@ -770,7 +899,7 @@ function renderTT(){const tt=D.tt||{},cls=Object.keys(tt).sort();
   if(cls.length){
     h+=`<h3>各班老師 <span class="note" style="font-weight:normal">${cls.length} 個班${unk?`，<span class="warn">${unk} 個名字認不出來（橘色）</span>`:''}；點班級可以核對、修改</span></h3><div class="scroll"><table class="ed"><tr><th>班級</th>${TT_COL.map(x=>`<th>${x[0]}</th>`).join('')}<th>其他</th><th></th></tr>`+
       cls.map(c=>{const o=tt[c],other=Object.keys(o.subj).filter(s=>!TT_MAIN.includes(s)),u=Object.values(o.subj).flat().filter(x=>x[2]).length;
-        return `<tr><td><button class="b sm${c[0]==='?'||o.guessCls?' warn':''}" onclick="ttEdit('${esc(c)}')">${esc(c)}</button></td>${TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join('')}<td class="dim">${other.length} 科${u?` <span class="warn">${u} 個待核對</span>`:''}</td><td class="dim">${esc(o.src||'')}</td></tr>`;}).join('')+`</table></div>`;
+        return `<tr><td><button class="b sm${c[0]==='?'||o.guessCls?' warn':''}" data-c="${esc(c)}" onclick="ttEdit(this.dataset.c)">${esc(c)}</button></td>${TT_COL.map(x=>`<td>${ttCell(o,x[1]==='國文'||x[1]==='英文'||x[1]==='數學'?x[0]:x[1])}</td>`).join('')}<td class="dim">${other.length} 科${u?` <span class="warn">${u} 個待核對</span>`:''}</td><td class="dim">${esc(o.src||'')}</td></tr>`;}).join('')+`</table></div>`;
     // 勾稽
     const diff=[];const tn=id=>{const t=D.teachers.find(x=>x.id===id);return t?t.name:'';};
     cls.forEach(c=>[['國語文','國文'],['英語文','英文'],['數學','數學'],['理化','理化']].forEach(([a,b])=>{const k=c+'|'+canonSubj(D,b),x=(tt[c].subj[a]||[])[0];if(!x||x[2])return;const cur=D.classSubj[k]?tn(D.classSubj[k]):'';if(cur!==x[0])diff.push({c,s:b,cur,tt:x[0]});}));
@@ -786,7 +915,7 @@ function ttEdit(c){const o=D.tt[c];if(!o)return;const rows=Object.keys(o.subj).f
   openDlg(`<h3>核對課表：${esc(c)}</h3>${TTIMG[c]?`<img src="${TTIMG[c]}" style="width:100%;border:1px solid var(--line);border-radius:6px" alt="課表統計">`:`<p class="note">${esc(o.src||'')}</p>`}
   <div class="bar"><label class="note" style="margin:0">班級 <input type="text" id="ttCls" class="w5" value="${esc(c[0]==='?'?'':c)}" placeholder="例：701"></label><span class="note" style="margin:0">橘色是認不出來的，對照上面的圖改成正確的名字；整列清空就會刪掉。</span></div>
   <div class="scroll" style="max-height:50vh"><table class="ed" id="ttRows"><tr><th>科目</th><th>老師</th><th>節數</th></tr>${rows.concat([['','','']]).map(r=>`<tr><td><input type="text" class="w8" value="${esc(r[0])}"></td><td><input type="text" class="w5${r[3]?' warn':''}" value="${esc(r[1])}"></td><td><input type="text" class="w3" value="${esc(r[2])}"></td></tr>`).join('')}</table></div>
-  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="ttEditOk('${esc(c)}')">儲存</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="ttEditOk(${jsArg(c)})">儲存</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
 function ttEditOk(c){const nc=$('ttCls').value.trim()||c,list=[];
   [...$('ttRows').querySelectorAll('tr')].slice(1).forEach(tr=>{const v=[...tr.querySelectorAll('input')].map(i=>i.value.trim());if(v[0]&&v[1])list.push({sj:v[0],t:v[1],n:+v[2]||1,unk:false});});
   snapshot('修改課表之前');const src=D.tt[c].src;delete D.tt[c];if(TTIMG[c]){TTIMG[nc]=TTIMG[c];}ttStore(D,nc,list,src);changed();closeDlg();render();toast('已儲存 '+nc+' 的課表');}
@@ -799,6 +928,6 @@ function ttApplyCS(){const tt=D.tt||{};let n=0;const list=[];
 function ttClear(){if(!confirm('清除讀進來的全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
 
 /* ───── 啟動 ───── */
-D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();
+D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();snapInit();
 (function(){const a=location.hash.slice(1).split('/');go(a[0]||'home',a[1]);})();
 cloudInit();

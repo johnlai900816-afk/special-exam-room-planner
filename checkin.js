@@ -12,7 +12,10 @@ function hmNow(){const d=new Date();return String(d.getHours()).padStart(2,'0')+
 function hm2m(s){const a=String(s||'0:0').split(':');return (+a[0])*60+(+a[1]||0);}
 function dowOf(date){const d=new Date(date+'T00:00:00').getDay();return d>=1&&d<=5?d-1:-1;}
 function dateLabel(date){const d=new Date(date+'T00:00:00');return (d.getMonth()+1)+' 月 '+d.getDate()+' 日 週'+'日一二三四五六'[d.getDay()];}
-function attSave(){try{localStorage.setItem(AKEY,JSON.stringify(ATT));}catch(e){}}
+// 存不進去（空間滿了）：先丟掉存在 localStorage 的舊版本再試；還是不行就顯示警告（app.js 的 storeWarn）
+function attSave(){let j;try{j=JSON.stringify(ATT);}catch(e){return;}const put=()=>{try{localStorage.setItem(AKEY,j);return true;}catch(e){return false;}};
+  let ok=put();while(!ok&&typeof snapEvictLS==='function'&&snapEvictLS())ok=put();
+  if(typeof storeWarn==='function')storeWarn(!ok,'att');}
 function attGet(date,key,sid){return ((ATT[date]||{})[key]||{})[sid]||null;}
 function attSet(date,key,sid,rec){
   if(isRO()){toast('你是檢視權限，不能點名');return false;}
@@ -106,10 +109,11 @@ function ciScan(text){
   else flash('warn',`<b>${esc(stuLabel(s))}</b>　已經是「${STN[r.st]}${r.tout?'、已簽退':''}」，要改請點名字旁的「⋯」`);
   render();const el=$('ciIn');if(el&&!cam)el.focus();
 }
-function libLoad(test,src){return test()?Promise.resolve():loadScript(src);}
+// integrity：CDN 檔案的檢查碼（SRI），檔案被換掉時瀏覽器會拒絕執行
+function libLoad(test,src,integrity){return test()?Promise.resolve():loadScript(src,integrity);}
 function camToggle(){
   if(cam){camStop();render();return;}
-  libLoad(()=>window.Html5Qrcode,'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js').then(()=>{
+  libLoad(()=>window.Html5Qrcode,'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js','sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+').then(()=>{
     cam=true;render();const c=new Html5Qrcode('camBox');cam=c;
     return c.start({facingMode:'environment'},{fps:10,qrbox:220},t=>{const now=Date.now();if(t===camLast&&now-camAt<3000)return;camLast=t;camAt=now;ciScan(t);});
   }).catch(e=>{cam=null;render();toast('鏡頭打不開：'+(e&&e.message?e.message:'請確認已允許使用鏡頭，且網址是 https'));});
@@ -167,7 +171,7 @@ function renderCards(){
     <span class="stat">共 <b>${list.length}</b> 張</span><span class="grow"></span><button class="b pri" onclick="window.print()">列印</button></div>
   <div id="outArea" class="cardsheet">`+list.map(s=>`<div class="scard"><div class="qr" data-t="RC:${esc(s.id)}"></div><div><small>${esc(s.cls)} 班　${esc(s.seat)} 號</small><b>${esc(s.name)}</b><span>${esc(D.title||'資源班')}</span></div></div>`).join('')+`</div>`;
   $('page').innerHTML=h;
-  libLoad(()=>window.QRCode,'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js').then(()=>{
+  libLoad(()=>window.QRCode,'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js','sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU').then(()=>{
     document.querySelectorAll('#page .qr').forEach(el=>{new QRCode(el,{text:el.dataset.t,width:96,height:96,correctLevel:QRCode.CorrectLevel.M});});
   }).catch(()=>{document.querySelectorAll('#page .qr').forEach(el=>{el.textContent='QR 元件載入失敗';});toast('QR Code 元件載入失敗，請確認網路連線');});
 }
