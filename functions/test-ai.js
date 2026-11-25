@@ -1,6 +1,6 @@
 /* node functions/test-ai.js：用假的 Firestore、假的登入驗證、假的 Vertex 測 AI 代理的邏輯（不需要安裝套件、不連網） */
 'use strict';
-const {makeAI,namePairs,scrubRequest}=require('./ai');
+const {makeAI,namePairs,scrubRequest,cleanGC,modelAllowed}=require('./ai');
 let fail=0;const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
 
 // 假的 Firestore：doc().get/set、collection().add、runTransaction
@@ -28,6 +28,8 @@ function setup(o){
     env:Object.assign({GCLOUD_PROJECT:'demo',AI_PER_MINUTE:'3',AI_PER_DAY:'5'},o.env||{})});
   return {api,db,calls,tick:ms=>{t+=ms;}};
 }
+// 送給 Vertex 的 generateContent 呼叫（calls 裡也有查模型清單的 'list'）
+const gen=calls=>calls.find(c=>c&&typeof c==='object');
 const req=(tok,body,extra)=>Object.assign({method:'POST',headers:{origin:ORIGIN,authorization:tok?'Bearer '+tok:''},body},extra||{});
 const genBody=()=>({model:'gemini-3-flash',purpose:'adj',request:{contents:[{role:'user',parts:[{text:'王小明和張老師、黃老師的課'}]}],systemInstruction:{parts:[{text:'說明'}]},generationConfig:{responseMimeType:'application/json',temperature:0.2}}});
 
@@ -44,14 +46,14 @@ console.log('1. 身分與共用名單');
 console.log('2. 產生內容、去識別化、稽核紀錄');
 {const {api,db,calls}=setup();const r=fakeRes();await api.handleGenerate(req('good',genBody()),r);
   ok(r.code===200&&r.body.candidates[0].content.parts[0].text==='{"ok":1}'&&r.body.usageMetadata.totalTokenCount===128,'回覆是 generateContent 的格式');
-  const sent=calls[0].contents[0].parts[0].text;ok(sent==='S1和T2、T3的課','伺服器把學生、老師姓名（含「黃老師」這種叫法）換成代號：'+sent);
-  ok(calls[0].config.systemInstruction&&calls[0].config.responseMimeType==='application/json','系統說明與 JSON 設定照傳給 Vertex');
+  const sent=gen(calls).contents[0].parts[0].text;ok(sent==='S1和T2、T3的課','伺服器把學生、老師姓名（含「黃老師」這種叫法）換成代號：'+sent);
+  ok(gen(calls).config.systemInstruction&&gen(calls).config.responseMimeType==='application/json','系統說明與 JSON 設定照傳給 Vertex');
   const a=db.added[0];ok(a&&a._c==='auditLogs'&&a.uid==='u1'&&a.purpose==='adj'&&a.model==='gemini-3-flash'&&a.totalTokens===128&&/^[0-9a-f]{64}$/.test(a.promptHash)&&a.scrubbed===3,'稽核紀錄：誰、用途、模型、token 數、題目雜湊');
   ok(!JSON.stringify(a).includes('S1和'),'稽核紀錄不含題目內容');}
 {const {api,calls}=setup();await api.handleGenerate(req('good',Object.assign(genBody(),{allowTeacherNames:true})),fakeRes());
-  ok(calls[0].contents[0].parts[0].text==='S1和張老師、黃老師的課','老師勾選可以送老師姓名時，只換學生姓名');}
+  ok(gen(calls).contents[0].parts[0].text==='S1和張老師、黃老師的課','老師勾選可以送老師姓名時，只換學生姓名');}
 {const {api,calls}=setup({env:{AI_SERVER_DEID:'false'}});await api.handleGenerate(req('good',genBody()),fakeRes());
-  ok(calls[0].contents[0].parts[0].text.includes('王小明'),'AI_SERVER_DEID=false 時伺服器不改內容（前端仍會先去識別化）');}
+  ok(gen(calls).contents[0].parts[0].text.includes('王小明'),'AI_SERVER_DEID=false 時伺服器不改內容（前端仍會先去識別化）');}
 
 console.log('3. 使用次數上限');
 {const {api,tick,db}=setup();const codes=[];for(let i=0;i<4;i++){const r=fakeRes();await api.handleGenerate(req('good',genBody()),r);codes.push(r.code);}
@@ -81,6 +83,26 @@ console.log('5. 模型清單與快取');
 console.log('6. 去識別化細節');
 {const p=namePairs({students:[{name:'林小美'}],teachers:[{name:'林老師'},{name:'林大華'}]},false),q={contents:[{parts:[{text:'林小美、林大華、林老師'},{inlineData:{data:'x'}}]}]};
   scrubRequest(q,p);ok(q.contents[0].parts[0].text==='S1、T2、T1'&&q.contents[0].parts[1].inlineData.data==='x','同姓兩位老師時，只換得掉完整姓名；圖片不動');}
+
+console.log('7. 模型白名單、generationConfig 只留允許的欄位');
+{ok(['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.5-pro','gemini-3-pro-preview','gemini-2.0-flash-001','gemini-2.5-flash-preview-09-2025','models/gemini-3-flash'].every(m=>modelAllowed(m,{})),'flash、flash-lite、pro 系列（含 preview、版號、日期）可以用');
+  ok(!['gemini-2.5-flash-image','gemini-2.5-flash-preview-tts','gemini-2.0-flash-live-001','gemini-embedding-001','gemini-1.0-ultra','gemini-pro-vision','gemini-2.5-flash-native-audio'].some(m=>modelAllowed(m,{})),'圖片、語音、即時、嵌入、其他系列不行');
+  ok(modelAllowed('gemini-1.0-ultra',{allowModels:['gemini-1.0-ultra']}),'AI_ALLOWED_MODELS 可以另外開放');
+  const g=cleanGC({temperature:0.2,topP:0.9,topK:40.7,maxOutputTokens:2048,responseMimeType:'application/json',responseSchema:{type:'OBJECT'},candidateCount:8,tools:[{googleSearch:{}}],safetySettings:[{x:1}],thinkingConfig:{thinkingBudget:99999},httpOptions:{baseUrl:'https://evil'}});
+  ok(JSON.stringify(Object.keys(g).sort())===JSON.stringify(['candidateCount','maxOutputTokens','responseMimeType','responseSchema','temperature','topK','topP'])&&g.candidateCount===1&&g.topK===40,'generationConfig 只留白名單欄位，candidateCount 一律 1，tools 等全部丟掉');
+  ok(!('temperature' in cleanGC({temperature:9}))&&!('responseMimeType' in cleanGC({responseMimeType:'image/png'}))&&cleanGC(null).candidateCount===1,'範圍外的數值、其他輸出格式丟掉');}
+{const {api,calls}=setup();const b=genBody();b.request.generationConfig.tools=[{googleSearch:{}}];b.request.tools=[{codeExecution:{}}];b.request.generationConfig.candidateCount=4;
+  const r=fakeRes();await api.handleGenerate(req('good',b),r);const c=gen(calls);
+  ok(r.code===200&&!('tools' in c.config)&&!('tools' in c)&&c.config.candidateCount===1&&c.config.temperature===0.2,'送給 Vertex 的設定沒有 tools，一次一份回覆');}
+{const {api,calls}=setup();const r=fakeRes();await api.handleGenerate(req('good',Object.assign(genBody(),{model:'gemini-2.5-flash-image'})),r);
+  ok(r.code===400&&!gen(calls),'不在白名單的模型：400，不會送出');
+  const r2=fakeRes();await api.handleGenerate(req('good',Object.assign(genBody(),{model:'gemini-2.5-flash'})),r2);
+  ok(r2.code===400,'系列對但不在自動查到的清單裡：400');}
+{const {api}=setup({env:{AI_ALLOWED_MODELS:'gemini-2.5-flash'}});const r=fakeRes();await api.handleGenerate(req('good',Object.assign(genBody(),{model:'gemini-2.5-flash'})),r);
+  ok(r.code===200,'AI_ALLOWED_MODELS 列的模型可以用');}
+{const {api}=setup({listErr:1});const r=fakeRes();await api.handleGenerate(req('good',genBody()),r);
+  ok(r.code===200,'查不到模型清單時，允許的系列照樣可以用');}
+{const {api}=setup();const r=fakeRes();await api.handleModels(req('good',{}),r);ok(r.body.models.every(m=>modelAllowed(m.name,{})),'模型清單只列允許的系列');}
 
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');process.exit(fail?1:0);
 })();

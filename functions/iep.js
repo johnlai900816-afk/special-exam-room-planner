@@ -6,14 +6,13 @@
 const {onCall,HttpsError}=require('firebase-functions/v2/https');
 const {initializeApp,getApps}=require('firebase-admin/app');
 const {getFirestore,Timestamp}=require('firebase-admin/firestore');
-const {makeIep}=require('./iep-core');
+const {makeIep,ipOf}=require('./iep-core');
 
 if(!getApps().length)initializeApp();
 const core=makeIep({db:getFirestore(),now:()=>Date.now(),stamp:ms=>Timestamp.fromMillis(ms),fail:(code,msg)=>{throw new HttpsError(code,msg);}});
 const OPT={region:'asia-east1',enforceAppCheck:process.env.IEP_APPCHECK==='enforce',cors:true,maxInstances:5,memory:'256MiB',timeoutSeconds:20};
 
-// 對外 IP：Cloud Run 前面有 Google 的負載平衡，取 x-forwarded-for 的第一個
-function ipOf(req){const r=req&&req.rawRequest;if(!r)return '';const x=String((r.headers&&r.headers['x-forwarded-for'])||'').split(',')[0].trim();return x||r.ip||'';}
+// 對外 IP：iep-core.js 的 ipOf（取 Google 前端最後加上的那一個，不信任用戶端自己帶的）
 // 錯誤訊息只回固定的文字，不把內部錯誤細節傳給公開頁
 const wrap=fn=>async req=>{try{return await fn(req.data,{ip:ipOf(req),app:req.app||null});}
   catch(e){if(e instanceof HttpsError)throw e;console.error('iep',e);throw new HttpsError('internal','系統忙碌，請稍後再試');}};

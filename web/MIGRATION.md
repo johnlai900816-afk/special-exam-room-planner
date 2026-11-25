@@ -156,6 +156,9 @@ auditLogs/{id}                        {sid, by, action, target, detail, at}   �
 
 ### 4.4 Functions（`functions/roles.js`，請在 `functions/index.js` 合併匯出）
 
+> **目前沒有部署（2026-11 安全檢查）**：`roles.js` 是這份 Next.js 版的 custom claims 設計，現在的網站（根目錄的舊版）沒有用到。
+> 為了不讓沒人用的 callable 函式掛在線上，已經從 `functions/index.js` 的匯出拿掉；檔案留著。真的開始搬到新版時，再照 7.3 第 1 步加回去、一起部署。
+
 | 名稱 | 種類 | 做什麼 |
 |---|---|---|
 | `setMemberRole` | callable | 管理者設定某人（uid 或 email）的角色與 `teacherId`；不能把最後一位管理者降級 |
@@ -218,7 +221,7 @@ auditLogs/{id}                        {sid, by, action, target, detail, at}   �
 
 ### 7.3 Functions 與規則
 
-1. `functions/index.js` 合併 `require('./roles')`、`require('./ai-proxy')` 的匯出。
+1. `functions/index.js` 合併 `require('./roles')`、`require('./ai-proxy')` 的匯出（`roles` 目前刻意沒有匯出，見 4.4）。
 2. `firebase deploy --only functions`（區域 asia-east1，Node 20）。
 3. 規則：先在模擬器測完，再 `firebase deploy --only firestore:rules`（用 `firestore.rules.proposed` 的內容）。**舊規則 A 段要原封保留**，否則舊版會壞。
 4. 第一位管理者：

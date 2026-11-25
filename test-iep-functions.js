@@ -66,5 +66,20 @@ const errOf=async p=>{try{await p;return null;}catch(e){return e.code||'?';}};
   ok(firstIp===121,'同一個 IP 亂猜鑰匙，第 121 次被擋（'+firstIp+'）');
   ok([...db2.S.keys()].filter(k=>k.startsWith('iepRate/')).every(k=>!/8\.8\.8\.8|7\.7\.7/.test(k)),'次數紀錄只存 IP 的雜湊，不存 IP 本身');
 
+  // 全部加起來每分鐘 300 次：換 IP、換鑰匙也擋得住
+  const db3=fakeDb(),api3=F.makeIep({db:db3,now:()=>T});let firstAll=-1;
+  for(let i=1;i<=305;i++){const e=await errOf(api3.getSurvey({k:I.token()},{ip:'10.0.'+(i>>8)+'.'+(i&255)}));if(e==='resource-exhausted'&&firstAll<0)firstAll=i;}
+  ok(firstAll===301,'全部加起來每分鐘第 301 次被擋（'+firstAll+'）');
+  T+=61e3;ok(await errOf(api3.getSurvey({k:I.token()},{ip:'10.9.9.9'}))==='not-found','過一分鐘又可以查');
+
+  // 對外 IP：只信 Google 前端加在 x-forwarded-for 最後面的那一個
+  const rq=(xff,ip)=>({rawRequest:{headers:xff==null?{}:{'x-forwarded-for':xff},ip}});
+  ok(F.ipOf(rq('1.1.1.1, 203.0.113.9'))==='203.0.113.9','用戶端自己帶的 x-forwarded-for（前面）不算，取最後一個');
+  ok(F.ipOf(rq('203.0.113.9'))==='203.0.113.9'&&F.ipOf(rq(' 9.9.9.9 ,  203.0.113.7 '))==='203.0.113.7','只有一個、或有空白也對');
+  ok(F.ipOf(rq(null,'198.51.100.2'))==='198.51.100.2'&&F.ipOf(rq('', '198.51.100.3'))==='198.51.100.3','沒有標頭時用 rawRequest.ip');
+  ok(F.ipOf({})===''&&F.ipOf(null)===''&&F.ipOf(rq(['5.5.5.5','203.0.113.1']))==='203.0.113.1','沒有請求、或標頭是陣列也不會出錯');
+  const many=[];for(let i=0;i<5;i++)many.push(F.ipOf(rq('6.6.6.'+i+', 203.0.113.50')));
+  ok(new Set(many).size===1,'換前面的假 IP 不能換到新的次數額度');
+
   console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');process.exit(fail?1:0);
 })().catch(e=>{console.error(e);process.exit(1);});

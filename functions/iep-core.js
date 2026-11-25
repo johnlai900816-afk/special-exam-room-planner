@@ -11,12 +11,18 @@ const crypto=require('crypto');
 const TOKEN_RE=/^[A-Za-z0-9]{24,64}$/;
 const ROUND_RE=/^[A-Za-z0-9_-]{1,60}$/;
 const SLOT_RE=/^\d{4}-\d{2}-\d{2}\|[A-Za-z0-9_:\-]{1,20}$/;
-// 同一個鑰匙 10 分鐘 30 次、同一個 IP 10 分鐘 120 次（學校常共用一個對外 IP，所以放寬）
-const LIMIT={tok:{n:30,ms:10*60e3},ip:{n:120,ms:10*60e3}};
+// 同一個鑰匙 10 分鐘 30 次、同一個 IP 10 分鐘 120 次（學校常共用一個對外 IP，所以放寬）；
+// 全部加起來每分鐘 300 次（換 IP、換鑰匙亂猜也有上限；一般學校一次調查遠低於這個量）
+const LIMIT={tok:{n:30,ms:10*60e3},ip:{n:120,ms:10*60e3},all:{n:300,ms:60e3}};
 const PUBLIC=['v','who','once','name','title','round','kind','d1','d2','due','host','keys','ps','busy','stu','keep'];
 const MAX_KEYS=400,MAX_NOTE=300;
 
 const sha=s=>crypto.createHash('sha256').update(String(s)).digest('hex');
+/* 對外 IP。Cloud Functions（Cloud Run）前面是 Google 的前端：它把連進來的 IP 加在 x-forwarded-for 的「最後面」；
+   前面的項目是用戶端自己可以亂填的，所以只取最後一個（不用第一個，不然換個標頭就能繞過次數限制）。沒有這個標頭才用 rawRequest.ip。 */
+function ipOf(req){const r=req&&req.rawRequest;if(!r)return '';const h=r.headers&&r.headers['x-forwarded-for'];
+  const list=String(Array.isArray(h)?h.join(','):h||'').split(',').map(s=>s.trim()).filter(Boolean);
+  return String(list.length?list[list.length-1]:(r.ip||'')).slice(0,64);}
 const toMs=t=>t==null?0:typeof t.toMillis==='function'?t.toMillis():+t||0;
 const cleanNote=s=>String(s==null?'':s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,'').trim().slice(0,MAX_NOTE);
 
@@ -33,12 +39,12 @@ function makeIep(deps){
 
   async function guarded(k,ip,body){
     if(typeof k!=='string'||!TOKEN_RE.test(k))fail('invalid-argument','連結不完整');
-    const h=sha(k),t=now(),rT=db.doc('iepRate/tok_'+h.slice(0,40)),rI=db.doc('iepRate/'+ipKey(ip)),tok=db.doc('iepTok/'+h);
+    const h=sha(k),t=now(),rT=db.doc('iepRate/tok_'+h.slice(0,40)),rI=db.doc('iepRate/'+ipKey(ip)),rA=db.doc('iepRate/all'),tok=db.doc('iepTok/'+h);
     const out=await db.runTransaction(async tx=>{
-      const [a,b,s]=[await tx.get(rT),await tx.get(rI),await tx.get(tok)];
+      const [a,b,g,s]=[await tx.get(rT),await tx.get(rI),await tx.get(rA),await tx.get(tok)];
       const r=s.exists?s.data():null;const respRef=r&&ROUND_RE.test(String(r.r||''))?db.doc('iepResp/'+r.r+'/r/'+h):null;
       const resp=respRef?await tx.get(respRef):null;      // 交易裡所有讀取都要在寫入之前
-      const over=rate(tx,a,rT,LIMIT.tok,t)|rate(tx,b,rI,LIMIT.ip,t);
+      const over=rate(tx,a,rT,LIMIT.tok,t)|rate(tx,b,rI,LIMIT.ip,t)|rate(tx,g,rA,LIMIT.all,t);
       if(over)return {err:['resource-exhausted','太多次了，請過幾分鐘再試']};
       if(!r||!respRef||toMs(r.exp)<=t)return {err:['not-found','這個連結已經過期或已關閉，如果還需要回覆，請聯絡個管老師']};
       return body(tx,r,resp&&resp.exists?resp.data():null,respRef,t);});
@@ -63,4 +69,4 @@ function makeIep(deps){
   return {getSurvey,submit};
 }
 
-module.exports={makeIep,sha,toMs,cleanNote,TOKEN_RE,SLOT_RE,LIMIT,PUBLIC};
+module.exports={makeIep,sha,toMs,cleanNote,ipOf,TOKEN_RE,SLOT_RE,LIMIT,PUBLIC};

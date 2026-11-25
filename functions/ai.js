@@ -19,9 +19,22 @@ function config(env){
     serverDeid:env.AI_SERVER_DEID!=='false',            // 預設開：伺服器再把名冊上的姓名換成代號一次
     allowViewers:env.AI_ALLOW_VIEWERS==='true',         // 預設只有「編輯」以上可以用（會花錢）
     maxBytes:num(env.AI_MAX_BYTES,4*1024*1024),
-    fallbackModels:String(env.AI_MODELS||'').split(',').map(s=>s.trim()).filter(Boolean)
+    fallbackModels:String(env.AI_MODELS||'').split(',').map(s=>s.trim()).filter(Boolean),
+    // 額外允許的模型（逗號分隔）：自動查到的清單只留 flash、flash-lite、pro 三個系列，其他要用的模型寫在這裡
+    allowModels:String(env.AI_ALLOWED_MODELS||'').split(',').map(s=>s.trim().replace(/^models\//,'')).filter(Boolean)
   };
 }
+// 允許的模型系列：gemini-版本-flash／flash-lite／pro，後面只能接 preview、exp、latest 或數字（日期、版號）。
+// 圖片、語音、即時、嵌入等特殊模型（…-image、…-tts、…-live、embedding）都不在內
+const FAMILY_RE=/^gemini-\d+(?:\.\d+)?-(?:flash-lite|flash|pro)(?:-(?:preview|exp|latest|\d+))*$/i;
+function modelAllowed(id,cfg){id=String(id||'').replace(/^models\//,'');return FAMILY_RE.test(id)||((cfg&&cfg.allowModels)||[]).includes(id);}
+// generationConfig 只留這幾個欄位（tools、safetySettings、thinkingConfig… 一律丟掉），一次只產生一份回覆
+const GC_NUM={temperature:[0,2],topP:[0,1],topK:[1,1000],maxOutputTokens:[1,65536]};
+function cleanGC(gc){const o={};gc=gc&&typeof gc==='object'&&!Array.isArray(gc)?gc:{};
+  for(const k in GC_NUM){const v=gc[k];if(typeof v==='number'&&isFinite(v)&&v>=GC_NUM[k][0]&&v<=GC_NUM[k][1])o[k]=k==='topK'||k==='maxOutputTokens'?Math.floor(v):v;}
+  if(gc.responseMimeType==='application/json'||gc.responseMimeType==='text/plain')o.responseMimeType=gc.responseMimeType;
+  if(gc.responseSchema&&typeof gc.responseSchema==='object'&&!Array.isArray(gc.responseSchema))o.responseSchema=gc.responseSchema;
+  o.candidateCount=1;return o;}
 
 /* ───── 去識別化（和前端 ai.js 的 scrub 同一套規則；伺服器是第二道防線） ───── */
 const baseName=n=>String(n||'').replace(/（[^）]*）|\([^)]*\)/g,'').trim();
@@ -105,12 +118,13 @@ function makeAI(deps){
       const b=req.body||{},model=String(b.model||''),request=b.request;
       log.purpose=String(b.purpose||'other').slice(0,20);log.model=model;
       if(!/^gemini-[a-z0-9.\-]+$/i.test(model))throw httpError(400,'INVALID_ARGUMENT','模型名稱不對');
+      if(!(await modelOk(model)))throw httpError(400,'INVALID_ARGUMENT','這個模型不能用（只開放 Gemini 的 flash、flash-lite、pro 系列）');
       if(!request||!Array.isArray(request.contents)||!request.contents.length)throw httpError(400,'INVALID_ARGUMENT','缺少 contents');
       const raw=JSON.stringify(request);if(Buffer.byteLength(raw)>cfg.maxBytes)throw httpError(400,'INVALID_ARGUMENT','資料太多，超過一次能送的大小');
       await rateLimit(user.uid);
       log.scrubbed=cfg.serverDeid?scrubRequest(request,namePairs(await roster(),!!b.allowTeacherNames)):0;
       log.promptHash=sha256(JSON.stringify(request));   // 只記雜湊：之後可以比對是不是同一份題目，但看不到內容
-      const gc=request.generationConfig||{},conf=Object.assign({},gc);if(request.systemInstruction)conf.systemInstruction=request.systemInstruction;
+      const conf=cleanGC(request.generationConfig);if(request.systemInstruction&&Array.isArray(request.systemInstruction.parts))conf.systemInstruction={parts:request.systemInstruction.parts};
       let r;try{r=await deps.genai().models.generateContent({model,contents:request.contents,config:conf});}catch(e){throw vertexErr(e);}
       const u=r.usageMetadata||{};Object.assign(log,{ok:true,promptTokens:u.promptTokenCount||0,outputTokens:u.candidatesTokenCount||0,thoughtTokens:u.thoughtsTokenCount||0,totalTokens:u.totalTokenCount||0,finish:((r.candidates||[])[0]||{}).finishReason||''});
       await audit(log);
@@ -122,6 +136,7 @@ function makeAI(deps){
   async function fetchModels(){
     const list=[];const pager=await deps.genai().models.list({config:{queryBase:true,pageSize:100}});
     for await(const m of pager){const id=String(m.name||'').split('/').pop();if(!/^gemini/i.test(id))continue;
+      if(!modelAllowed(id,cfg))continue;   // 只留允許的系列（或 AI_ALLOWED_MODELS）
       const acts=m.supportedActions||[];
       list.push({name:'models/'+id,displayName:m.displayName||id,description:m.description||'',inputTokenLimit:m.inputTokenLimit||0,outputTokenLimit:m.outputTokenLimit||0,
         supportedGenerationMethods:acts.length?acts:['generateContent']});}
@@ -132,11 +147,15 @@ function makeAI(deps){
     const ref=db.doc('aiCache/models');
     if(!force){try{const s=await ref.get();if(s.exists){const c=s.data();if(c&&t-c.at<DAY&&Array.isArray(c.models)&&c.models.length)return (memModels=c);}}catch(e){}}
     let list=[];try{list=await fetchModels();}catch(e){console.error('列模型失敗',e);}
-    if(!list.length&&cfg.fallbackModels.length)list=cfg.fallbackModels.map(id=>({name:'models/'+id,displayName:id,supportedGenerationMethods:['generateContent']}));
+    if(!list.length&&cfg.fallbackModels.length)list=cfg.fallbackModels.filter(id=>modelAllowed(id,cfg)).map(id=>({name:'models/'+id,displayName:id,supportedGenerationMethods:['generateContent']}));
     if(!list.length){if(memModels)return memModels;throw httpError(503,'UNAVAILABLE','暫時查不到可以用的模型');}
     memModels={at:t,models:list};try{await ref.set(memModels);}catch(e){}
     return memModels;
   }
+  // 這個模型能不能用：額外允許的直接可以；其他要是允許的系列，而且在自動查到的清單裡（查不到清單時只看系列）
+  async function modelOk(model){if(cfg.allowModels.includes(model))return true;if(!modelAllowed(model,cfg))return false;
+    let c=null;try{c=await models(false);}catch(e){return true;}
+    return !c||!Array.isArray(c.models)||!c.models.length||c.models.some(m=>String(m.name).replace(/^models\//,'')===model);}
   async function handleModels(req,res){
     if(!cors(req,res))return send(res,403,{error:{code:403,status:'PERMISSION_DENIED',message:'這個網站不能使用'}});
     if(req.method==='OPTIONS')return res.status(204).send('');
@@ -145,10 +164,10 @@ function makeAI(deps){
       return send(res,200,{models:c.models,cachedAt:c.at});}
     catch(e){if(!e.http)console.error(e);return fail(res,e);}
   }
-  return {cfg,cors,who,rateLimit,handleGenerate,handleModels,models,fetchModels};
+  return {cfg,cors,who,rateLimit,handleGenerate,handleModels,models,fetchModels,modelOk};
 }
 
-module.exports={makeAI,config,namePairs,scrubText,scrubRequest,sha256};
+module.exports={makeAI,config,namePairs,scrubText,scrubRequest,sha256,cleanGC,modelAllowed,FAMILY_RE};
 
 /* ───── 真正部署的兩個函式（本機測試沒有安裝 firebase-functions 時略過） ───── */
 let https=null;try{https=require('firebase-functions/v2/https');}catch(e){}
