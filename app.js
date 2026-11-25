@@ -326,14 +326,19 @@ function renderOff(){
 }
 /* 班級不排課怎麼帶入：預設全部鎖定（那一班的學生這些時段不能被抽離、也不能排課） */
 function hardPick(p){return `<div class="note" style="margin:6px 0"><b>班級不排課</b>的時段要怎麼處理？</div>
-  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="all" checked onchange="$('${p}HK').disabled=true"> 全部鎖定：這些時段那一班的學生不能被抽離，系統不會排課進去</label>
-  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="kw" onchange="$('${p}HK').disabled=false"> 只有原因含這些字的才鎖定，其餘只是不能鎖課（不用鎖課的課照樣可排）
-    <input type="text" id="${p}HK" class="w8" value="社團" disabled></label>`;}
-function hardVal(p){const r=document.querySelector('input[name="'+p+'HM"]:checked');return !r||r.value==='all'?'*':($(p+'HK').value||'');}
+  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="all" checked onchange="fillReasons('${p}')"> 全部鎖定：這些時段那一班的學生不能被抽離，系統不會排課進去</label>
+  <label class="note" style="display:block"><input type="radio" name="${p}HM" value="kw" onchange="fillReasons('${p}')"> 只鎖定勾選的原因，其餘只是不能鎖課（不用鎖課的課照樣可排）</label>
+  <div id="${p}HR" class="note" style="margin:2px 0 6px 22px"></div>`;}
+// 從表裡找出班級不排課出現過的原因（原因只寫在每段第一列，往下沿用）
+function offReasons(text){const set=new Set();let why='';String(text||'').split(/\r?\n/).forEach(l=>{const c=l.split('\t').map(x=>x.trim());if(c[5])why=c[5];if(/^\d{3,4}(\.0)?$/.test(c[0])&&why)set.add(why);});return [...set];}
+function fillReasons(p){const box=$(p+'HR');if(!box)return;const r=document.querySelector('input[name="'+p+'HM"]:checked');if(!r||r.value==='all'){box.innerHTML='';return;}
+  const src=p==='xl'?XL.filter(x=>x.type==='off'&&x.on).map(x=>x.tsv).join('\n'):($('pasteBox')?$('pasteBox').value:''),list=offReasons(src);
+  box.innerHTML=list.length?list.map(w=>`<label style="margin-right:12px;white-space:nowrap"><input type="checkbox" class="${p}HW" value="${esc(w)}"${/社團/.test(w)?' checked':''}> ${esc(w)}</label>`).join('')+'<br>沒有寫原因的列只算不能鎖課。':'表裡的班級不排課沒有寫原因，先貼上表格就會列出來。';}
+function hardVal(p){const r=document.querySelector('input[name="'+p+'HM"]:checked');if(!r||r.value==='all')return '*';return [...document.querySelectorAll('input.'+p+'HW:checked')].map(x=>x.value);}
 function pasteOff(){openDlg(`<h3>貼上不排課表</h3><p class="note">從 Excel 複製這幾欄貼上：<b>名稱、起始星期、結束星期、首節、末節、（原因）</b>。名稱是三位數班級就當成班級，其他當成老師姓名。原因只寫在每一段的第一列也可以。</p>
   ${hardPick('po')}
   <label class="note"><input type="checkbox" id="poAdd"> 名冊裡沒有的老師也新增進來（不勾就略過，只帶入名冊裡有的老師）</label>
-  <textarea id="pasteBox" placeholder="701&#9;2&#9;2&#9;7&#9;7&#9;社團時間&#10;王小華&#9;5&#9;5&#9;3&#9;3&#9;導師會報"></textarea>
+  <textarea id="pasteBox" oninput="fillReasons('po')" placeholder="701&#9;2&#9;2&#9;7&#9;7&#9;社團時間&#10;王小華&#9;5&#9;5&#9;3&#9;3&#9;導師會報"></textarea>
   <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteOffOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
 function pasteOffOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上不排課表之前');const r=importOff(D,txt,{hard:hardVal('po'),addTeachers:$('poAdd').checked});
   if(!r.cls&&!r.tea){toast(r.skipT.length?'這些老師都不在名冊裡，沒有帶入。可以勾選「名冊裡沒有的老師也新增」':'沒有讀到資料，請確認是從 Excel 複製、而且有星期和節次');return;}
@@ -475,7 +480,7 @@ function runSolve(all){
       if(needList(D).length){D.assign=fromState(M,ST);pl=placeStudents(D,gv?{filter:s=>gradeOfCls(s.cls)===gv}:null);if(pl.placed){rebuild();evaluate(M,ST.slot);if(M.viol)sv();}}
       if(M.flex){const R2=refineLocks(M,ST,{only:part?shownL:null});setST({slot:R2.slot,pin:ST.pin,rfix:ST.rfix});}
       runSolve.msg=pl&&(pl.placed||pl.left.length)?'；'+(pl.placed?'把 '+pl.placed+' 人次的學生編進課裡':'')+(pl.left.length?(pl.placed?'，':'')+pl.left.length+' 人次找不到同科目同年級的課':''):'';
-      if(M.flex){const A=assignLocks(M,ST.slot);runSolve.msg+='；原班鎖得到課 '+(A.pulled-A.open.length)+'／'+A.pulled;}
+      if(M.flex){const A=assignLocks(M,ST.slot);runSolve.msg+='；原班鎖得到課 '+(A.pulled-A.open.length)+'／'+A.pulled+(A.fixAll?'，沿用手排鎖課 '+A.fixed+'／'+A.fixAll:'');}
       selL=-1;commit();
       const n=part?M.L.filter((x,l)=>shownL(l)).length:M.L.length;const o2=[];evaluate(M,ST.slot,o2);const v=o2.filter(o=>!part||shownL(o.l)).length;toast((v?'排好了，但還有 '+v+' 個問題排不開，請看上方說明':'排好了：'+(part?GRADE[+view.slice(2)]+' ':'')+n+' 節全部排入，沒有衝突')+runSolve.msg);}
     finally{$('busy').style.display='none';}},40);
@@ -532,8 +537,9 @@ function renderOut(){
       `</table><p class="note">欄位和「特教鎖課需求」的特教鎖課整理相同。國文連2 是 1 表示這一班有鎖到同一天相鄰的兩節國文。</p></div>`;
   }else if(outMode==='lock'){
     if(M.flex){const A=assignLocks(M,ST.slot),n=A.locks.filter(k=>!k.extra).length,ex=A.locks.length-n;
-      b=`<div class="pg"><p class="note">有學生被抽離的班級節次共 <b>${A.pulled}</b> 個：鎖到 <b>${n}</b> 個（同一科 ${A.same}、改鎖別科 ${n-A.same}），鎖不到 <b>${A.open.length}</b> 個${ex?'；另外為了連堂多鎖 '+ex+' 節':''}。</p>${A.warn.length?`<div class="probs">${A.warn.map(w=>'<div>'+esc(w)+'</div>').join('')}</div>`:''}</div>`+
-        (A.open.length?`<div class="pg"><h2>${T}｜鎖不到課的節次</h2><table class="out"><tr><th>班級</th><th>節次</th><th>資源班組別</th><th>原因</th></tr>`+A.open.map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.groups.join('、'))}</td><td>${esc(o.why)}</td></tr>`).join('')+`</table><p class="note">這些節次學生照樣到資源班上課，只是原班那一節不是主科。想減少的話，可以到排課頁把那一節移到別的時段。</p></div>`:'');}
+      b=`<div class="pg"><p class="note">有學生被抽離的班級節次共 <b>${A.pulled}</b> 個：鎖到 <b>${n}</b> 個（同一科 ${A.same}、改鎖別科 ${n-A.same}），鎖不到 <b>${A.open.length}</b> 個${ex?'；另外為了連堂多鎖 '+ex+' 節':''}。${A.fixAll?`手排鎖課 ${A.fixAll} 節，沿用 <b>${A.fixed}</b> 節。`:''}</p>${A.warn.length?`<div class="probs">${A.warn.map(w=>'<div>'+esc(w)+'</div>').join('')}</div>`:''}</div>`+
+        (A.open.length?`<div class="pg"><h2>${T}｜鎖不到課的節次</h2><table class="out"><tr><th>班級</th><th>節次</th><th>資源班組別</th><th>原因</th></tr>`+A.open.map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.groups.join('、'))}</td><td>${esc(o.why)}</td></tr>`).join('')+`</table><p class="note">這些節次學生照樣到資源班上課，只是原班那一節不是主科。想減少的話，可以到排課頁把那一節移到別的時段。</p></div>`:'')+
+        (A.idle.length?`<div class="pg"><h2>${T}｜手排鎖課沒用到的節次</h2><table class="out"><tr><th>班級</th><th>節次</th><th>手排鎖的老師</th><th>科目</th></tr>`+A.idle.sort((a,c)=>a.cls.localeCompare(c.cls)||a.s-c.s).map(o=>`<tr><td class="c">${esc(o.cls)}</td><td>${esc(M.sn(o.s))}</td><td>${esc(o.t)}</td><td>${esc(o.sj||'')}</td></tr>`).join('')+`</table><p class="note">手排時有鎖，但現在的課表這一節沒有這一班的學生被抽離，所以不會交給教務處。九年級英數理如果是教學組統一鎖的，也會列在這裡。</p></div>`:'');}
     b+=`<div class="pg"><h2>${T}｜資源班抽離課鎖課表</h2><table class="out"><tr><th>班級</th><th>科目</th><th>任課老師</th><th>請排這一科的節次</th><th>節數</th><th>資源班組別</th></tr>`+
       lockTable(M,ST.slot).map(r=>`<tr><td class="c">${esc(r.cls)}</td><td class="c">${esc(r.subject)}</td><td>${esc(r.teacher)}</td><td>${esc(slotsText(r.slots))}</td><td class="c">${r.slots.length}</td><td>${esc(r.groups.join('、'))}</td></tr>`).join('')+
       `</table><p class="note">外加課和不鎖課的課不占原班主科時間，沒有列在這張表。</p></div>`;
@@ -575,12 +581,14 @@ function fmtTime(t){const d=new Date(t),p=n=>String(n).padStart(2,'0');return (d
 
 // 讀學校原本的 Excel（在這台電腦的瀏覽器裡讀，不會上傳）
 const XLSX_SRC=['https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'];
-const XLT={stu:'學生名單',tl:'任課老師名單',course:'課程一覽表',off:'不排課時段'};
+const XLT={stu:'學生名單',tl:'任課老師名單',course:'課程一覽表',off:'不排課時段',lock:'手排鎖課'};
 let XL=[];
 async function needXLSX(){if(window.XLSX)return;for(const s of XLSX_SRC){try{await loadScript(s);if(window.XLSX)return;}catch(e){}}throw new Error('xlsx');}
 function sheetType(rows){
   const top=rows.slice(0,6),has=re=>top.some(r=>r.some(c=>re.test(c)));
   if(has(/起始星期/)&&has(/首節/))return 'off';
+  if(has(/^班級名稱$/)&&has(/^教師姓名$/)&&has(/^首節$/))return 'lock';   // 資料輸出
+  if(rows.some(r=>r.some((c,j)=>c==='節次'&&j>=2&&/^\d{3,4}$/.test(r[j-2])&&/星期一/.test(r[j+1]||''))))return 'lock';   // 資料輸入
   if(has(/學生名單/)&&has(/節數/))return 'course';
   for(let i=0;i<rows.length;i++){const nums=rows[i].map((x,j)=>/^\d{3,4}$/.test(x)?j:-1).filter(j=>j>=0);
     if(nums.some((v,k)=>k>=2&&nums[k-1]===v-1&&nums[k-2]===v-2)){const nx=rows.slice(i+1,i+3).find(r=>r.some(Boolean));if(nx&&/^(國語?文?|國語文|英語?文?|英語文|數學|理化|自然|社會)$/.test(nx.find(Boolean)))return 'tl';}}
@@ -595,16 +603,19 @@ async function readXls(inp){const fs=[...inp.files];inp.value='';if(!fs.length)r
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:false,defval:'',blankrows:false}).map(r=>r.map(c=>String(c).replace(/[\t\r\n]+/g,' ').trim()));
       const t=sheetType(rows),tsv=rows.map(r=>r.join('\t')).join('\n');if(!t){skip++;return;}
       // 先在副本上試一次，帶不出任何資料的工作表就不列出來
-      const X=JSON.parse(JSON.stringify(D)),got=t==='tl'?importTeacherList(X,tsv).set:t==='stu'?(r=>r.add+r.upd)(importStudents(X,tsv)):t==='course'?(r=>r.added+r.updated)(importCourseTable(X,tsv)):(r=>r.cls+r.tea)(importOff(X,tsv,{}));
+      const X=JSON.parse(JSON.stringify(D)),got=t==='tl'?importTeacherList(X,tsv).set:t==='stu'?(r=>r.add+r.upd)(importStudents(X,tsv)):t==='course'?(r=>r.added+r.updated)(importCourseTable(X,tsv)):t==='lock'?importLocks(X,tsv).n:(r=>r.cls+r.tea)(importOff(X,tsv,{}));
       if(!got){skip++;return;}
       XL.push({file:f.name,sheet:n,type:t,on:true,n:rows.length,tsv});});}}
   catch(e){toast('有檔案讀不出來：'+(e.message||e));}
   finally{$('busy').style.display='none';}
-  XL.skip=skip;if(!XL.length)toast('這些檔案裡沒有認得的工作表（學生名單、任課老師名單、課程一覽表、不排課時段）');render();}
+  XL.skip=skip;if(!XL.length)toast('這些檔案裡沒有認得的工作表（學生名單、任課老師名單、課程一覽表、不排課時段、手排鎖課）');render();}
 function xlImport(){const on=XL.filter(x=>x.on);if(!on.length){toast('請先勾選要匯入的工作表');return;}
   if(!confirm('要匯入勾選的 '+on.length+' 張工作表嗎？\n匯入前會自動保留一份目前的資料，匯錯了可以回到舊版本。'))return;
-  snapshot('匯入 Excel 之前');const order=['stu','tl','course','off'],out=[];
-  order.forEach(t=>on.filter(x=>x.type===t).forEach(x=>{const nm='「'+x.sheet+'」';
+  snapshot('匯入 Excel 之前');const order=['stu','tl','course','off','lock'],out=[];
+  // 資料輸入和資料輸出是同一份鎖課，兩張都勾時只讀一張
+  const lk=on.filter(x=>x.type==='lock');if(lk.length>1)lk.slice(1).forEach(x=>{x.on=false;});
+  order.forEach(t=>on.filter(x=>x.type===t&&x.on).forEach(x=>{const nm='「'+x.sheet+'」';
+    if(t==='lock'){const r=importLocks(D,x.tsv);out.push(nm+'：手排鎖課 '+r.n+' 節、'+r.cls+' 個班（之前的手排鎖課整份換成這一份）'+(r.newT.length?'；新增老師 '+r.newT.join('、'):''));}
     if(t==='stu'){const r=importStudents(D,x.tsv);out.push(nm+'：新增 '+r.add+' 位學生、更新 '+r.upd+' 位'+(r.cm?'，個管老師 '+r.cm+' 位':'')+(r.noCM.length?'；找不到的個管老師：'+r.noCM.join('、'):''));}
     if(t==='tl'){const r=importTeacherList(D,x.tsv);out.push(nm+'：'+r.classes+' 個班、'+r.set+' 格任課老師'+(r.changed?'（其中 '+r.changed+' 格換了老師）':'')+(r.newT.length?'，新增 '+r.newT.length+' 位老師':''));}
     if(t==='course'){const r=importCourseTable(D,x.tsv);out.push(nm+'：新增 '+r.added+' 門課、更新 '+r.updated+' 門，放進 '+r.members+' 人次'+(r.hours?'，基本鐘點 '+r.hours+' 位':'')+(r.miss.length?'；名冊找不到的學生：'+[...new Set(r.miss)].join('、'):''));}
@@ -619,6 +630,13 @@ function pasteTL(){openDlg(`<h3>貼上任課老師名單</h3><p class="note">兩
 function pasteTLOk(){const txt=$('pasteBox').value;if(!txt.trim())return;snapshot('貼上任課老師名單之前');const r=importTeacherList(D,txt);
   if(!r.set){toast('沒有讀到任課老師，請確認是從 Excel 複製（欄位之間是 Tab）');return;}
   changed();closeDlg();render();toast(r.classes+' 個班、'+r.set+' 格任課老師'+(r.changed?'，'+r.changed+' 格換了老師':'')+(r.newT.length?'，新增 '+r.newT.length+' 位老師':''));}
+function pasteLocks(){openDlg(`<h3>貼上手排鎖課</h3><p class="note">已經手排好的鎖課可以帶進來，排課時會盡量沿用，配鎖課時優先照手排的老師。兩種都可以：</p><ol class="note"><li>「特教鎖課需求」的<b>資料輸入</b>：整張選取（Ctrl+A）複製貼上，格子裡填的是老師名字。</li><li><b>資料輸出</b>：班級名稱、科目名稱、星期、首節、末節、教師姓名。</li></ol>
+  <p class="note">貼上後會整份換掉之前的手排鎖課。不想沿用時，到「匯入與新學期」按清除。</p>
+  <textarea id="pasteBox" placeholder="班級名稱&#9;科目名稱&#9;星期&#9;首節&#9;末節&#9;教師姓名&#10;701&#9;數學&#9;1&#9;4&#9;4&#9;王老師"></textarea>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="pasteLocksOk()">帶入</button><button class="b" onclick="closeDlg()">取消</button></div>`);}
+function pasteLocksOk(){const txt=$('pasteBox').value;if(!txt.trim())return;const X=JSON.parse(JSON.stringify(D));if(!importLocks(X,txt).n){toast('沒有讀到鎖課：請確認貼的是資料輸入（格子裡是老師名字）或資料輸出');return;}
+  snapshot('貼上手排鎖課之前');const r=importLocks(D,txt);changed();closeDlg();render();toast('手排鎖課 '+r.n+' 節、'+r.cls+' 個班'+(r.newT.length?'；新增老師 '+r.newT.length+' 位':''));}
+function clearLocks(){if(!confirm('清除手排鎖課？之後排課和配鎖課就完全由系統決定。'))return;snapshot('清除手排鎖課之前');D.lockFix=[];changed();render();toast('已清除手排鎖課');}
 function pruneTeachers(){const used=new Set(Object.values(D.classSubj).concat(D.groups.map(g=>g.teacher),D.students.map(s=>s.caseMgr)));
   const a=D.teachers.filter(t=>t.role!=='資源班'&&!used.has(t.id)&&!t.off.length&&!t.note);
   if(!a.length){toast('沒有可以移除的老師');return;}
@@ -644,11 +662,12 @@ function renderData(){
     ['各班任課老師',st(!need.size||csN===need.size,need.size?csN+' / '+need.size+' 格':'還沒有抽離課'),'特教鎖課需求 › 教師名單',`<button class="b sm" onclick="pasteTL()">貼上</button>`],
     ['班級不排課、不能鎖課',st(cOff,cOff+' 個班有設定'),'特教鎖課需求 › 班級不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
     ['任課老師不排課',st(tOff,tOff+' 位有設定'),'特教鎖課需求 › 教師不排課',`<button class="b sm" onclick="pasteOff()">貼上</button>`],
+    ['手排鎖課（選填）',st(1,(D.lockFix||[]).length?D.lockFix.length+' 節，排課時盡量沿用':'沒有，系統自己配'),'特教鎖課需求 › 資料輸入或資料輸出',`<button class="b sm" onclick="pasteLocks()">貼上</button>${(D.lockFix||[]).length?`<button class="b sm" onclick="clearLocks()">清除</button>`:''}`],
     ['資源班老師個人不排課',st(rOff===res.length&&res.length,rOff+' / '+res.length+' 位有設定'),'各位老師自己點',`<button class="b sm" onclick="go('sched','off')">不排課時段</button>`],
     ['年級共同時段（社團等）',st(Object.keys(D.offBy).some(k=>k[0]==='g'&&D.offBy[k].length),Object.keys(D.offBy).filter(k=>k[0]==='g'&&D.offBy[k].length).map(k=>GRADE[k.slice(2)]).join('、')||'沒有設定'),'教學組',`<button class="b sm" onclick="offSel='g:7';go('sched','off')">不排課時段</button>`],
     ['鎖課方式與上限',st(1,D.settings.lockMode==='flex'?'彈性鎖課'+(D.settings.lockCap?'（'+Object.keys(D.settings.lockCap).map(k=>k+D.settings.lockCap[k]).join(' ')+'）':''):'同一科同時上'),'和教學組確認',`<button class="b sm" onclick="go('roster','env')">規則</button>`]];
   let h=`<p class="guide">每學期照下面的順序，把學校本來就有的表格帶進來，就能自己排課，不需要找人幫忙：<b>①</b> 視需要按「開始新學期」<b>②</b> 上傳學校的 Excel（或在各列按「貼上」）<b>③</b> 補上資源班老師自己的不排課時段 <b>④</b> 到「排課」按一鍵排課。</p>
-  <h3>上傳學校的 Excel</h3><p class="note">可以一次選好幾個檔案。系統會自己認出裡面的<b>學生名單、任課老師名單（教師名單）、課程一覽表、班級不排課、教師不排課</b>，其他工作表會略過。Google 試算表請先按「檔案 › 下載 › Microsoft Excel」。檔案只在這台電腦的瀏覽器裡讀，不會上傳到任何地方。</p>
+  <h3>上傳學校的 Excel</h3><p class="note">可以一次選好幾個檔案。系統會自己認出裡面的<b>學生名單、任課老師名單（教師名單）、課程一覽表、班級不排課、教師不排課、手排鎖課（資料輸入或資料輸出）</b>，其他工作表會略過。Google 試算表請先按「檔案 › 下載 › Microsoft Excel」。檔案只在這台電腦的瀏覽器裡讀，不會上傳到任何地方。</p>
   <div class="bar"><input type="file" id="xlsIn" accept=".xlsx,.xls,.xlsm,.csv,.ods" multiple style="display:none" onchange="readXls(this)"><button class="b pri" onclick="$('xlsIn').click()">選擇 Excel 檔</button></div>`;
   if(XL.length)h+=`<div class="xlbox"><table class="ed"><tr><th></th><th>檔案</th><th>工作表</th><th>認成</th><th>列數</th></tr>${XL.map((x,i)=>`<tr><td><input type="checkbox"${x.on?' checked':''} onchange="XL[${i}].on=this.checked"></td><td class="dim">${esc(x.file)}</td><td>${esc(x.sheet)}</td><td><b>${XLT[x.type]}</b></td><td class="dim">${x.n}</td></tr>`).join('')}</table>
     ${XL.skip?`<p class="note">另外有 ${XL.skip} 張工作表看不出是哪一種，已略過。</p>`:''}

@@ -230,5 +230,19 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   C.newTerm(D,{clearTeaOff:true});ok(!Object.keys(D.offPool).length,'新學期清老師不排課時一併清掉');
 }
 
+// 14. 手排鎖課：資料輸入的格子、資料輸出的清單；原因用勾選
+{
+  console.log('\n14. 手排鎖課與勾選原因');
+  const D=C.defaultData();D.offBy={};
+  const r0=C.importOff(D,'701\t2\t2\t7\t7\t社團時間\n702\t2\t2\t7\t7\n701\t5\t5\t1\t1\t導師時間\n',{hard:['社團時間']});
+  ok(D.offBy['c:701']&&D.offBy['c:702']&&D.offBy['k:701'],'只鎖勾選的原因（原因往下沿用），其他只是不能鎖課');
+  const tn=D.teachers[0].name,grid=['701\t\t節次\t星期一\t星期二\t星期三\t星期四\t星期五','\t\t1\t'+tn+'\t\t\t\t','科目\t教師\t2\t\t數學\t\t\t','數學\t'+tn+'\t3\t\t\t\t\t'].join('\n');
+  const r1=C.importLocks(D,grid);
+  ok(r1.n===1&&D.lockFix[0].cls==='701'&&D.lockFix[0].sj==='數學'&&D.lockFix[0].k.startsWith('0-'),'資料輸入：格子裡的老師名字讀成鎖課，科目寫在格子裡的略過');
+  const r2=C.importLocks(D,'班級名稱\t科目名稱\t星期\t首節\t末節\t教師姓名\n701\t數學\t3\t2\t3\t'+tn+'\n');
+  ok(r2.n===2&&D.lockFix.length===2&&D.lockFix.every(x=>x.k.startsWith('2-')),'資料輸出：首節到末節展開，整份換掉');
+  C.newTerm(D,{clearAssign:true});ok(!D.lockFix.length,'新學期清空排課結果時一併清掉手排鎖課');
+}
+
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');
 process.exit(fail?1:0);
