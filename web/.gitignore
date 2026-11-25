@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Firestore 模擬器（npm run test:rules）
+firestore-debug.log

@@ -24,7 +24,7 @@
 | 圖示 | lucide-react |
 | 字型 | 內文 Noto Sans TC（400/500/700）、標題 Noto Serif TC（600/700），用 `next/font` 載入；正式紙本表單用標楷體字串 `--font-kai` |
 | 雲端 | Firebase modular SDK 13（Auth：Google 登入；Firestore） |
-| 後端 | Cloud Functions v2（Node 20，asia-east1），放在 repo 根目錄 `functions/` |
+| 後端 | Cloud Functions v2（Node 22，asia-east1），放在 repo 根目錄 `functions/` |
 | 輸出 | 預設 `output:'export'`（靜態）；`NEXT_OUTPUT=server` 時是一般 Next.js 伺服器（App Hosting） |
 
 ### 2.1 資料夾
@@ -38,8 +38,9 @@ web/
   lib/
     core.ts            core.js 的型別包裝（import "../../core.js"）
     types.ts           舊資料 D 與段考資料的型別
-    model.ts           目標資料模型（schools/{sid}/…）與 Repo 介面
-    legacy.ts          舊格式 D → 目標模型的轉換（搬移腳本用）
+    model.ts           目標資料模型（schools/{sid}/…）的型別
+    legacy.ts          舊格式 D ⇄ 分拆文件（包 functions/nx-split.js）
+    repo/              Repo 介面、Firestore 版、記憶體版、toCoreD（README.md）
     session.tsx        登入狀態、角色、資料來源（整個 App 一份）
     accounts.ts        角色推算（claims 優先，沒有就用舊名單）
     cloud.ts           Firestore 讀寫（過渡期的舊位置＋新增的三個集合）
@@ -47,11 +48,21 @@ web/
     schedule.ts        用 core.js 算課表、老師一週、我的學生
     exam.ts            段考監考對照
     iep.ts             IEP 會議介面（等 iep.js）
-  firestore.rules.proposed   提議的規則（未部署）
+  firestore.rules.proposed   第一版提議的規則（已由 firestore.rules.next 取代）
+  firestore.rules.next       下一版規則：舊位置原封＋A+＋schools/{sid}（未部署）
+  firestore.indexes.next.json  新位置要的索引
+  firebase.emulator.json     規則測試用的模擬器設定（npm run test:rules）
+  test/                      vitest：轉換、Repo、同步比對；rules*.test.ts 要模擬器
   apphosting.yaml      Firebase App Hosting 設定（未部署）
   deploy/github-pages.yml    GitHub Actions 範本（未啟用）
 functions/             （repo 根目錄）
-  roles.js             角色與邀請
+  nx-split.js          舊 D ⇄ 分拆文件、diff（新版與 Functions 共用）
+  nx-core.js           搬移／同步的核心（不依賴 firebase，可測）
+  nx-claims.js         claims {sid, role, tid}、邀請、第一位管理者
+  nx-migrate.js        nxMigrateLegacy
+  nx-sync.js           nxSyncFromLegacy、nxSyncExamFromLegacy
+  nx-index.js          上面這些一次匯出
+  roles.js             舊版角色函式（由 nx-claims.js 取代）
   ai-proxy.js          AI 代理（佔位）
   scripts/bootstrap-admin.js 建立第一位管理者
 ```
@@ -99,36 +110,79 @@ functions/             （repo 根目錄）
 
 新版寫 `rc/main` 時用交易（讀最新→改→寫回），格式和 `cloud.js` 的 `cloudPush` 一樣，舊版畫面會即時跟著變。
 
-### 3.2 目標（架構審查採用版）
+### 3.2 目標：一筆一份文件，老師在技術上讀不到不是自己的學生
 
-不再把整份 D 存成一個 JSON，改成一筆一份文件：
+型別：`web/lib/model.ts`。轉換（舊 D ⇄ 文件）：`functions/nx-split.js`（Functions、新版、測試共用一份）。存取：`web/lib/repo/`（說明見 `web/lib/repo/README.md`）。
 
 ```
-schools/{sid}                         {name, domain}
-schools/{sid}/members/{uid}           {email, role:'admin'|'teacher'|'viewer', teacherId?, active}   只有 Function 寫
-schools/{sid}/invites/{email}         {email, role, teacherId?, by, exp}                             只有 Function 寫
-schools/{sid}/terms/{tid}             {title, periods, rooms, settings, rev}
-  students/{id}                       {cls, seat, name, caseMgrUid, groupIds, rev, updatedBy, updatedAt}
-  students/{id}/private/profile       需求、備註、聯絡資料等（個管老師與管理者才讀得到）
-  teachers/{id}                       {name, role, uid?, off, hours, note, rev…}
-  groups/{gid}                        課程＋排課結果 slots[]、status:'draft'|'final'
-  exams/{eid}（+ sessions、placements）
-  attendance/{date}
-  iep/{mid}（+ responses/{uid}）
-publicViews/{token}                   {sid, cls, rows（遮罩過）, exp}    只有後端寫
-auditLogs/{id}                        {sid, by, action, target, detail, at}   只有後端寫、管理者讀
+schools/{sid}                           {name, domain?, currentTerm, mode:'legacy'|'native'}     只有 Function 寫
+schools/{sid}/members/{uid}             {email, role, teacherId?, active, claimsAt}              只有 Function 寫
+schools/{sid}/invites/{emailLower}      {email, role, teacherId?, by, exp}                       只有 Function 寫
+schools/{sid}/terms/{tid}               {title, periods, rooms, settings, blocked, offBy(g:/c:/k:), sets, lockFix, offPool, packed}
+  teachers/{id}                         {ord, name, role, off, note, hours, prefRooms?, x?}
+  classes/{cls}                         {cls, head?, subj:{科目: 任課老師id}, ttJson?}           舊 classSubj／tt／classHead
+  groups/{gid}                          {ord, name, subject, teacherId, per, mode, room, on, grade, studentIds, fixed?, slots?, x?}
+  students/{id}                         {ord, cls, seat, name, caseMgrId, groupIds, teacherIds, note, needs, off?}
+  students/{id}/private/profile         {caseMgrId, privNote, iepDate, reviewDate, certExp, examSvc, contacts[], x?}
+  attendance/{date}_{gid}@{pid}         {date, key, gid, pid, teacherId, marks:{學生id: 紀錄}, roster, info}
+  iep/{roundId}                         {ord, name, due, stuIds, readers, json}   (+ responses/{h}，只有 Function 寫)
+  exam/{eid}                            {title, sessions, rooms, proctors, proctorOf, supportOf}
+  exam/{eid}/private/{data|notice}      {json}：學生名單與調整、通知單（只有管理者／編輯）
+  exam/{eid}/placements/{pid}           {proctorIds, …}：之後段考頁產生，監考老師讀自己的
+  versions/{draft|vNNNN}                試排草稿與確定的版本（舊 sched）
+  lockLog/{LNNNN}                       鎖課紀錄（舊 lockLog）
+  staff/{legacy|iep|sched|sync}         其他只給管理者的：交接基準、weekly、gone、未知欄位、IEP 設定、同步狀態
+publicViews/{token}                     {sid, cls, rows（遮罩過）, exp}    只有後端寫
+auditLogs/{id}                          {sid, by, action, target, detail, at}   只有後端寫
+nxLink/main                             {sid, termId, mode}：舊位置要同步到哪裡（只有 Function 讀寫）
 ```
 
-- **並行修改**：每份文件帶 `rev`。新增 `rev==1`，更新規則檢查 `rev` 剛好 +1、`updatedBy` 是自己。用戶端用交易更新；被別人搶先時提示「內容已被○○更新」再重做。
-- **core.js 照用**：畫面把 terms/students/teachers/groups 組回 D（`legacy.ts` 的反方向）再交給 `compile(D)`，引擎不用改。
-- **型別**：`web/lib/model.ts`；轉換：`web/lib/legacy.ts` 的 `fromLegacy(D, by, teacherUid)`。
+- **誰讀得到學生**：`teacherIds`＝個管＋教他資源班課的老師＋他原班該科的任課老師（和「我的學生」同一個定義，`nx-split.readersOf`）。個管一定在 `teacherIds` 裡（規則檢查），所以老師用 `where('teacherIds','array-contains',tid)` 一個查詢就拿得到全部；Repo 另外再查 `caseMgrId == tid` 合併。
+- **敏感欄位**：私密備註、IEP／檢討／鑑定日期、段考服務、家長聯絡紀錄、**以及任何不認得的學生欄位**都放 `private/profile`。`caseMgrId` 抄一份在 private 上，規則讀的時候不用 `get()`；管理者寫的時候用 `getAfter()` 檢查和學生文件一致。
+- **Firestore 收不下的值**（陣列直接包陣列，例如全校課表 `[姓名, 節數, 旗標]`、`lockLast.list`、IEP 調查單）存成 JSON 字串（`ttJson`、`packed`、`json`、`x`）。
+- **順序**：`ord` 保留名冊順序（core.js 用陣列索引，順序不同 solve 的結果就不同）。
+- **rev**：每份文件 `rev`（新增 1、更新剛好 +1）、`updatedBy`（uid；搬移／同步寫的是 `migrate:legacy`／`sync:legacy`）、`updatedAt`（伺服器時間），規則檢查。用戶端用交易；被搶先時 `RevConflictError`。
+- **core.js 照用**：`toCoreD(records)` 把讀得到的文件組回舊格式 D，`compile / solve / lockTable` 不用改。來回轉換後 compile 與 solve 的結果完全相同（`web/test/legacy.test.ts`）。老師的 D 只有自己的學生，課程的 `students` 也只剩自己的；看課表夠用，一鍵排課只給管理者。
 
-### 3.3 搬移步驟（之後做，不是現在）
+### 3.3 搬移與過渡期
 
-1. 部署 Functions 與新規則（B 段）；用 `bootstrap-admin.js` 建第一位管理者。
-2. 寫一支搬移 Function（管理者呼叫）：讀 `rc/main`、`exams/main`，用 `fromLegacy` 拆成新文件，寫 `auditLogs`。舊文件**不刪**。
-3. 新版改用 `SchoolRepo`（新位置）讀寫；舊版繼續用舊位置。這段期間**只有一邊能改**：搬移當天起，請組長只用新版，舊版設成唯讀（例如把舊名單成員都改成檢視）。
-4. 穩定一學期後，再決定是否刪舊文件、拿掉舊規則 A 段。
+**原則：過渡期舊版（`rc/main`）是正本，新位置是單向同步出來的唯讀副本。** 一份資料任何時候只有一個地方可以改，就不會互相蓋掉。
+
+1. **老師先搬到新版、只讀新位置。** 老師的 Repo 是 `readOnly`（`schools/{sid}.mode=='legacy'`），課表、我的學生、個案卡都讀分拆後的文件，**讀不到別人的學生**。老師要送出的東西（不排課時段、回覆）照舊寫過渡期集合 `teacherOff`、`replies`，由管理者在舊版套用。
+2. **管理者繼續用舊版**，直到那個功能在新版做好。舊版每存一次 `rc/main`，`nxSyncFromLegacy` 就把差異寫到新位置（通常幾秒內）。
+3. **同步的比對方式**（`functions/nx-core.js` `planMain`，測試：`web/test/sync.test.ts`）：
+   - 觸發：`onDocumentWritten('rc/{docId}')`（`main`、`att-YYYY-MM-DD`）與 `onDocumentWritten('exams/{docId}')`（`main`、`notice`）。只有 `nxLink/main.mode=='legacy'` 時才做。
+   - 把事件的 before、after 兩版 D 各自 `split()`，用 `diff()` 一份一份比：內容（排好 key 的 JSON，不含 rev 等）一樣就跳過；不一樣就整份覆寫，`rev = 新位置現在的 rev + 1`、`updatedBy='sync:legacy'`；before 有、after 沒有的刪掉（學生連 private）。改一位學生的名字＝寫 1 份；把學生加進課程＝課程＋那位學生 2 份（teacherIds 跟著變）。
+   - 防亂序：`terms/{tid}/staff/sync` 記上次同步到的 rc/main 版本（`rev`，沒有就 `at`）。這次的 after 比記錄舊 → 跳過；記錄正好等於這次的 before → 只寫差異；其他（漏了事件）→ 拿 after 和新位置現在的內容整個比一次。
+   - 新版那邊有人改過（`updatedBy` 不是同步／搬移）又被舊版蓋掉的文件記一筆 `auditLogs`（`nxSyncConflict`）。過渡期新版唯讀，正常不會發生。
+   - 想確認沒有漂移：隨時再跑一次 `nxMigrateLegacy`（冪等，資料一樣就是 0 筆）。
+4. **一個管理者功能搬完，就把那一塊交給新版**：把對應的集合加進 `nxLink/main.native`（例 `['attendance']`），同步從此跳過它們，新版的 Repo 對那一塊不再 readOnly；同時請管理者不要再在舊版改那一塊（舊版那部分會變成過時的備份）。可以分開交的塊：
+   - 點名 `attendance`（舊 `rc/att-*`，本來就是獨立文件）
+   - IEP `iep`、段考 `exam`、`examPrivate`
+   - **排課核心** `term`、`teachers`、`classes`、`groups`、`students`、`privates`、`versions`、`lockLog`、`staff`：彼此相依（core.js 一起用），**要一起交**，也就是第 5 步。
+   新版從不寫 `rc/main`，所以不會有「新版改的被舊版存檔蓋掉」以外的衝突；那種情況同步會記 `nxSyncConflict`。
+5. **切換日**（所有管理者功能都在新版）：
+   1. 舊版最後存一次；跑 `nxMigrateLegacy`（`dryRun:false`）確認 0 筆差異。
+   2. `nxLink/main.mode` 和 `schools/{sid}.mode` 改成 `'native'`（同步停止；新版 Repo 不再 readOnly）。
+   3. 部署規則：**舊位置只剩管理者（舊名單的「編輯」）讀得到**。把 A 段這幾行改掉，其他不動：
+      ```
+      match /rc/main        { allow read: if editor();   allow create, update: if false; … }
+      match /rc/{id}        { allow read: if editor() && id.matches('att-[0-9]{4}-[0-9]{2}-[0-9]{2}');  allow create, update: if false; … }
+      match /exams/{id}     { allow read: if editor() && id in ['main', 'notice'];  allow create, update: if false; … }
+      match /iepResp/{round}/r/{h} { allow read: if editor(); … }
+      ```
+      （原本是 `member()` 讀、`editor()` 寫。改完舊版變成管理者唯讀的備份；老師在舊名單裡是「檢視」，從此讀不到 rc/main。）
+6. **退休**（穩定一學期後）：下載 rc/main 的備份檔（線下保存），規則改成 `rc/*`、`exams/*` `allow read, write: if false`，拿掉 A 段的其他舊位置與 A+ 段，最後刪舊文件。
+
+**IEP 會議與 Functions 怎麼對過去**
+
+| 舊 | 過渡期 | 切換後 |
+|---|---|---|
+| `D.iep.rounds[]`（rc/main） | 同步成 `iep/{roundId}`（`json`＝整份調查單；`readers`＝發起人＋學生的個管）；`cfg`、`cur` 在 `staff/iep` | 新版直接寫 `iep/{roundId}` |
+| `iepTok/{sha256}`（編輯建立） | 不動，`iepGetSurvey`／`iepSubmit` 照舊 | 新版建立時在 token 加 `sid`、`termId`；`iep-core.js` 依 `sid` 把回覆寫到 `schools/{sid}/terms/{tid}/iep/{round}/responses/{h}`（規則已備好：管理者＋readers 讀、只有 Function 寫）。舊 `iepTok` 到期就自然失效 |
+| `iepResp/{round}/r/{h}`（成員讀） | 不動 | 切換時改成只有編輯讀；新回覆在新位置 |
+| `ai.js`（看 `config/access`） | 不動 | 改看 claims（`role` in admin/editor/teacher、`sid`） |
+| `roles.js`（claims `{sid, role, teacherId}`） | 由 `nx-claims.js` 取代（claims `{sid, role, tid}`、多了 editor） | 從 `index.js` 拿掉 |
 
 ---
 
@@ -136,54 +190,58 @@ auditLogs/{id}                        {sid, by, action, target, detail, at}   �
 
 ### 4.1 角色
 
-| 角色 | 是誰 | 看得到 | 能改 |
+| 角色 | 是誰 | 讀 | 寫 |
 |---|---|---|---|
-| 管理者 `admin` | 特教組長、排課者 | 全部 | 全部；成員角色（經 Function） |
-| 老師 `teacher` | 資源班與普通班老師 | 自己的課表、自己的學生（個管的才看得到敏感欄位）、自己的監考、排課總表 | 自己的不排課時段、自己的回覆、點名 |
-| 檢視 `viewer` | 教務處、行政 | 排課總表 | 不能改 |
+| `admin` | 特教組長 | 學校全部 | 學校全部；成員與邀請（經 Function）；刪學期 |
+| `editor` | 排課者、其他組長 | 學校全部 | 學校全部（不管成員） |
+| `teacher` | 資源班與普通班老師（一定要綁 `tid`） | 學期設定、老師、班級、課程、段考考程；**自己的學生**（個管或 teacherIds 有自己）；自己個管的 private；自己課的點名；自己是 readers 的 IEP | 自己的 `off`；自己個管的 private（私密欄位，不能改 caseMgrId）；自己課的點名；自己是 readers 的 IEP |
+| `viewer` | 教務處、行政 | 學期設定、老師、班級、課程（總課表）、段考考程與監考對照。**沒有學生資料** | 不能寫 |
 
-### 4.2 角色放在哪裡
+畫面上 `editor` 和 `admin` 一樣（`accounts.appRoleOf`），只差「資料與帳號」的成員管理。
 
-- **目標：custom claims `{sid, role, teacherId}`**，由 `functions/roles.js` 設定，同時寫 `schools/{sid}/members/{uid}` 與 `auditLogs`。
-- **第一位管理者由 `functions/scripts/bootstrap-admin.js` 建立**（手動、用服務帳號執行），不再是「第一個登入的人」。新版的登入頁也不提供自己認領。
-- **過渡期（還沒部署 Function）**：新版從舊名單 `config/access` 推角色：主持人與「編輯」＝管理者；「檢視」且有 `bind`＝老師；「檢視」沒有綁定＝檢視。新版加的老師在舊版畫面上就是「檢視」，舊版照常運作。claims 存在時以 claims 為準。
+### 4.2 claims 與 Functions（`functions/nx-claims.js`）
 
-### 4.3 老師帳號怎麼綁到名冊上的老師
+custom claims 一律只有 `{ sid, role, tid? }`。規則只看 claims，不用 `get()` 查角色。claims 變了以後用戶端要 `getIdToken(true)`；`members/{uid}.claimsAt` 會更新，畫面可以監看它自動刷新。停用的人 ID token 最長 1 小時內還有效（已撤銷 refresh token）。
 
-- 過渡期：主持人在新版「資料與帳號」選「這個信箱是名冊上的哪一位」，寫在 `config/access.bind`。
-- 目標：管理者呼叫 `createInvite({sid, email, role, teacherId})` 寄出邀請；老師登入後呼叫 `acceptInvite()`，Function 檢查 Google 驗證過的信箱與期限，設定 claims（含 `teacherId`）。已登入過的人可直接 `setMemberRole`。
-- claims 變了以後，用戶端要 `getIdToken(true)` 才拿得到新的；`members/{uid}.claimsAt` 會更新，畫面可以監看它自動刷新。
-
-### 4.4 Functions（`functions/roles.js`，請在 `functions/index.js` 合併匯出）
-
-> **目前沒有部署（2026-11 安全檢查）**：`roles.js` 是這份 Next.js 版的 custom claims 設計，現在的網站（根目錄的舊版）沒有用到。
-> 為了不讓沒人用的 callable 函式掛在線上，已經從 `functions/index.js` 的匯出拿掉；檔案留著。真的開始搬到新版時，再照 7.3 第 1 步加回去、一起部署。
-
-| 名稱 | 種類 | 做什麼 |
+| 名稱 | 誰 | 做什麼 |
 |---|---|---|
-| `setMemberRole` | callable | 管理者設定某人（uid 或 email）的角色與 `teacherId`；不能把最後一位管理者降級 |
-| `createInvite` | callable | 管理者邀請一個信箱，預設 14 天到期 |
-| `acceptInvite` | callable | 被邀請的人登入後領取角色（collection group 查 `invites.email`） |
-| `revokeMember` | callable | 停用成員：清 claims、撤銷 refresh token、`active:false` |
-| `aiProxy`（`functions/ai-proxy.js`） | callable | AI 代理佔位，現在回 `unimplemented` |
+| `nxBootstrap({sid, name})` | 舊名單主持人（`config/access.admin`，Google 驗證過） | 第一位 admin；`tid` 取自 `config/access.bind`。學校已有其他 admin 就拒絕 |
+| `nxImportLegacyMembers({sid, dryRun})` | admin | 舊名單 → 邀請：主持人→admin、編輯→editor、檢視且 bind 了老師→teacher、其他檢視→viewer |
+| `nxCreateInvite({sid, email, role, tid?, days?})` | admin | 邀請（`invites/{emailLower}`），預設 14 天 |
+| `nxAcceptInvite({sid?})` | 被邀請的人 | 領取角色；沒給 sid 時用 collection group 查 `invites.email`（要索引） |
+| `nxSetClaims({sid, uid|email, role, tid?})` | admin | 改角色；不能把最後一位 admin 降級 |
+| `nxRevokeMember({sid, uid})` | admin | 清 claims、撤銷 refresh token、`active:false` |
+| `nxMigrateLegacy({sid, termId, name?, dryRun=true, prune=true})` | 舊名單主持人或 admin | 見 3.3；回傳各集合要寫／刪的筆數 |
+| `nxSyncFromLegacy`、`nxSyncExamFromLegacy` | Firestore 觸發 | 見 3.3 |
 
-每一個都寫 `auditLogs`。`acceptInvite` 的 collection group 查詢需要在 `firestore.indexes.json` 開 `invites.email` 的 collection-group 單欄索引。
-套件：`firebase-functions` v6 以上、`firebase-admin` v12 以上（由 `functions/package.json` 管理，另一位開發者在建 `index.js`）。
+每一個都寫 `auditLogs`。
 
 ---
 
-## 5. 規則（`web/firestore.rules.proposed`，未部署）
+## 5. 規則（`web/firestore.rules.next`，未部署）
 
-- **A 段：舊位置**，和正式的 `firestore.rules` 一字不差，舊版不受影響。
-- **A+ 段：過渡期新增** `teacherOff`、`joinRequests`、`replies`：老師只能寫自己綁定的那一位、只能寫自己的回覆；管理者（編輯）讀取並套用。
-- **B 段：新位置**，helper `canRead(sid)`、`canEdit(sid)`、`isAdmin(sid)` 讀 claims：
-  - `members`、`invites` 用戶端一律不能寫（只有 Function）。
-  - `students/{id}/private/*` 只有個管老師（`caseMgrUid`）與管理者讀得到。
-  - `teachers/{id}`：老師本人只能改 `off`（＋`rev`、`updatedBy`、`updatedAt`）。
-  - 所有更新檢查 `rev` +1 與 `updatedBy`；刪除只有管理者。
-  - `publicViews` 只能 `get`、要沒過期（`exp > request.time`）；`auditLogs` 只有管理者讀自己學校的。
+- **A 段：舊位置**，和正式的 `firestore.rules` 一字不差（測試會比對兩份檔的行為）。
+- **A+ 段：過渡期**：`teacherOff`、`joinRequests`、`replies`。
+- **B 段：`schools/{sid}/…`**：helper `inSchool / isAdmin / isStaff / isTeacher / myTid` 讀 claims。
+  - 成員、邀請、學校文件：用戶端一律不能寫；成員只有 admin 列得出來，本人讀自己的。
+  - 學生：`get`／`list` 只給管理者／編輯，或 `caseMgrId == tid`、`tid in teacherIds` 的老師（查詢沒帶條件會整個被拒）。
+  - private：管理者／編輯，或 `caseMgrId == tid` 的老師；老師只能改私密欄位。
+  - 每一份文件都檢查欄位（`hasOnly`）與大小；新增 `rev==1`、更新 `rev` 剛好 +1、`updatedBy==uid`、`updatedAt==request.time`。
+  - `versions`、`lockLog`、`staff`、`exam/*/private` 只給管理者／編輯；`publicViews` 只能 `get` 沒過期的；`members` 等不能 `list` 的地方都關掉。
+- 索引：`web/firestore.indexes.next.json`（點名 `teacherId+date`、`invites.email` collection group）。
 
-部署前：用 Firebase 模擬器（`firebase emulators:start --only firestore`）加規則單元測試，至少測「老師改別人的 off 被擋」「viewer 寫入被擋」「private 非個管讀不到」「rev 沒 +1 被擋」「舊版的 rc/main 讀寫照舊」。
+**測試（要 Java 11+）：**
+
+```
+# Git Bash
+export JAVA_HOME="C:/Users/User/tools/jdk-21.0.13.1+2"
+export PATH="/c/Users/User/tools/jdk-21.0.13.1+2/bin:$PATH"
+cd web
+npm test              # 單元測試：轉換、toCoreD 來回、Repo 權限、同步比對（不用模擬器）
+npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-rc 專案，不碰正式資料）跑完自動關
+```
+
+`test:rules` 跑三份：`rules.test.ts`（新位置 25 項）、`rules-live.test.ts`（正式 `firestore.rules` 與 `.next` 的 A 段各 19 項）、`rules-repo.test.ts`（Firestore 版 Repo 的查詢與交易都過得了規則）。
 
 ---
 
@@ -219,20 +277,16 @@ auditLogs/{id}                        {sid, by, action, target, detail, at}   �
 5. 驗證完成後才綁自訂網域；GitHub Pages 的舊版先保留當備援。
 6. 程式上：頁面都是用戶端元件，不用 cookies／headers／Server Actions，所以兩種輸出共用同一份程式。加 API route 時放在 `app/api/…/route.ts`，並在靜態輸出建置中排除（或只在 `NEXT_OUTPUT=server` 時建置）。
 
-### 7.3 Functions 與規則
+### 7.3 Functions、索引、規則（照這個順序；都還沒做）
 
-1. `functions/index.js` 合併 `require('./roles')`、`require('./ai-proxy')` 的匯出（`roles` 目前刻意沒有匯出，見 4.4）。
-2. `firebase deploy --only functions`（區域 asia-east1，Node 20）。
-3. 規則：先在模擬器測完，再 `firebase deploy --only firestore:rules`（用 `firestore.rules.proposed` 的內容）。**舊規則 A 段要原封保留**，否則舊版會壞。
-4. 第一位管理者：
-   ```
-   $env:GOOGLE_APPLICATION_CREDENTIALS="C:\路徑\service-account.json"
-   node functions/scripts/bootstrap-admin.js --sid <學校代碼> --email <組長 Gmail> --name "<學校名稱>" [--teacher-id <名冊老師id>]
-   ```
-   這個人要先用 Google 登入新版一次。服務帳號金鑰不要放進 repo。
-5. App Check：主控台註冊 reCAPTCHA Enterprise，用戶端 `initializeAppCheck`，Functions 的 `enforceAppCheck` 改成 `true`，Firestore 打開強制驗證。先用「監控」模式觀察一週再強制。
-
----
+1. **規則**：把 `web/firestore.rules.next` 的內容放進 repo 根目錄 `firestore.rules`。⚠️ A 段的 `adminEmail()` 要填**正式專案現在部署中的那個信箱**（repo 裡是 `CHANGE-ME@example.com`），其他一字不改。先 `cd web && npm run test:rules`，再 `firebase deploy --only firestore:rules`。舊版不受影響（A 段相同），新位置還沒有資料。
+2. **索引**：把 `web/firestore.indexes.next.json` 放成根目錄 `firestore.indexes.json`，`firebase.json` 的 `firestore` 加 `"indexes": "firestore.indexes.json"`，`firebase deploy --only firestore:indexes`（建好要幾分鐘）。
+3. **Functions**：`functions/index.js` 加一行 `Object.assign(exports, require('./nx-index'));`，並拿掉 `roles.js` 那一行（它設的 claims 沒有 editor、用 teacherId；由 nx-claims.js 取代）。`firebase deploy --only functions`（或只部署 `functions:nxBootstrap,functions:nxSetClaims,functions:nxCreateInvite,functions:nxAcceptInvite,functions:nxRevokeMember,functions:nxImportLegacyMembers,functions:nxMigrateLegacy,functions:nxSyncFromLegacy,functions:nxSyncExamFromLegacy`）。Firestore 觸發的區域要和資料庫位置一致；資料庫不在 asia-east1 時改 `nx-sync.js` 的 `region`。同步函式在 `nxLink/main` 出現前什麼都不做。
+4. **第一位管理者**：主持人登入新版，呼叫 `nxBootstrap({sid, name})`，再 `getIdToken(true)`。（`functions/scripts/bootstrap-admin.js` 仍可用，但不需要了。）
+5. **搬資料**：主持人呼叫 `nxMigrateLegacy({sid, termId})`（預設 dry-run，看筆數）→ 確認後 `{dryRun:false}`。從這一刻起同步開始。
+6. **帳號**：`nxImportLegacyMembers({sid})` 看清單 → `{dryRun:false}` 寄出邀請；老師登入新版呼叫 `nxAcceptInvite()`。
+7. 之後照 3.3 的第 4–6 步。
+8. App Check：主控台註冊 reCAPTCHA Enterprise，用戶端 `initializeAppCheck`，Functions 的 `enforceAppCheck` 改成 `true`，Firestore 打開強制驗證。先用「監控」模式觀察一週再強制。
 
 ## 8. AI 代理（合約）
 
@@ -310,7 +364,7 @@ auditLogs/{id}                        {sid, by, action, target, detail, at}   �
 ## 12. 風險
 
 1. **兩邊同時改同一份 `rc/main`**：過渡期新版只在少數地方寫（老師時段套用、主持人改名單），都用交易；但舊版本身是「最後存檔的人為準」，和新版同時改仍可能蓋掉。搬到新位置前，大量編輯請只在一邊做。
-2. **過渡期老師讀得到整份 `rc/main`**（舊規則以成員為單位），包含不是自己的學生。這是舊規則的限制，要等搬到 `schools/{sid}/…`、敏感欄位拆到 `private/` 才解決。
+2. **過渡期老師讀得到整份 `rc/main`**（舊規則以成員為單位），包含不是自己的學生。新版本身只讀 `schools/{sid}/…`（讀不到別人的學生），但只要舊規則還讓「檢視」讀 rc/main，技術上仍讀得到。要等 3.3 第 5 步改規則（rc/main 只剩編輯讀）才算真正隔離——所以老師都搬到新版後，**越早切換越好**；也可以提早只做規則那一步：把老師從舊名單移除（新版靠 claims，不需要舊名單）。
 3. **規則部署失誤會讓舊版壞掉**：A 段必須和正式規則一致；先在模擬器測、選學校不上課的時間部署。
 4. **core.js 被改壞會同時影響兩邊**：好處也是風險。CI 要同時跑 `node test.js` 與 `web` 的建置。
 5. **用姓名對監考**：名冊與段考的姓名寫法不同（例如「張老師（國）」）會對不到；已忽略括號註記，仍可能有同名或簡稱。

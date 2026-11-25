@@ -9,9 +9,10 @@
      viewers 只能檢視的人                        → 有綁定老師的是「老師」，沒有的是「檢視」
    新版在 config/access 加 bind {信箱: teacher id}，舊版 cloud.js 更新名單時用 update({emails,viewers})，
    不會動到 bind；舊版畫面上這些老師就是「檢視」，照樣能用。 */
-import type { MemberRole, RoleClaims } from "./model";
+import type { RoleClaims } from "./model";
 
-export type AppRole = MemberRole;
+/** 畫面用的角色。claims 的 editor（排課者）在畫面上和 admin 一樣（只是不能管成員）；見 appRoleOf */
+export type AppRole = "admin" | "teacher" | "viewer";
 
 export interface Access {
   admin: string;
@@ -32,11 +33,19 @@ export function normEmail(e: string | null | undefined): string {
   return String(e || "").trim().toLowerCase();
 }
 
+/** custom claims {sid, role, tid}（functions/nx-claims.js）；舊名稱 teacherId 也收 */
 export function claimsOf(c: Record<string, unknown> | null | undefined): RoleClaims | null {
   if (!c || typeof c.sid !== "string" || !c.sid) return null;
   const r = c.role;
-  if (r !== "admin" && r !== "teacher" && r !== "viewer") return null;
-  return typeof c.teacherId === "string" && c.teacherId ? { sid: c.sid, role: r, teacherId: c.teacherId } : { sid: c.sid, role: r };
+  if (r !== "admin" && r !== "editor" && r !== "teacher" && r !== "viewer") return null;
+  const tid = typeof c.tid === "string" && c.tid ? c.tid : typeof c.teacherId === "string" && c.teacherId ? c.teacherId : "";
+  return tid ? { sid: c.sid, role: r, tid, teacherId: tid } : { sid: c.sid, role: r };
+}
+
+/** claims 的角色 → 畫面角色（editor 當 admin） */
+export function appRoleOf(c: RoleClaims | null | undefined): AppRole | null {
+  if (!c) return null;
+  return c.role === "editor" ? "admin" : c.role;
 }
 
 /** 從舊名單推角色；不在名單裡回傳 null */

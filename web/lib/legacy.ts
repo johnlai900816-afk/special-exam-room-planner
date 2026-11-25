@@ -1,55 +1,40 @@
-/* 舊格式（整份 D）→ 目標模型（一筆一份文件）的轉換。
-   給之後的搬移腳本（由後端、用管理者權限執行）和測試用；畫面現在仍直接吃 D。
-   反方向（目標模型 → D）讓 core.js 可以繼續用同一個 compile(D)：見 toCoreData()。 */
-import type { GroupDoc, StudentDoc, StudentPrivate, TeacherDoc, TermDoc } from "./model";
+/* 舊格式（整份 D，rc/main）⇄ 目標模型（一筆一份文件）的轉換。
+   邏輯在 repo 根目錄的 functions/nx-split.js（Cloud Functions 的搬移與同步用同一份，不複製）；這裡只補型別。 */
+import NX_JS from "../../functions/nx-split.js";
+import type { Collection, TermRecords } from "./model";
 import type { RcData } from "./types";
 
-export interface SchoolDocs {
-  term: TermDoc;
-  students: Record<string, StudentDoc>;
-  privates: Record<string, StudentPrivate>;
-  teachers: Record<string, TeacherDoc>;
-  groups: Record<string, GroupDoc>;
+export interface DiffOps {
+  set: { col: "term" | Collection; id: string; data: Record<string, unknown> }[];
+  del: { col: Collection; id: string }[];
 }
 
-/** teacherUid：teacher id → 綁定帳號 uid（舊資料只有 teacher id，個管欄位要換成 uid） */
-export function fromLegacy(D: RcData, by: string, teacherUid: Record<string, string> = {}): SchoolDocs {
-  const v = { rev: 1, updatedBy: by, updatedAt: null };
-  const groupIds: Record<string, string[]> = {};
-  D.groups.forEach((g) => g.students.forEach((id) => (groupIds[id] = groupIds[id] || []).push(g.id)));
-  const students: SchoolDocs["students"] = {};
-  const privates: SchoolDocs["privates"] = {};
-  D.students.forEach((s) => {
-    students[s.id] = { ...v, cls: s.cls, seat: s.seat, name: s.name, caseMgrUid: teacherUid[s.caseMgr] || "", groupIds: groupIds[s.id] || [] };
-    privates[s.id] = { ...v, needs: s.needs || [], note: s.note || "" };
-  });
-  const teachers: SchoolDocs["teachers"] = {};
-  D.teachers.forEach((t) => {
-    teachers[t.id] = { ...v, name: t.name, role: t.role, uid: teacherUid[t.id], off: t.off, hours: t.hours, note: t.note };
-  });
-  const groups: SchoolDocs["groups"] = {};
-  D.groups.forEach((g) => {
-    groups[g.id] = {
-      ...v,
-      name: g.name,
-      subject: g.subject,
-      teacherId: g.teacher,
-      per: g.per,
-      studentIds: g.students,
-      mode: g.mode,
-      room: g.room,
-      on: g.on,
-      grade: g.grade,
-      slots: D.assign[g.id] || [],
-    };
-  });
-  const rest = { ...D } as Record<string, unknown>;
-  ["students", "teachers", "groups", "assign", "title", "periods", "rooms"].forEach((k) => delete rest[k]);
-  return {
-    term: { ...v, title: D.title, periods: D.periods, rooms: D.rooms, settings: { ...D.settings, legacy: rest } },
-    students,
-    privates,
-    teachers,
-    groups,
-  };
+export interface NxSplitApi {
+  split(D: RcData): TermRecords;
+  join(R: Partial<TermRecords>, opt?: { keepUnknown?: boolean }): RcData;
+  splitAttendance(date: string, data: Record<string, unknown>, D: RcData | null): TermRecords["attendance"];
+  joinAttendance(docs: TermRecords["attendance"]): Record<string, Record<string, unknown>>;
+  splitExam(E: unknown, notice: unknown, eid?: string): Pick<TermRecords, "exam" | "examPrivate">;
+  joinExam(R: Partial<TermRecords>, eid?: string): { exam: Record<string, unknown> | null; notice: unknown };
+  diff(before: Partial<TermRecords>, after: Partial<TermRecords>, cols?: string[]): DiffOps;
+  canon(v: unknown): string;
+  pathOf(sid: string, termId: string, col: string, id: string): string;
+  readersOf(s: { id: string; cls: string; caseMgr?: string }, groups: RcData["groups"], classSubj: RcData["classSubj"]): string[];
+  fsSafe(v: unknown): boolean;
+  encId(s: string): string;
+  decId(s: string): string;
+  emptyRecords(): TermRecords;
+  COLS: Collection[];
+}
+
+export const NX = NX_JS as unknown as NxSplitApi;
+
+/** 舊格式 D → records（全部） */
+export function fromLegacy(D: RcData): TermRecords {
+  return NX.split(D);
+}
+
+/** records（可以只有一部分）→ 舊格式 D */
+export function toLegacy(R: Partial<TermRecords>, opt?: { keepUnknown?: boolean }): RcData {
+  return NX.join(R, opt);
 }
