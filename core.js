@@ -674,5 +674,50 @@ function newTerm(D,opt){
   return R;
 }
 
-const CORE={normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
+/* ───── 個管分配建議：每位學生配一位資源班老師當個管 ─────
+   原則（分數越低越好）：
+   1. 已經是他的個管就盡量不換（家長、導師都認得這位老師）；
+   2. 有教到他的老師優先（教越多門越熟）；
+   3. 同年級、同班的學生盡量給同一位，個管要聯絡的導師、要開的會比較少；
+   4. 人數平均；老師可以設上限 cmCap（例：組長行政多，少帶幾位），noCM＝不當個管。
+   只產生建議，不直接改資料。 */
+function suggestCaseMgr(D,opt){
+  opt=opt||{};const keep=opt.keep!==false;
+  const T=D.teachers.filter(t=>t.role==='資源班'&&!t.noCM);if(!T.length)return {list:[],summary:[],note:'還沒有資源班老師'};
+  const S=D.students.filter(s=>s.on!==false),W=s=>+s.cmWeight>0?+s.cmWeight:1,total=S.reduce((a,s)=>a+W(s),0);
+  // 上限：有填的照填，其餘平分剩下的人數
+  const capped=T.filter(t=>+t.cmCap>0),fixed=capped.reduce((a,t)=>a+ +t.cmCap,0),freeN=T.length-capped.length;
+  const avg=freeN?Math.max(0,total-fixed)/freeN:0,cap={};T.forEach(t=>{cap[t.id]=+t.cmCap>0?+t.cmCap:Math.ceil(avg);});
+  const teach={};D.groups.forEach(g=>{if(!g.teacher)return;(g.students||[]).forEach(id=>{const k=id+'|'+g.teacher;teach[k]=(teach[k]||0)+1;});});
+  const grade=s=>String(s.cls||'').slice(0,Math.max(1,String(s.cls||'').length-2));
+  const load={},byT={};T.forEach(t=>{load[t.id]=0;byT[t.id]=[];});
+  const score=(s,t)=>{let x=0;const mine=byT[t.id];
+    if(keep&&s.caseMgr===t.id)x-=6;
+    x-=2.5*(teach[s.id+'|'+t.id]||0);
+    if(mine.length){x-=2*mine.filter(o=>grade(o)===grade(s)).length/mine.length;x-=0.8*Math.min(3,mine.filter(o=>String(o.cls)===String(s.cls)).length);}
+    const over=load[t.id]+W(s)-cap[t.id];if(over>0)x+=40*over;   // 上限幾乎當成硬規定：除非大家都滿了
+    return x;};
+  const res=new Map();
+  // 先放已經有個管的；再依「有教到他的老師越少越難安排」的順序放其他學生
+  const has=s=>keep&&T.some(t=>t.id===s.caseMgr),nT=s=>T.filter(t=>teach[s.id+'|'+t.id]).length||9;
+  const order=S.slice().sort((a,b)=>(has(a)?0:1)-(has(b)?0:1)||nT(a)-nT(b)||String(a.cls).localeCompare(String(b.cls)));
+  order.forEach(s=>{let best=null,bs=Infinity;T.forEach(t=>{const x=score(s,t);if(x<bs-1e-9){bs=x;best=t;}});res.set(s.id,best.id);load[best.id]+=W(s);byT[best.id].push(s);});
+  // 微調：兩兩交換，整體變好就換
+  const tot=()=>S.reduce((a,s)=>{const t=res.get(s.id);return a+(keep&&s.caseMgr===t?-6:0)-2.5*(teach[s.id+'|'+t]||0);},0)
+    +T.reduce((a,t)=>{const m=byT[t.id];return a+Math.max(0,load[t.id]-cap[t.id])*40+new Set(m.map(grade)).size*1.2+new Set(m.map(o=>String(o.cls))).size*0.4;},0);
+  let cur=tot();
+  for(let pass=0;pass<4&&S.length<=400;pass++){let imp=false;
+    for(let i=0;i<S.length;i++)for(let j=i+1;j<S.length;j++){const a=S[i],b=S[j],ta=res.get(a.id),tb=res.get(b.id);if(ta===tb)continue;
+      const sw=(x,y,tx,ty)=>{res.set(x.id,ty);res.set(y.id,tx);byT[tx]=byT[tx].filter(o=>o!==x).concat([y]);byT[ty]=byT[ty].filter(o=>o!==y).concat([x]);load[tx]+=W(y)-W(x);load[ty]+=W(x)-W(y);};
+      sw(a,b,ta,tb);const n=tot();if(n<cur-1e-9){cur=n;imp=true;}else sw(b,a,ta,tb);}
+    if(!imp)break;}
+  const name=id=>(D.teachers.find(t=>t.id===id)||{}).name||'';
+  const list=S.map(s=>{const to=res.get(s.id),why=[];
+    if(s.caseMgr===to)why.push('維持原個管');if(teach[s.id+'|'+to])why.push('有教到他（'+teach[s.id+'|'+to]+' 門）');
+    const same=byT[to].filter(o=>o!==s&&String(o.cls)===String(s.cls)).length;if(same)why.push('同班還有 '+same+' 位');
+    return {sid:s.id,cls:s.cls,seat:s.seat,name:s.name,from:s.caseMgr||'',fromName:name(s.caseMgr),to,toName:name(to),why,change:(s.caseMgr||'')!==to};});
+  const summary=T.map(t=>{const m=byT[t.id];return {id:t.id,name:t.name,n:m.length,cap:cap[t.id],capSet:+t.cmCap>0,grades:[...new Set(m.map(grade))].sort(),classes:new Set(m.map(o=>String(o.cls))).size,taught:m.filter(o=>teach[o.id+'|'+t.id]).length};});
+  return {list,summary};
+}
+const CORE={suggestCaseMgr,normName,teaByName,ttDist,ttParseAll,ttParse,ttNameFix,ttSubjFix,ttClassNo,ttGuessClass,ttKnown,ttStore,ttTeachers,EXAM_TT,TT_SUBJ,importLocks,newTeacher,canonSubj,importTeacherList,importStudents,newTerm,assignLocks,refineLocks,importOff,importCourseTable,needList,candidates,placeStudents,aiProblem,aiPrompt,aiApply,DAYS,ROLES,MODES,GRADE,gradeOfCls,uid,defaultData,emptyData,normalize,compile,why,evaluate,solve,toState,fromState,canPlace,assignRooms,lockTable};
 if(typeof module!=='undefined')module.exports=CORE;

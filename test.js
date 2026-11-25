@@ -323,6 +323,19 @@ const ok=(c,m)=>{console.log((c?'  通過 ':'  失敗 ')+m);if(!c)fail++;};
   const E=C.normalize({students:[{id:'x',cls:'701',name:'甲',note:'情緒障礙，需要冷靜角'}],settings:{}});
   ok(E.students[0].privNote==='情緒障礙，需要冷靜角'&&!E.students[0].note&&C.normalize(Object.assign(E,{students:[Object.assign(E.students[0],{note:'帶課本'})]})).students[0].note==='帶課本','舊的備註先搬到私密備註，之後寫的公開提醒不會再被搬走');
   const F=C.defaultData();C.importStudents(F,'班級\t座號\t姓名\t備註\n701\t03\t王小明\t服藥中');ok(F.students[0].privNote==='服藥中'&&!F.students[0].note,'名單上的備註匯入成私密備註');
+// 19. 個管分配建議
+{
+  console.log('\n19. 個管分配建議');
+  const D=C.defaultData(),res=D.teachers.filter(t=>t.role==='資源班');
+  let R=C.suggestCaseMgr(D);ok(R.list.length===D.students.length&&!R.list.some(x=>x.change),'已經平均又有教到的分配，不會亂改');
+  D.students.forEach(s=>{s.caseMgr='';});R=C.suggestCaseMgr(D);
+  const n=R.summary.map(s=>s.n);ok(Math.max(...n)-Math.min(...n)<=1,'沒有個管的學生平均分給每位老師（'+n.join('、')+'）');
+  ok(R.list.every(x=>x.to),'每位學生都有建議的個管');
+  res[0].cmCap=2;R=C.suggestCaseMgr(D);ok(R.summary.find(s=>s.id===res[0].id).n<=2,'設了上限的老師不超過上限');
+  res[1].noCM=true;R=C.suggestCaseMgr(D);ok(!R.list.some(x=>x.to===res[1].id),'勾「不當個管」的老師不會被分到');
+  const S=D.students.find(s=>D.groups.some(g=>g.teacher===res[2].id&&g.students.includes(s.id)));
+  delete res[0].cmCap;delete res[1].noCM;D.students.forEach(s=>{s.caseMgr='';});R=C.suggestCaseMgr(D);
+  ok(!S||R.list.filter(x=>x.why.some(w=>/有教到/.test(w))).length>=R.list.length*0.7,'大多數學生分給有教到他的老師');
 }
 
 console.log(fail?('\n有 '+fail+' 項失敗'):'\n全部通過');

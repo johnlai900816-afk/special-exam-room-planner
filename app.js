@@ -124,7 +124,7 @@ function renderStu(){
   const show=s=>(!stuMine||(stuMine==='-'?!s.caseMgr:s.caseMgr===stuMine))&&(!stuDue||dueIds.has(s.id));
   const rows=D.students.map((s,i)=>({s,i})).filter(o=>show(o.s)),pv=stuPriv?'':' hidden';
   let h=`<p class="guide">整個系統共用這一份名冊：排課、段考考場、通知單都讀這裡，只要維護一次。考評服務在「段考考場」設定，這裡會同步顯示。</p>
-  <div class="bar"><button class="b pri" onclick="addStu()">新增學生</button><button class="b" onclick="pasteStu()">從 Excel 貼上名單</button><button class="b" onclick="D.students.sort(sortStu);changed();render()">依班級座號排序</button>
+  <div class="bar"><button class="b pri" onclick="addStu()">新增學生</button><button class="b" onclick="pasteStu()">從 Excel 貼上名單</button><button class="b" onclick="D.students.sort(sortStu);changed();render()">依班級座號排序</button><button class="b" onclick="cmOpen()">建議個管分配</button>
     <select aria-label="篩選學生" onchange="stuMine=this.value;render()"><option value="">全部學生</option>${res.map(t=>`<option value="${esc(t.id)}"${stuMine===t.id?' selected':''}>只看我的個案：${esc(t.name)}</option>`).join('')}<option value="-"${stuMine==='-'?' selected':''}>還沒指定個管老師</option></select>
     ${stuDue?`<button class="b warn" onclick="stuDue=0;render()">只顯示本月到期 ✕</button>`:''}
     <label class="note" style="margin:0"><input type="checkbox"${stuPriv?' checked':''} onchange="stuPriv=this.checked;render()"> 顯示私密欄位</label>
@@ -934,6 +934,26 @@ function ttApplyCS(){const tt=D.tt||{};let n=0;const list=[];
   snapshot('用課表更新任課老師之前');list.forEach(([c,b,name])=>{const t=findTeacher(D,name,'普通班'),k=c+'|'+canonSubj(D,b);if(D.classSubj[k]!==t.id){D.classSubj[k]=t.id;n++;}});
   D=normalize(D);changed();render();toast('更新了 '+n+' 格任課老師');}
 function ttClear(){if(!confirm('清除讀進來的全校課表？'))return;snapshot('清除全校課表之前');D.tt={};changed();render();}
+
+/* ───── 個管分配建議：先看建議、勾選要改的，再套用 ───── */
+let CMR=null;
+function cmOpen(){const res=D.teachers.filter(t=>t.role==='資源班');if(!res.length){toast('先在「名冊 › 老師」新增資源班老師');return;}
+  openDlg(`<h3>建議個管分配</h3><p class="note">系統會依這幾個原則建議：已經有個管的盡量不換；有教到這位學生的老師優先；同年級、同班的學生盡量給同一位，個管要聯絡的導師比較少；人數平均。只是建議，勾選後才會改。</p>
+  <div class="scroll"><table class="ed"><tr><th>資源班老師</th><th>目前個管</th><th>最多帶幾位</th><th>不當個管</th></tr>${res.map(t=>`<tr><td>${esc(t.name)}</td><td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length} 位</td>
+    <td><input type="number" min="0" max="60" class="w3" value="${+t.cmCap>0?t.cmCap:''}" placeholder="平均" onchange="cmSetT('${t.id}','cmCap',this.value)"></td>
+    <td><input type="checkbox"${t.noCM?' checked':''} onchange="cmSetT('${t.id}','noCM',this.checked)"></td></tr>`).join('')}</table></div>
+  <label class="note" style="display:block;margin:8px 0"><input type="checkbox" id="cmKeep" checked> 已經有個管的學生盡量不換（取消勾選＝全部重新分配）</label>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="cmRun()">產生建議</button><button class="b" onclick="closeDlg()">取消</button></div><div id="cmOut"></div>`);}
+function cmSetT(id,k,v){const t=D.teachers.find(x=>x.id===id);if(!t)return;if(k==='cmCap'){if(+v>0)t.cmCap=+v;else delete t.cmCap;}else{if(v)t.noCM=true;else delete t.noCM;}changed();}
+function cmRun(){CMR=suggestCaseMgr(D,{keep:$('cmKeep').checked});const out=$('cmOut');if(!CMR.list.length){out.innerHTML='<p class="note">'+esc(CMR.note||'沒有學生')+'</p>';return;}
+  const ch=CMR.list.filter(x=>x.change);
+  out.innerHTML=`<h3>分配後每位老師</h3><div class="scroll"><table class="ed"><tr><th>老師</th><th>人數</th><th>年級</th><th>要聯絡的班級</th><th>有教到的</th></tr>${CMR.summary.map(s=>`<tr><td>${esc(s.name)}</td><td>${s.n}<span class="dim"> / ${s.capSet?'上限 ':'約 '}${s.cap}</span>${s.n>s.cap?' <span class="warn">超過</span>':''}</td><td>${s.grades.map(g=>g+' 年級').join('、')||'－'}</td><td>${s.classes} 班</td><td>${s.taught} 位</td></tr>`).join('')}</table></div>
+  <h3>要改的學生 <span class="note" style="font-weight:normal">${ch.length} 位${ch.length?'，勾選的才會改':''}</span></h3>`+
+  (ch.length?`<div class="scroll" style="max-height:40vh"><table class="ed"><tr><th><input type="checkbox" checked onchange="document.querySelectorAll('.cmChk').forEach(c=>c.checked=this.checked)"></th><th>班級座號</th><th>姓名</th><th>目前</th><th>建議</th><th>理由</th></tr>${ch.map(x=>`<tr><td><input type="checkbox" class="cmChk" value="${esc(x.sid)}" checked></td><td>${esc(x.cls)}${x.seat?'-'+esc(String(x.seat).padStart(2,'0')):''}</td><td>${esc(x.name)}</td><td class="dim">${esc(x.fromName||'沒有')}</td><td><b>${esc(x.toName)}</b></td><td class="dim">${esc(x.why.join('、')||'平均人數')}</td></tr>`).join('')}</table></div>
+  <div class="bar" style="margin:8px 0 0"><button class="b pri" onclick="cmApply()">套用勾選的</button></div>`:'<p class="note">目前的分配已經符合原則，不需要改。</p>');}
+function cmApply(){if(!CMR)return;const ids=new Set([...document.querySelectorAll('.cmChk:checked')].map(c=>c.value));if(!ids.size){toast('沒有勾選');return;}
+  snapshot('個管分配之前');let n=0;CMR.list.forEach(x=>{if(!ids.has(x.sid))return;const s=D.students.find(y=>y.id===x.sid);if(s&&s.caseMgr!==x.to){s.caseMgr=x.to;n++;}});
+  CMR=null;changed();closeDlg();render();toast('已更新 '+n+' 位學生的個管老師；要退回可以到「匯入與新學期」的自動保留版本');}
 
 /* ───── 啟動 ───── */
 D=normalize(load()||emptyData());rebuild();$('title').value=D.title;paintSchool();if(!load())localSave();
