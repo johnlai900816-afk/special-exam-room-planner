@@ -1,0 +1,21 @@
+# Firebase App Hosting 設定（尚未部署；步驟見 MIGRATION.md「部署」）
+# App Hosting 的 backend 根目錄設成 web/。這裡關掉靜態輸出，改用 Next.js 伺服器，之後才能加 API routes。
+runConfig:
+  region: asia-east1
+  minInstances: 0
+  maxInstances: 4
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: NEXT_OUTPUT
+    value: server
+    availability:
+      - BUILD
+      - RUNTIME
+  # 部署在網域根目錄，不需要 basePath
+  - variable: BASE_PATH
+    value: ""
+    availability:
+      - BUILD

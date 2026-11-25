@@ -1,0 +1,193 @@
+rules_version = '2';
+// 資源班管理系統｜提議的 Firestore 規則（尚未部署，不要直接貼到正式專案）
+//
+// 分兩段：
+//   A. 舊位置（舊版 cloud.js / exam.html 正在用的 config/access、rc/*、exams/*、view/*）
+//      和目前正式的 firestore.rules 完全相同，舊版照常運作；只多開放三個「過渡期」集合給新版的老師帳號。
+//   B. 新位置 schools/{sid}/…（目標模型）：角色來自 custom claims {sid, role, teacherId}，
+//      claims 與成員文件只由 Cloud Functions（functions/roles.js）寫入。
+// 部署前請在 Firebase 模擬器跑過（見 MIGRATION.md「規則」）。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────── 共用 ─────────
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function email() { return request.auth.token.email; }
+    function uid() { return request.auth.uid; }
+
+    // ───────── A. 舊位置（和正式規則相同）─────────
+    function access() { return get(/databases/$(database)/documents/config/access).data; }
+    function member() { return signedIn() && email() in access().emails; }
+    function editor() { return member() && !(email() in access().get('viewers', [])); }
+    // 新版：config/access.bind = { 信箱: teacher id }，由主持人設定
+    function myTeacherLegacy() { return access().get('bind', {}).get(email(), ''); }
+
+    match /config/access {
+      allow get: if signedIn() && (resource == null || email() in resource.data.emails);
+      allow create: if signedIn() && request.resource.data.admin == email() && request.resource.data.emails == [email()];
+      allow update: if signedIn() && resource.data.admin == email() && request.resource.data.admin == email()
+        && email() in request.resource.data.emails && !(email() in request.resource.data.get('viewers', []));
+    }
+    match /rc/presence { allow read, write: if member(); }
+    match /rc/{id} {
+      allow read: if member();
+      allow write: if editor();
+    }
+    match /exams/presence { allow read, write: if member(); }
+    match /view/{t} {
+      allow get: if true;
+      allow write: if editor() && access().get('link', '') != ''
+        && (t == access().link || t == access().link + '_n');
+    }
+    match /exams/{id} {
+      allow read: if member();
+      allow write: if editor();
+    }
+
+    // ── A+. 過渡期新增（新版用；舊版不碰）──
+    // 老師自己的不排課時段：老師只能寫自己綁定的那一位；管理者（編輯）讀取並套用到 rc/main
+    match /teacherOff/{teacherId} {
+      allow read: if editor() || (member() && myTeacherLegacy() == teacherId);
+      allow create, update: if member() && (
+          (myTeacherLegacy() == teacherId
+            && request.resource.data.teacherId == teacherId
+            && request.resource.data.by == email()
+            && request.resource.data.status == 'pending'
+            && request.resource.data.off is list && request.resource.data.off.size() <= 80)
+          || (editor() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'appliedBy', 'appliedAt'])));
+      allow delete: if editor();
+    }
+    // 還不是成員的人送出加入申請（只能寫自己的；管理者讀、處理完刪掉）
+    match /joinRequests/{reqUid} {
+      allow create: if signedIn() && reqUid == uid() && request.resource.data.email == email()
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'name', 'note', 'at'])
+        && request.resource.data.name.size() <= 40 && request.resource.data.note.size() <= 200;
+      allow read, delete: if editor() || (signedIn() && reqUid == uid());
+    }
+    // 老師自己的回覆（通知單、IEP 會議出席…）：只能寫自己的
+    match /replies/{topic}/by/{replyUid} {
+      allow read: if editor() || (member() && replyUid == uid());
+      allow create, update: if member() && replyUid == uid() && request.resource.data.uid == uid() && request.resource.data.email == email();
+      allow delete: if editor();
+    }
+
+    // ───────── B. 新位置（目標模型）─────────
+    function claims() { return request.auth.token; }
+    function inSchool(sid) { return signedIn() && claims().sid == sid; }
+    function isAdmin(sid) { return inSchool(sid) && claims().role == 'admin'; }
+    function canRead(sid) { return inSchool(sid) && claims().role in ['admin', 'teacher', 'viewer']; }
+    function canEdit(sid) { return isAdmin(sid); }
+    function myTeacher() { return claims().get('teacherId', ''); }
+    // 每份文件都帶 rev：新增從 1 開始、更新剛好 +1，updatedBy 一定是自己
+    function revCreate() { return request.resource.data.rev == 1 && request.resource.data.updatedBy == uid(); }
+    function revNext() { return request.resource.data.rev == resource.data.rev + 1 && request.resource.data.updatedBy == uid(); }
+    function onlyKeys(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    match /schools/{sid} {
+      allow get: if canRead(sid);
+      allow update: if isAdmin(sid) && onlyKeys(['name', 'domain']);
+
+      // 成員與 claims 只由 Cloud Function 寫；本人與管理者可以讀
+      match /members/{mUid} {
+        allow get: if inSchool(sid) && (mUid == uid() || isAdmin(sid));
+        allow list: if isAdmin(sid);
+        allow write: if false;
+      }
+      // 邀請也由 Function（createInvite / acceptInvite）寫
+      match /invites/{inviteEmail} {
+        allow read: if isAdmin(sid);
+        allow write: if false;
+      }
+
+      match /terms/{tid} {
+        allow read: if canRead(sid);
+        allow create: if canEdit(sid) && revCreate();
+        allow update: if canEdit(sid) && revNext();
+        allow delete: if isAdmin(sid);
+
+        match /students/{stuId} {
+          allow read: if canRead(sid);
+          allow create: if canEdit(sid) && revCreate();
+          allow update: if canEdit(sid) && revNext();
+          allow delete: if isAdmin(sid);
+
+          // 敏感資料：只有個管老師與管理者讀得到
+          match /private/{docId} {
+            function caseMgr() { return get(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/students/$(stuId)).data.caseMgrUid; }
+            allow read: if isAdmin(sid) || (inSchool(sid) && caseMgr() == uid());
+            allow create: if (isAdmin(sid) || (inSchool(sid) && caseMgr() == uid())) && revCreate();
+            allow update: if (isAdmin(sid) || (inSchool(sid) && caseMgr() == uid())) && revNext();
+            allow delete: if isAdmin(sid);
+          }
+        }
+
+        // 老師：管理者全部可改；老師本人只能改自己的不排課時段
+        match /teachers/{teacherId} {
+          allow read: if canRead(sid);
+          allow create: if canEdit(sid) && revCreate();
+          allow update: if revNext() && (canEdit(sid)
+            || (inSchool(sid) && claims().role == 'teacher' && myTeacher() == teacherId
+                && onlyKeys(['off', 'rev', 'updatedBy', 'updatedAt'])
+                && request.resource.data.off is list && request.resource.data.off.size() <= 80));
+          allow delete: if isAdmin(sid);
+        }
+
+        // 課程與排課結果（slots 在課程文件上）
+        match /groups/{gid} {
+          allow read: if canRead(sid);
+          allow create: if canEdit(sid) && revCreate();
+          allow update: if canEdit(sid) && revNext();
+          allow delete: if isAdmin(sid);
+        }
+
+        // 段考考場：管理者編輯；老師讀
+        match /exams/{eid} {
+          allow read: if canRead(sid);
+          allow create: if canEdit(sid) && revCreate();
+          allow update: if canEdit(sid) && revNext();
+          allow delete: if isAdmin(sid);
+          match /{sub}/{doc} {
+            allow read: if canRead(sid);
+            allow create: if canEdit(sid) && revCreate();
+            allow update: if canEdit(sid) && revNext();
+            allow delete: if isAdmin(sid);
+          }
+        }
+
+        // 點名：管理者與老師都能點（之後可再收緊成「只能點自己的課」）
+        match /attendance/{date} {
+          allow read: if canRead(sid);
+          allow create: if inSchool(sid) && claims().role in ['admin', 'teacher'] && revCreate();
+          allow update: if inSchool(sid) && claims().role in ['admin', 'teacher'] && revNext();
+          allow delete: if isAdmin(sid);
+        }
+
+        // IEP 會議：管理者建立；受邀老師只寫自己的回覆
+        match /iep/{mid} {
+          allow read: if isAdmin(sid) || (inSchool(sid) && uid() in resource.data.get('attendeeUids', []));
+          allow create: if canEdit(sid) && revCreate();
+          allow update: if canEdit(sid) && revNext();
+          allow delete: if isAdmin(sid);
+          match /responses/{rUid} {
+            allow read: if isAdmin(sid) || (inSchool(sid) && rUid == uid());
+            allow create: if inSchool(sid) && rUid == uid() && revCreate();
+            allow update: if inSchool(sid) && rUid == uid() && revNext();
+            allow delete: if isAdmin(sid);
+          }
+        }
+      }
+    }
+
+    // 免登入檢視（家長、導師）：只能用鑰匙取得單一份、要沒過期；只有後端寫
+    match /publicViews/{token} {
+      allow get: if resource.data.exp > request.time;
+      allow list, write: if false;
+    }
+
+    // 稽核紀錄：只有後端寫；管理者讀自己學校的
+    match /auditLogs/{id} {
+      allow get, list: if signedIn() && claims().role == 'admin' && resource.data.sid == claims().sid;
+      allow write: if false;
+    }
+  }
+}

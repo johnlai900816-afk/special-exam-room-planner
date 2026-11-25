@@ -1,0 +1,59 @@
+# GitHub Actions 範本（尚未啟用）：舊站留在根目錄，新版建置後放在 /app/。
+# 啟用方式：複製到 repo 根目錄的 .github/workflows/pages.yml，並在 GitHub「Settings › Pages」把來源改成「GitHub Actions」。
+# 注意：改成 Actions 發布之後，根目錄的舊站也是由這個流程發布（下面的 cp 那一步），不再是「直接從 main 分支」。
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 舊版的測試
+        run: node test.js
+      - name: 建置新版
+        working-directory: web
+        env:
+          BASE_PATH: /special-exam-room-planner/app
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+      - name: 組合網站（舊版在根目錄、新版在 /app）
+        run: |
+          mkdir -p _site
+          # 舊版：只放網頁需要的檔案（不要把 web/、測試、規則以外的東西放上去）
+          cp index.html app.js app.css core.js cloud.js school.js firebase-config.js checkin.js exam.html notice.html stamp.png firestore.rules _site/
+          cp -r web/out _site/app
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

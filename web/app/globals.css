@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+/* 設計 token（視覺審查採用版）：淺色暖調為主，系統深色模式時切換。
+   顏色用 CSS 變數，Tailwind 類別名稱：bg-bg、bg-card、text-ink2、text-mute、bg-acc、bg-acc-l、text-warn、bg-bad-l… */
+:root {
+  --bg: #f6f2ea;
+  --sunk: #efe9dc;
+  --card: #fffdf8;
+  --field: #ffffff;
+  --hover: #ece5d6;
+  --line: #e6dfd2;
+  --line2: #d3c9b8;
+  --ink: #2a2620;
+  --ink2: #4d463c;
+  --mute: #6f6556;
+  --acc: #2f6a5b;
+  --acc-d: #235044;
+  --acc-l: #e3efe9;
+  --ok: #2f6a5b;
+  --warn: #96590a;
+  --warn-l: #fcf1dc;
+  --bad: #a8321f;
+  --bad-l: #fbe9e4;
+  --focus: #d8a93a;
+  /* 原班鎖課的課塊用（審查沒有指定，從 acc 的色相推出來的冷色） */
+  --info: #3d5f80;
+  --info-l: #e5ecf2;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1a17;
+    --sunk: #171513;
+    --card: #25221e;
+    --field: #2c2924;
+    --hover: #322e28;
+    --line: #3a352e;
+    --line2: #4a443b;
+    --ink: #ece6da;
+    --ink2: #cfc7b8;
+    --mute: #9c9384;
+    --acc: #6fb09c;
+    --acc-d: #8cc4b2;
+    --acc-l: #24352f;
+    --ok: #6fb09c;
+    --warn: #e0a548;
+    --warn-l: #3a2e1a;
+    --bad: #e98a76;
+    --bad-l: #3d2420;
+    --focus: #d8a93a;
+    --info: #8fb0d0;
+    --info-l: #222c36;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sunk: var(--sunk);
+  --color-card: var(--card);
+  --color-field: var(--field);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink2);
+  --color-mute: var(--mute);
+  --color-acc: var(--acc);
+  --color-acc-d: var(--acc-d);
+  --color-acc-l: var(--acc-l);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-warn-l: var(--warn-l);
+  --color-bad: var(--bad);
+  --color-bad-l: var(--bad-l);
+  --color-focus: var(--focus);
+  --color-info: var(--info);
+  --color-info-l: var(--info-l);
+
+  --font-sans: var(--font-noto-sans-tc), "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-serif: var(--font-noto-serif-tc), "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  /* 標楷體：只用在要列印的正式公文、通知單 */
+  --font-kai: "DFKai-SB", "BiauKai", "標楷體", "Kaiti TC", serif;
+}
+
+@theme {
+  /* 字級 12/13/14.5/16/18/22/30px（用 rem，跟著「設定」的字級放大）；內文 16 */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.90625rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.875rem;
+  /* 圓角 8/12/16（rounded-lg / rounded-xl / rounded-2xl） */
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  /* 葉形圓角：只給可以點的卡片 */
+  --radius-leaf: 16px 16px 16px 4px;
+}
+
+/* 使用者在「設定」選的字級（html 上的 data-font） */
+html[data-font="lg"] {
+  font-size: 112.5%;
+}
+html[data-font="xl"] {
+  font-size: 125%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  background: var(--field);
+  color: var(--ink);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+}
