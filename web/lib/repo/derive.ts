@@ -86,3 +86,10 @@ export function withLinks(R: TermRecords, id: string, s: StudentDoc): StudentDoc
 }
 
 export type { GroupDoc };
+
+/** 新的點名文件第一次建立時記下組名與節次名稱（舊版 _info）：新學期清掉組別後統計也看得到 */
+export function infoOf(g: Pick<GroupDoc, "name"> | undefined, periods: { id: string; name: string }[] | undefined, pid: string): { info?: { g: string; p: string } } {
+  if (!g) return {};
+  const p = (periods || []).find((x) => x.id === pid);
+  return { info: { g: String(g.name || ""), p: p ? String(p.name || "") : "" } };
+}

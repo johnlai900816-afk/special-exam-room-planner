@@ -1,0 +1,7 @@
+/* 每月超鐘點的紙（印給教務處，A4 直式、黑白）：從 repo 根目錄 extras.js 的 css() 逐字複製（.xx-otm 那幾行）。
+   每一行規則都要和 extras.js 一樣（test/stats.test.ts 檢查）；表格與 #outArea 的樣式在 components/sched/out.css。 */
+.xx-otm{font-family:var(--kai,"標楷體",serif);color:#000;background:#fff}
+.xx-otm h2{font-size:16pt;text-align:center;line-height:1.4;margin:0 0 6px}
+.xx-otm .xx-otn{font-size:11pt;margin:0 0 6px}
+.xx-otm table.out th,.xx-otm table.out td{font-size:12pt;padding:6px 8px;border-color:#000;vertical-align:middle;color:#000}.xx-otm table.out th{background:#fff}
+.xx-otm .xx-otsg{display:flex;gap:40mm;margin-top:16mm;font-size:12pt}.xx-otm .xx-otsg span{flex:1;border-bottom:1px solid #000;padding-bottom:2mm}

@@ -25,7 +25,7 @@ import {
 } from "firebase/firestore";
 import { NX } from "../legacy";
 import { isStaff, type Collection, type StudentDoc, type TermRecords, type Versioned } from "../model";
-import { applyWrite, linkPatches, withLinks } from "./derive";
+import { applyWrite, infoOf, linkPatches, withLinks } from "./derive";
 import { emptyRecords } from "./toCoreD";
 import {
   RepoDeniedError,
@@ -321,6 +321,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
           teacherId: g?.teacherId || "",
           marks: {},
           roster: g ? [...g.studentIds] : [],
+          ...infoOf(g, cache.records.term?.periods, pid),
         };
         const marks = { ...(base.marks || {}) };
         if (rec) marks[studentId] = rec;

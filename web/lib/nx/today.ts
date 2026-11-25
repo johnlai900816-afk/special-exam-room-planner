@@ -181,6 +181,8 @@ export function attSummary(att: Record<string, AttendanceDoc>, sid: string, peri
   Object.values(att)
     .sort((a, b) => a.date.localeCompare(b.date))
     .forEach((a) => {
+      // 沒有任何人的紀錄＝沒點名（舊版會刪掉那一節），不算缺席
+      if (!Object.keys(a.marks || {}).length) return;
       const roster = new Set([...(a.roster || []), ...Object.keys(a.marks || {})]);
       if (!roster.has(sid)) return;
       const p = periods.find((x) => x.id === a.pid);

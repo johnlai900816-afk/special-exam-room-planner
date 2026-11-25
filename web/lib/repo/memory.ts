@@ -2,7 +2,7 @@
 import { demoData } from "../local";
 import type { TermRecords, Versioned } from "../model";
 import { visible, writeDenied } from "./access";
-import { applyWrite, linkPatches, withLinks } from "./derive";
+import { applyWrite, infoOf, linkPatches, withLinks } from "./derive";
 import { splitD } from "./toCoreD";
 import {
   RepoDeniedError,
@@ -165,7 +165,7 @@ export function createMemoryRepo(scope: RepoScope, init?: TermRecords | MemorySt
       const g = store.records.groups[gid];
       const base: DocOf<"attendance"> = before
         ? clone(before)
-        : { date, key: gid + "@" + pid, gid, pid, teacherId: g?.teacherId || "", marks: {}, roster: g ? [...g.studentIds] : [] };
+        : { date, key: gid + "@" + pid, gid, pid, teacherId: g?.teacherId || "", marks: {}, roster: g ? [...g.studentIds] : [], ...infoOf(g, store.records.term?.periods, pid) };
       if (rec) base.marks[studentId] = rec;
       else delete base.marks[studentId];
       await write("attendance", id, base, store.revs[revKey("attendance", id)]?.rev || 0);

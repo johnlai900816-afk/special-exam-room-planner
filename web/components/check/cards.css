@@ -1,0 +1,11 @@
+/* 學生卡（點名 › 學生卡）：從 repo 根目錄 app.css 逐字複製（.cardsheet、.scard 與列印時一行三張）。
+   每一行規則都要和 app.css 一樣（test/stats.test.ts 檢查）。紙一律白底黑字（深色模式也一樣）。 */
+.cardsheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.scard{display:flex;gap:14px;align-items:center;border:1px solid #999;border-radius:12px;padding:12px;background:#fff;color:#000;break-inside:avoid}
+.scard .qr{width:96px;height:96px;flex:none;font-size:12px;color:#555}
+.scard small{display:block;color:#555;font-size:var(--fs-sm)}
+.scard b{display:block;font-weight:700;font-size:var(--fs-xl);letter-spacing:.06em;margin:2px 0 4px}
+.scard span{font-size:12px;color:#555}
+@media print {
+  .cardsheet{grid-template-columns:repeat(3,1fr);gap:8px}
+}
