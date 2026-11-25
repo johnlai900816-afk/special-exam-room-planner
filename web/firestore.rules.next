@@ -76,8 +76,9 @@ service cloud.firestore {
 
     // 名冊與排課：rc/main（不能刪除）
     match /rc/main {
-      allow read: if member();
-      allow create, update: if editor() && jsonDoc() && nextRev();
+      // 2026-11 已切換到新版（schools/banqiao）：舊資料只剩編輯讀得到，不能再寫
+      allow read: if editor();
+      allow create, update: if false;
       allow delete: if false;
     }
     // 誰在線上：rc/presence
@@ -88,8 +89,8 @@ service cloud.firestore {
     }
     // 點名紀錄：rc/att-YYYY-MM-DD，一天一份；其他名稱的 rc 文件都不能建立
     match /rc/{id} {
-      allow read: if member() && id.matches('att-[0-9]{4}-[0-9]{2}-[0-9]{2}');
-      allow create, update: if editor() && id.matches('att-[0-9]{4}-[0-9]{2}-[0-9]{2}') && incoming().size() <= 300;
+      allow read: if editor() && id.matches('att-[0-9]{4}-[0-9]{2}-[0-9]{2}');
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -108,8 +109,8 @@ service cloud.firestore {
     }
     // 考場資料 exams/main、通知單 exams/notice（不能刪除，也不能建立其他名稱的文件）
     match /exams/{id} {
-      allow read: if member() && id in ['main', 'notice'];
-      allow create, update: if editor() && id in ['main', 'notice'] && jsonDoc() && nextRev();
+      allow read: if editor() && id in ['main', 'notice'];
+      allow create, update: if false;
       allow delete: if false;
     }
     // 免登入檢視連結：文件名稱就是鑰匙（32 碼亂數），後面可以接「_班級」或「_n」的分班副本。
@@ -144,7 +145,7 @@ service cloud.firestore {
       allow delete: if editor();
     }
     match /iepResp/{round}/r/{h} {
-      allow read: if member();
+      allow read: if editor();
       allow create, update: if false;
       allow delete: if editor();
     }

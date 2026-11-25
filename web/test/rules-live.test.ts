@@ -102,14 +102,14 @@ for (const [label, file] of files) {
     });
 
     describe("rc/main（名冊與排課）", () => {
-      it("成員（含檢視）讀得到，非成員讀不到", async () => {
-        await assertSucceeds(getDoc(doc(vw(), "rc/main")));
+      it("切換後：只有編輯讀得到，檢視和非成員讀不到", async () => {
+        await assertFails(getDoc(doc(vw(), "rc/main")));
         await assertSucceeds(getDoc(doc(ed(), "rc/main")));
         await assertFails(getDoc(doc(stranger(), "rc/main")));
       });
-      it("編輯寫得進去（json/by/at，rev 剛好 +1 或不帶）；檢視寫不進去", async () => {
-        await assertSucceeds(setDoc(doc(ed(), "rc/main"), jsonDoc(ED, { rev: 4 })));
-        await assertSucceeds(setDoc(doc(ed(), "rc/main"), jsonDoc(ED)));
+      it("切換後：誰都寫不進去", async () => {
+        await assertFails(setDoc(doc(ed(), "rc/main"), jsonDoc(ED, { rev: 4 })));
+        await assertFails(setDoc(doc(host(), "rc/main"), jsonDoc(HOST)));
         await assertFails(setDoc(doc(vw(), "rc/main"), jsonDoc(VW)));
       });
       it("格式不對被拒：by 不是自己、多出欄位、rev 跳號、at 不是伺服器時間；不能刪", async () => {
@@ -127,9 +127,10 @@ for (const [label, file] of files) {
         await assertFails(setDoc(doc(vw(), "rc/presence"), { uEd: { email: ED, name: "冒充", at: 1 } }));
         await assertFails(setDoc(doc(stranger(), "rc/presence"), { uX: { email: "x@else.test", name: "x", at: 1 } }));
       });
-      it("點名：成員讀、編輯寫；其他名稱的 rc 文件不能建", async () => {
-        await assertSucceeds(getDoc(doc(vw(), "rc/att-2026-11-26")));
-        await assertSucceeds(setDoc(doc(ed(), "rc/att-2026-11-27"), { "g1@1": { s1: { st: "in" } } }));
+      it("點名（切換後）：只有編輯讀、誰都不能寫；其他名稱的 rc 文件不能建", async () => {
+        await assertFails(getDoc(doc(vw(), "rc/att-2026-11-26")));
+        await assertSucceeds(getDoc(doc(ed(), "rc/att-2026-11-26")));
+        await assertFails(setDoc(doc(ed(), "rc/att-2026-11-27"), { "g1@1": { s1: { st: "in" } } }));
         await assertFails(setDoc(doc(vw(), "rc/att-2026-11-27"), { "g1@1": { s1: { st: "in" } } }));
         await assertFails(setDoc(doc(ed(), "rc/other"), { a: 1 }));
         await assertFails(getDoc(doc(ed(), "rc/other")));
@@ -137,9 +138,10 @@ for (const [label, file] of files) {
     });
 
     describe("exams/*（段考考場）", () => {
-      it("main、notice：成員讀、編輯寫；其他名稱不行", async () => {
-        await assertSucceeds(getDoc(doc(vw(), "exams/main")));
-        await assertSucceeds(setDoc(doc(ed(), "exams/notice"), jsonDoc(ED)));
+      it("main、notice（切換後）：只有編輯讀、誰都不能寫；其他名稱不行", async () => {
+        await assertFails(getDoc(doc(vw(), "exams/main")));
+        await assertSucceeds(getDoc(doc(ed(), "exams/main")));
+        await assertFails(setDoc(doc(ed(), "exams/notice"), jsonDoc(ED)));
         await assertFails(setDoc(doc(vw(), "exams/main"), jsonDoc(VW)));
         await assertFails(setDoc(doc(ed(), "exams/foo"), jsonDoc(ED)));
         await assertFails(getDoc(doc(stranger(), "exams/main")));
@@ -186,9 +188,10 @@ for (const [label, file] of files) {
         await assertFails(setDoc(doc(ed(), "iepTok/" + "2".repeat(64)), { ...tok, exp: Timestamp.fromMillis(Date.now() + 130 * 864e5) }));
         await assertFails(setDoc(doc(ed(), "iepTok/" + "3".repeat(64)), { ...tok, keys: "x" }));
       });
-      it("iepResp：成員讀得到，誰都不能從網頁寫；編輯可以刪", async () => {
+      it("iepResp（切換後）：只有編輯讀得到，誰都不能從網頁寫；編輯可以刪", async () => {
         const p = "iepResp/r1/r/" + "a".repeat(64);
-        await assertSucceeds(getDoc(doc(vw(), p)));
+        await assertFails(getDoc(doc(vw(), p)));
+        await assertSucceeds(getDoc(doc(ed(), p)));
         await assertFails(getDoc(doc(stranger(), p)));
         await assertFails(setDoc(doc(ed(), p), { free: ["x"] }));
         await assertFails(deleteDoc(doc(vw(), p)));
