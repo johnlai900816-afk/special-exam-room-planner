@@ -394,7 +394,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 |---|---|---|
 | 今天 | `/me/` | 我的課（現在這一節）、待辦（要點名、IEP 要填空堂、可以排的調查、個管學生 30 天內到期）、要開的會 |
 | 我的學生 | `/me/students/`、個案 `/me/student/?id=` | 學生、組別、課表、出缺席；**個管才有**私密欄位、家長聯絡、段考服務（`students/{id}/private/profile`，`Repo.patch` 帶 rev） |
-| 我的 IEP | `/me/iep/?tab=inv|survey|plan|quick` | 填空堂（`iepInvite`）、調查①②③④、排定與通知（開會通知和舊版逐字相同，`test/iep-print.test.ts`）、直接開會 |
+| 我的 IEP | `/me/iep/?tab=inv|survey|quick` | 填空堂（`iepInvite`）、我的調查（建立調查一個畫面 → 一次調查一頁：QR 與連結 → ①回覆 ②排定 ③通知）、直接開會。開會通知、紙本時段表、QR 小單（3／4／6 份）和舊版逐字相同（`test/iep-print.test.ts`）；舊網址 `tab=plan` 會捲到 ② 排定 |
 | 點名 | `/me/check/` | 我的課、最近的課；`Repo.mark` |
 | 我的設定 | `/me/settings/` | 不排課時段（`Repo.saveMyOff`）、監考（`exam/{eid}` 的 proctorOf／supportOf）、深色、字級、公用電腦模式 |
 
@@ -402,7 +402,10 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
   老師 → Firestore 版 Repo；管理者／編輯／檢視這一階段只看到「管理功能請先用舊版」。沒登入或單機 → 範例資料（記憶體版 Repo，可以選看哪位老師）。
 - 過渡期：`schools/{sid}.mode=='legacy'` 時老師端只讀；`schools/{sid}.native`（集合名稱陣列，和 `nxLink/main.native` 一致，由 Function 寫）列出的部分可以寫。
 - `iep.js`、`teacher.js` 直接 import（`lib/iep.ts`、`lib/teach.ts`，只補型別），和 `core.js` 一樣不複製。
-- 舊版 IEP 的 QR 小單與「③ 連結與 QR」流程正在改版，新版放在獨立元件 `components/iep/QrSlips.tsx`、`components/iep/Publish.tsx`，之後照新設計改這兩個檔。
+- IEP 照舊版的新流程（iep.js 0f95afb、dd2caf9）：`components/iep/Create.tsx`（建立調查：學生、日期、節次、期限；承辦挑時段的格子用 `IEP.pickGrid`，承辦有課的灰掉、原班課表 `ttCellAt` 標主科／建議，「勾選建議時段」；按「建立並產生 QR」＝存檔＋送填空堂＋發布）、
+  `components/iep/RoundPage.tsx`（標題與「調整名單／時段」、`Publish.tsx` 的 QR 與連結（印 QR 小單、複製全部連結、每個人的狀態、重新產生、填空堂）、①回覆 ②排定 ③通知、唯一的預覽區 `#outArea`）。
+  列印的 HTML 都在 `lib/nx/iepPrint.ts`（`noticesHtml`、`paperHtml`、`qrSlipsHtml`），樣式是根目錄的 `iep.css`；一張幾份記在 `rc-iep-per`（和舊版同一個鍵）。
+- **公開資料不放任何「有課」**：`IEP.publicDoc` 沒有 `busy`；`nxIepPublish`（`nx-iep-core.js` 的 `WRITE`）不收 `busy`，整份覆蓋所以舊文件的 `busy` 也會清掉；`iepInvite.busy` 一律 `{}`；紙本時段表不印「有課」。忙碌原因只在發起人的 app 裡排時間用。
 
 **IEP 線上連結**：公開頁（舊版 `iep.html`）與 `iepGetSurvey`／`iepSubmit` 不動。鑰匙只存在發布的那台電腦（`rc-iep-tok`，和舊版同一個鍵；公用電腦模式在 sessionStorage）。
 新版老師不在舊名單的「編輯」裡，規則不讓他寫 `iepTok`，所以新增 `functions/nx-iep.js`（純邏輯 `nx-iep-core.js`，`test/nx-iep.test.ts`）：

@@ -1,7 +1,7 @@
 "use client";
 /* 我的 IEP 的資料操作：調查單存在 iep/{id}（json＝iep.js 的 round），寫入一律 Repo.put 帶 rev；
    發過填空堂邀請（R.inv）的調查單，每次存檔順便更新 iepInvite（內容一樣的不寫）。 */
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { failText, toast } from "@/components/Toast";
 import { IEP, type Busy, type Round } from "@/lib/iep";
 import type { IepRoundDoc } from "@/lib/model";
@@ -17,17 +17,34 @@ export function useIep() {
   const tid = x.tid;
   const ro = !x.writable("iep") || x.repo!.readOnly;
 
-  /** 忙碌時段（有課、不排課、別場已排的 IEP） */
+  /** iep.js 的 ctx（M、排好的節次、教室）：用畫面上已經算好的課表，不再算一次；weekBusy 會把結果快取在 ctx 上 */
+  const ctx = useMemo(() => {
+    const b = x.board;
+    return b ? { M: b.M, slot: b.S.slot, room: b.room } : undefined;
+  }, [x.board]);
+
+  /** 忙碌時段（有課、不排課、別場已排的 IEP）：只在 app 裡排時間用，不放進公開資料 */
   const busyOf = useCallback(
     (D: RcData, R: Round): Busy => {
       try {
-        const b = x.board;
-        return IEP.busyOf(D, R, b ? { M: b.M, slot: b.S.slot, room: b.room } : undefined);
+        return IEP.busyOf(D, R, ctx);
       } catch {
         return {};
       }
     },
-    [x.board],
+    [ctx],
+  );
+
+  /** 照日期、節次、承辦有課、勾選重算候選時段（iep.js buildSlots）；失敗回傳 null */
+  const rebuild = useCallback(
+    (D: RcData, R: Round) => {
+      try {
+        return IEP.buildSlots(D, R, ctx);
+      } catch {
+        return null;
+      }
+    },
+    [ctx],
   );
 
   const syncInvites = useCallback(
@@ -103,5 +120,5 @@ export function useIep() {
     [x.repo, x.data],
   );
 
-  return { R0, revs, tid, ro, D: x.D!, busyOf, save, edit, create, remove, syncInvites };
+  return { R0, revs, tid, ro, D: x.D!, ctx, busyOf, rebuild, save, edit, create, remove, syncInvites };
 }
