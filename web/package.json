@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:rules": "firebase emulators:exec --config firebase.emulator.json --only firestore --project demo-rc \"vitest run test/rules\"",
-    "test:e2e": "firebase emulators:exec --config firebase.emulator.json --only firestore,auth --project demo-rc \"vitest run test/e2e\""
+    "test:e2e": "firebase emulators:exec --config firebase.emulator.json --only firestore,auth --project demo-rc \"vitest run --no-file-parallelism test/e2e\""
   },
   "dependencies": {
     "firebase": "^13.4.0",

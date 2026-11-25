@@ -302,3 +302,73 @@ describe("IEP：老師自己開的調查、填空堂邀請、線上回覆（新�
     await assertFails(setDoc(doc(r2(), T + "/iep/r1/responses/" + "b".repeat(64)), { pk: "x" }));
   });
 });
+
+describe("管理者端的寫入（phase 3a）：老師、班級、學生、private", () => {
+  const st = (uid: string, rev: number) => ({ rev, updatedBy: uid, updatedAt: serverTimestamp() });
+  for (const [who, db, uid] of [
+    ["admin", admin, "uAdmin"],
+    ["editor", editor, "uEditor"],
+  ] as const) {
+    it(who + "：老師（含減授、超鐘點、個管上限）、班級任課老師、學生＋private 同一批", async () => {
+      const d = db();
+      await assertSucceeds(
+        setDoc(doc(d, T + "/teachers/r1"), {
+          ord: 0, name: "林老師", role: "資源班", off: [], hours: 12, reduce: 2, reduceNote: "組長", otMax: 3,
+          prefSubj: ["國文"], prefGrade: ["7"], avoidSubj: [], cmCap: 6, noCM: false, ...st(uid, 2),
+        }),
+      );
+      await assertSucceeds(setDoc(doc(d, T + "/teachers/t9"), { ord: 9, name: "新老師", role: "普通班", off: [], note: "", hours: 0, ...st(uid, 1) }));
+      await assertSucceeds(setDoc(doc(d, T + "/classes/701"), { cls: "701", subj: { 國文: "t9" }, ...st(uid, 1) }));
+      // 換個管：學生與 private 同一批寫（private 的 caseMgrId 要和同一批的學生一致）
+      const b = writeBatch(d);
+      b.set(doc(d, T + "/students/s1"), stu({ name: "王小明", caseMgrId: "r2", teacherIds: ["r1", "r2"], ...st(uid, 2) }));
+      b.set(doc(d, T + "/students/s1/private/profile"), { caseMgrId: "r2", privNote: "秘密一", ...st(uid, 2) });
+      await assertSucceeds(b.commit());
+      // 新增學生＋private；刪學生＋private
+      const b2 = writeBatch(d);
+      b2.set(doc(d, T + "/students/s9"), stu({ ord: 9, name: "新同學", caseMgrId: "", teacherIds: [], ...st(uid, 1) }));
+      b2.set(doc(d, T + "/students/s9/private/profile"), { caseMgrId: "", ...st(uid, 1) });
+      await assertSucceeds(b2.commit());
+      const b3 = writeBatch(d);
+      b3.delete(doc(d, T + "/students/s9/private/profile"));
+      b3.delete(doc(d, T + "/students/s9"));
+      await assertSucceeds(b3.commit());
+      await assertSucceeds(deleteDoc(doc(d, T + "/teachers/t9")));
+    });
+  }
+  it("只改學生的個管、private 沒跟著改：被拒", async () => {
+    const d = admin();
+    const b = writeBatch(d);
+    b.set(doc(d, T + "/students/s1"), stu({ name: "王小明", caseMgrId: "r2", teacherIds: ["r1", "r2"], ...st("uAdmin", 2) }));
+    b.set(doc(d, T + "/students/s1/private/profile"), { caseMgrId: "r1", privNote: "秘密一", ...st("uAdmin", 2) });
+    await assertFails(b.commit());
+  });
+  it("老師欄位型別不對被拒（減授是字串、不當個管不是布林、超鐘點太大）", async () => {
+    const d = admin();
+    const base = { ord: 0, name: "林老師", role: "資源班", off: [], ...st("uAdmin", 2) };
+    await assertFails(setDoc(doc(d, T + "/teachers/r1"), { ...base, reduce: "2" }));
+    await assertFails(setDoc(doc(d, T + "/teachers/r1"), { ...base, noCM: "yes" }));
+    await assertFails(setDoc(doc(d, T + "/teachers/r1"), { ...base, otMax: 99 }));
+    await assertFails(setDoc(doc(d, T + "/teachers/r1"), { ...base, unknownField: 1 }));
+  });
+  it("檢視、老師不能寫老師、班級、學生、private", async () => {
+    for (const [d, uid] of [
+      [viewer(), "uView"],
+      [r1(), "uR1"],
+    ] as const) {
+      await assertFails(setDoc(doc(d, T + "/teachers/t9"), { ord: 9, name: "x", role: "普通班", off: [], ...st(uid, 1) }));
+      await assertFails(updateDoc(doc(d, T + "/teachers/r2"), { hours: 3, ...st(uid, 2) }));
+      await assertFails(setDoc(doc(d, T + "/classes/701"), { cls: "701", subj: {}, ...st(uid, 1) }));
+      await assertFails(setDoc(doc(d, T + "/students/s9"), stu({ name: "x", caseMgrId: "", teacherIds: [], ...st(uid, 1) })));
+      await assertFails(updateDoc(doc(d, T + "/students/s2/private/profile"), { privNote: "x", ...st(uid, 2) }));
+      await assertFails(deleteDoc(doc(d, T + "/students/s2")));
+    }
+  });
+  it("學期文件：管理者、編輯可以建新學期；只有管理者能刪學期；老師不能建", async () => {
+    const T2 = "schools/s1/terms/t2";
+    await assertSucceeds(setDoc(doc(editor(), T2), { title: "115-2", periods: [], rooms: [], settings: {}, ...st("uEditor", 1) }));
+    await assertFails(setDoc(doc(r1(), "schools/s1/terms/t3"), { title: "x", ...st("uR1", 1) }));
+    await assertFails(deleteDoc(doc(editor(), T2)));
+    await assertSucceeds(deleteDoc(doc(admin(), T2)));
+  });
+});

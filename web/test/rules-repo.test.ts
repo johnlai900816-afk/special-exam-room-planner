@@ -15,6 +15,10 @@ import {
   type RepoScope,
 } from "../lib/repo";
 import type { TermRecords } from "../lib/model";
+import { applyOps, planOnD, summarize } from "../lib/nx/apply";
+import { planImport } from "../lib/nx/importer";
+import { sampleSheets } from "../lib/nx/sample";
+import { newTermOps, planNewTerm, NEW_TERM_DEFAULT } from "../lib/nx/term";
 
 let env: RulesTestEnvironment;
 const R0: TermRecords = demoRecords();
@@ -113,5 +117,55 @@ describe("Firestore Repo × 規則", () => {
     expect(Object.keys(after.records.attendance[today + "_" + mine + "@1"].marks).length).toBe(2);
     await expect(t.patch("teachers", "r2", { off: [] }, 1)).rejects.toMatchObject({ code: "permission-denied" });
     await expect(t.patch("students", "s1", { name: "x" }, 1)).rejects.toMatchObject({ code: "permission-denied" });
+  });
+});
+
+describe("Repo.batch × 規則（管理者端：匯入、換個管、刪學生、新學期）", () => {
+  it("管理者匯入範例表：一批寫進去（學生＋private 同一個交易），再匯入一次沒有變更", async () => {
+    const a = repoFor("admin");
+    const L = await a.load();
+    const p = planImport(L.records, sampleSheets(), { hard: "*" });
+    const n = summarize(p.ops, L.revs);
+    expect(n.add).toBeGreaterThan(0);
+    await applyOps(a, p.ops, L.revs, { chunk: 20 });
+    const L2 = await a.load();
+    expect(Object.keys(L2.records.students).length).toBe(Object.keys(L.records.students).length + n.byCol.students.add);
+    expect(summarize(planImport(L2.records, sampleSheets(), { hard: "*" }).ops, L2.revs).total).toBe(0);
+  });
+  it("編輯換個管＋刪一位學生；老師與檢視整批被拒", async () => {
+    const e = repoFor("editor");
+    const L = await e.load();
+    const ids = Object.keys(L.records.students);
+    const p = planOnD(L.records, (D) => {
+      D.students.find((s) => s.id === ids[0])!.caseMgr = "r3";
+      D.groups.forEach((g) => (g.students = g.students.filter((x) => x !== ids[1])));
+      D.students = D.students.filter((s) => s.id !== ids[1]);
+    });
+    await applyOps(e, p.ops, L.revs);
+    const L2 = await e.load();
+    expect(L2.records.privates[ids[0]].caseMgrId).toBe("r3");
+    expect(L2.records.students[ids[1]]).toBeUndefined();
+    expect(L2.records.privates[ids[1]]).toBeUndefined();
+    const q = planOnD(L2.records, (D) => (D.teachers[0].note = "x"));
+    await expect(applyOps(repoFor("teacher", "r1"), q.ops, L2.revs)).rejects.toBeTruthy();
+    await expect(applyOps(repoFor("viewer"), q.ops, L2.revs)).rejects.toBeTruthy();
+  });
+  it("別人先改了：RevConflictError", async () => {
+    const a = repoFor("admin");
+    const L = await a.load();
+    await a.patch("teachers", "r1", { note: "先改" }, L.revs[revKey("teachers", "r1")].rev);
+    const p = planOnD(L.records, (D) => (D.teachers.find((t) => t.id === "r1")!.note = "後改"));
+    await expect(applyOps(a, p.ops, L.revs)).rejects.toBeInstanceOf(RevConflictError);
+  });
+  it("新學期：寫進新的 terms/{tid}（全部新增）", async () => {
+    const L = await repoFor("admin").load();
+    const plan = planNewTerm(L.records, { ...NEW_TERM_DEFAULT, promote: true, title: "下學年" });
+    const uid = "u-admin";
+    const db = env.authenticatedContext(uid, { email: uid + "@school.test", email_verified: true, sid: "s1", role: "admin" }).firestore() as unknown as Firestore;
+    const next = createFirestoreRepo(db, { sid: "s1", termId: "t2", uid, role: "admin" });
+    await next.batch(newTermOps(plan.records), { chunk: 50 });
+    const L2 = await next.load();
+    expect(Object.keys(L2.records.students).length).toBe(plan.counts.students);
+    expect(L2.records.term?.title).toBe("下學年");
   });
 });

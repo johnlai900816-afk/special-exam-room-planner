@@ -14,7 +14,8 @@ import { createFirestoreRepo, createMemoryRepo, toCoreD, type Repo } from "@/lib
 | `RepoScope` | type | `{ sid, termId, uid, role, tid? }`，`role`/`tid` 來自 custom claims |
 | `Loaded` | type | `{ records: TermRecords, revs: RevMap }` |
 | `RevMap`, `revKey(col, id)` | type, fn | 每份文件的 `{rev, updatedBy, updatedAt}`；學期文件的 key 是 `"term"`，其他是 `"students/s1"` |
-| `WritableCol`, `DocOf<C>` | type | `"term" \| "teachers" \| "classes" \| "groups" \| "students" \| "privates" \| "attendance" \| "iep" \| "iepInvite"` |
+| `WritableCol`, `DocOf<C>` | type | `"term" \| "teachers" \| "classes" \| "groups" \| "students" \| "privates" \| "attendance" \| "iep" \| "iepInvite"`，另外 `"exam" \| "examPrivate" \| "versions" \| "lockLog" \| "staff"`（只有管理者／編輯：還原、新學期、匯入） |
+| `BatchOp`, `BatchResult`, `BatchOptions` | type | `Repo.batch` 用：`{col, id, data（null＝刪除）, expectRev（null＝不檢查）}` |
 | `RevConflictError` | class | 別人先改了：`{col, id, expected, current}` |
 | `RepoDeniedError` | class | 沒有權限 |
 | `createFirestoreRepo(db, scope, opt?)` | fn | Firestore 版（`opt.readOnly` 過渡期設 true） |
@@ -38,6 +39,7 @@ import { createFirestoreRepo, createMemoryRepo, toCoreD, type Repo } from "@/lib
 | `put(col, id, data, expectRev)` | 寫整份文件；新增時 `expectRev=0`。回傳新 rev |
 | `patch(col, id, partial, expectRev)` | 改部分欄位 |
 | `remove(col, id)` | 刪除（管理者／編輯）；學生連 private 一起刪 |
+| `batch(ops, opt?)` | 一次寫很多份（匯入、個管分配、還原、新學期）。每份檢查 rev（`expectRev:null` 不檢查）；衍生欄位（學生的 groupIds、teacherIds、private.caseMgrId）照最後的結果補寫。Firestore 分成幾個交易（`opt.chunk`，預設 300），同一位學生的學生文件與 private 一定在同一個交易（規則的 `getAfter`）；某一個交易失敗時前面的不會退回，錯誤訊息會寫「前面 N 份已寫入」。記憶體版整批先檢查再寫 |
 | `saveMyOff(off, expectRev)` | 老師改自己的不排課時段 |
 | `mark(date, gid, pid, studentId, rec)` | 點名；`rec=null` 取消 |
 
@@ -90,3 +92,16 @@ await repo.saveMyOff(["2-5", "2-6"], revs[revKey("teachers", scope.tid!)].rev);
 調查單的 readers（發起人、個管）寫公開的部分（和線上連結 iepTok 同一套：班級座號、節次、有課的種類、已排定的場次）；
 被邀請的老師只能改 `free`、`note`、`ansAt`。發起人打開「我的 IEP」時，`lib/nx/iepSync.mergeInvites` 把回覆讀回調查單。
 老師可以刪「只有自己一個 reader」的調查單（`iep`）與自己是 readers 的邀請。
+
+### 管理者端：用舊的純函式改資料（`lib/nx/apply.ts`）
+
+```ts
+import { planOnD, summarize, applyOps } from "@/lib/nx/apply";
+const { records, revs } = await repo.load();
+const p = planOnD(records, (D) => CORE.importStudents(D, tsv)); // 在 toCoreD(records) 的副本上跑
+summarize(p.ops, revs);   // {add, update, del, total, byCol}：先給人看
+await applyOps(repo, p.ops, revs);  // repo.batch，每份帶 rev
+```
+
+`planOnD` 把 D0、D1 都過 `splitD` 再 `diff`（`functions/nx-split.js`），只有真的變了的文件會寫；預設只比排課核心的集合（`CORE_COLS`：term、teachers、classes、groups、students、privates、staff）。
+`diffRecords(before, after, cols?)` 直接比兩份 records（還原備份用）；`filterOps` 拿掉不要的（例：還原時不刪點名）。

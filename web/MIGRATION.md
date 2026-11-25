@@ -420,3 +420,39 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 
 **測試**：`npm test`（單元：`teacher.test.ts` 今天／待辦、IEP 範圍、私密欄位；`iep-print.test.ts` 通知單逐字比對；`nx-iep.test.ts`）、
 `npm run test:rules`（加了 iepInvite、老師刪調查單、responses 的規則測試）、`npm run test:e2e`（Firestore＋Auth 模擬器：兩位老師真的登入，各自只讀得到自己的學生，private 只有個管讀寫得到）。
+
+---
+
+## 9. Phase 3a：管理者端（`/admin/…`，新資料模型）
+
+管理者／編輯登入後到 `/admin/`（`lib/nx/session.tsx` 的 `admin`：Firestore 版 Repo，`role` 是 admin／editor，讀全部）。沒登入時 `/admin/` 是範例資料的管理者視角（和老師端同一份記憶體資料庫）。
+
+| 頁面 | 網址 | 做什麼 |
+|---|---|---|
+| 今天 | `/admin/` | 今天全部老師的課（現在這一節）、待辦（衝突、沒排、開課提醒、待編組、沒分組、沒個管、本月到期、學年交接、還沒領取的邀請）、資源班老師節數 |
+| 學生 | `/admin/students/` | 篩選（年級、個管、沒有個管、本月到期、搜尋）、勾選後批次指定個管、新增學生 |
+| 個案 | `/admin/student/?id=` | 基本資料（可改）、私密、組別與課表、段考服務、出缺席（最近兩週）、家長聯絡、IEP 會議、刪除學生。區段和老師端共用 `components/case/CaseParts.tsx` |
+| 個管分配 | `/admin/casemgr/` | 老師上限、不當個管 → `core.suggestCaseMgr` 建議 → 勾選的才套用 |
+| 設定 › 學校資料 | `/admin/settings/school/?step=` | ① 匯入 Excel（SheetJS CDN、認工作表、試跑看差異、一批寫入）② 全校課表（唯讀，`classes.ttJson`）③ 老師與任課（含減授、超鐘點上限、`classes.subj`）④ 不排課時段（全校、年級、群組、班級、不能鎖課、學生、老師）⑤ 教室與作息 ⑥ 排課規則 ⑦ 學年交接 |
+| 設定 › 帳號與共用 | `/admin/settings/accounts/` | 成員（角色、綁定老師、停用）、邀請、舊名單轉邀請（先看清單）、搬移狀態與 `nxMigrateLegacy`（先試算） |
+| 設定 › 資料與備份 | `/admin/settings/data/` | 下載備份（讀得到的全部 records）、加密備份（和舊版同一個 AES-GCM 格式）、從備份還原（新版或舊版備份；先檢查、看差異）、版本、開始新學期 |
+| 排課、段考、IEP 會議、點名、統計 | `/admin/schedule/` 等 | 「這一頁請先用舊版」＋舊版對應的 hash（phase 3b） |
+
+- **寫入**：一律 `lib/nx/apply.ts`：在 `toCoreD(records)` 的副本上跑舊的純函式 → `splitD` 前後比對 → `Repo.batch` 寫有變的文件（每份帶 rev）。私密欄位直接 `patch("privates")`。
+- **以老師身分看**：側欄底部（手機在「更多」）。登入時是唯讀預覽：用管理者讀到的資料做一份記憶體版 Repo，權限照規則過濾（`access.visible`），老師頁原封不動；範例資料時直接切到那位老師。
+- **過渡期**：`schools/{sid}.mode=='legacy'` 時管理者端也只讀（頂端提示＋到舊版的連結），`native` 列出的集合才可以改；帳號、搬移不受影響。新學期在過渡期不能在新版開始。
+- **新學期**：`lib/nx/term.ts` 算出新的 records（升年級、清空…；IEP 調查、版本、鎖課紀錄、點名不帶），寫進新的 `terms/{tid}`（全部 rev 1），再呼叫 `nxSetCurrentTerm`。學年交接的基準設成升年級前的名冊。
+- **老師的新欄位**：`reduce`、`reduceNote`、`otMax`、`prefSubj`、`prefGrade`、`avoidSubj`（舊版超鐘點）與 `cmCap`、`noCM`（個管分配）放在 `teachers/{id}` 的一般欄位（`nx-split.js` 的 `TEA_KEYS`、規則 `teacherShape`）；之前在 `x`（JSON）裡，部署新的 Functions 後同步會把它們搬出來（每位老師寫一次）。
+
+**新的 Functions**（`functions/nx-admin.js`，純邏輯 `nx-admin-core.js`，`nx-index.js` 已匯出；都還沒部署）：
+
+| 名稱 | 誰 | 做什麼 |
+|---|---|---|
+| `nxLinkStatus({sid})` | admin／editor | 回傳 `nxLink/main`（只給自己學校的）、學校文件、上次同步的時間 |
+| `nxSetCurrentTerm({sid, termId})` | admin | 換目前學期；過渡期（`nxLink.mode=='legacy'`）、學期不存在、代碼不對都拒絕；寫 auditLogs |
+
+**規則**：`teacherShape` 加上面幾個老師欄位（`optNum`）。其他管理者的寫入（老師、班級、學生＋private 同一批、學期）原本就允許，`test/rules.test.ts`「管理者端的寫入」與 `test/rules-repo.test.ts`「Repo.batch × 規則」確認。
+
+**測試**：`npm test`（`apply.test.ts` 比對與一批寫入、`import.test.ts` 匯入、`admin.test.ts` 待辦／篩選／個管／新學期／備份、`nx-admin.test.ts`）、`npm run test:rules`、`npm run test:e2e`（`e2e-admin.test.ts`：管理者登入、匯入範例表、分配個管，兩位老師登入只讀得到自己的學生；檔案改成一個一個跑）。
+
+**Phase 3b 還沒做**：排課（開課、編組、排課板拖曳、一鍵排課、試排草稿與確定、輸出）、段考、IEP 會議（管理者）、點名（管理者、紀錄、導師週報）、統計；全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。
