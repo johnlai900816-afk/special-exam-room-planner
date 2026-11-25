@@ -71,6 +71,8 @@ function css(){if(typeof document==='undefined'||document.getElementById('xx-css
 .xx-t{border-collapse:collapse;width:100%;font-size:15px}
 .xx-t th{background:var(--sunk,#efece6);color:var(--mute,#6b6f7a);font-size:13px;font-weight:600;text-align:left;padding:8px 10px;white-space:nowrap}
 .xx-t td{border-top:1px solid var(--line,#e7e3db);padding:8px 10px;vertical-align:middle}
+.xx-t td:first-child{white-space:nowrap}
+.xx-t td.wide{min-width:180px}
 .xx-t td.n,.xx-t th.n{text-align:right;font-variant-numeric:tabular-nums}
 .xx-t tr.over td:first-child{box-shadow:inset 3px 0 var(--bad,#b3382d)}
 .xx-t tr.under td:first-child{box-shadow:inset 3px 0 var(--warn,#9a5b0b)}
@@ -120,9 +122,11 @@ function css(){if(typeof document==='undefined'||document.getElementById('xx-css
 .xx-subj{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .xx-subj label{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line2,#d6d0c5);border-radius:999px;padding:4px 10px;font-size:14px;min-height:32px;cursor:pointer}
 .xx-subj input{margin:0}
-.xx-form{display:grid;grid-template-columns:150px 120px 1fr;gap:8px;margin:12px 0 0}
+.xx-sec{min-width:0;max-width:100%}
+.xx-form{display:grid;grid-template-columns:170px 120px minmax(0,1fr);gap:8px;margin:12px 0 0}
+.xx-form>*{width:100%;min-width:0}
 .xx-form .wide{grid-column:1/-1}
-@media (max-width:600px){.xx-card{padding:16px}.xx-form{grid-template-columns:1fr 1fr}.xx-form .wide,.xx-form .nt{grid-column:1/-1}.xx-svc{grid-template-columns:1fr}.xx-svc>b{padding-top:0}}
+@media (max-width:600px){.xx-card{padding:16px}.xx-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.xx-form .wide,.xx-form .nt{grid-column:1/-1}.xx-svc{grid-template-columns:1fr}.xx-svc>b{padding-top:0}}
 @media print{.xx-card{border:0;box-shadow:none}.xx .b{display:none}}`;
   document.head.appendChild(st);}
 
@@ -146,7 +150,7 @@ function weeklyPage(el){
   W.classes.forEach((c,ci)=>{const k=ws+'|'+c.cls,txt=WK.draft[k]!=null?WK.draft[k]:C.weeklyText(W,c,{from});
     const rows=c.students.map(s=>{const x=s.c,notes=s.rows.filter(r=>r.note||r.st==='late'||r.st==='abs'||r.st==='leave');
       return `<tr><td>${E(s.seat?pad(s.seat)+' ':'')}${E(s.name)}</td><td class="n">${x.n}</td><td class="n">${x.in}</td><td class="n">${x.late||''}</td><td class="n">${x.leave||''}</td><td class="n">${x.abs?`<b class="xx-del">${x.abs}</b>`:''}</td><td class="n">${x.none?`<span class="xx-dim">${x.none}</span>`:''}</td>
-        <td>${notes.map(r=>E(md(r.date)+' '+r.pname+' '+({late:'遲到',leave:'請假',abs:'缺席'}[r.st]||'')+(r.note?' '+r.note:''))).join('<br>')}</td></tr>`;}).join('');
+        <td class="wide">${notes.map(r=>E(md(r.date)+' '+r.pname+' '+({late:'遲到',leave:'請假',abs:'缺席'}[r.st]||'')+(r.note?' '+r.note:''))).join('<br>')}</td></tr>`;}).join('');
     const det=c.students.map(s=>`<li><span><b>${E(s.name)}</b><small>${s.rows.map(r=>E(md(r.date)+' '+r.pname+' '+(r.gname||r.subject)+' '+(r.future?'還沒上':({in:'已到',late:'遲到',leave:'請假',abs:'缺席'}[r.st]||'未點名')))).join('、')}</small></span></li>`).join('');
     h+=card(ci+1,c.cls+' 班',`<div class="xx-scroll"><table class="xx-t"><thead><tr><th>學生</th><th class="n">節數</th><th class="n">出席</th><th class="n">遲到</th><th class="n">請假</th><th class="n">缺席</th><th class="n">未點名</th><th>特別的事</th></tr></thead><tbody>${rows}</tbody></table></div>
       <details><summary>逐節明細</summary><ul class="xx-list">${det}</ul></details>

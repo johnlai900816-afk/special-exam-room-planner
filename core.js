@@ -908,7 +908,7 @@ function weeklySummary(D,ATT,weekStart,opt){
   const classes={};
   Object.keys(byS).forEach(sid=>{const s=sIdx[sid],rows=byS[sid].sort((a,b)=>a.date.localeCompare(b.date)||a.pi-b.pi);
     const c={n:0,in:0,late:0,leave:0,abs:0,none:0,future:0};
-    rows.forEach(r=>{if(r.future){c.future++;return;}c.n++;if(r.st==='in'||r.st==='late')c.in++;if(r.st)c[r.st]++;else c.none++;});
+    rows.forEach(r=>{if(r.future){c.future++;return;}c.n++;if(r.st==='in'||r.st==='late')c.in++;if(r.st==='late'||r.st==='leave'||r.st==='abs')c[r.st]++;else if(!r.st)c.none++;});
     const cls=String(s.cls);(classes[cls]=classes[cls]||[]).push({id:sid,cls,seat:s.seat,name:s.name,rows,c});});
   const head=D.classHead||{};
   return {weekStart:ws,weekEnd:dates[4],dates,classes:Object.keys(classes).sort().map(cls=>({cls,head:head[cls]||'',

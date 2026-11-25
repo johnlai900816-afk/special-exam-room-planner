@@ -29,6 +29,7 @@ function run(ok){
     ok(e.rows[0].st==='late'&&e.rows[0].note==='忘了帶課本','遲到與備註');
     ok(e.rows.some(r=>r.st==='abs'),'那一節有點名但沒有他：算缺席');
     ok(e.rows.some(r=>r.gname==='舊的課'&&r.st==='leave'),'課表已經沒有的那一節照點名紀錄列出');
+    ok(e.c.late===1&&e.c.abs===1&&e.c.leave===1&&e.c.in===1&&e.c.in+e.c.leave+e.c.abs+e.c.none===e.c.n,'各狀態的次數加起來等於節數');
     ok(e.c.none>0&&e.c.n===e.rows.length,'沒點過名的節次算「未點名」');
     const pulls=M.L.filter((x,l)=>S.slot[l]>=0&&M.G[x.g].pull&&M.G[x.g].stu.includes(M.sIdx[stu.id])).length;
     ok(e.rows.length===pulls+1,'每一節抽離課都列出（外加課不列）');
