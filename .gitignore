@@ -8,3 +8,8 @@ firebase-debug.log
 # 含真實學生資料的匯入檔、備份檔不可上傳
 *匯入檔*.json
 *備份*.json
+
+# Cloud Functions 的套件與本機設定
+functions/node_modules/
+functions/.env.local
+functions/*.local

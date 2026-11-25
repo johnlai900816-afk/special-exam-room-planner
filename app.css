@@ -499,3 +499,30 @@ button.b.warn{border-color:var(--warn);color:var(--warn)}
   .cardsheet{grid-template-columns:repeat(3,1fr);gap:8px}
   .cardsheet2{display:block}.tcard{margin-bottom:10px}
 }
+/* Gemini：AI 設定、直接排課、一句話調整、看圖核對（gemini.js／ai.js） */
+.side .aiset{margin:0 0 12px;width:100%;background:transparent;border-style:dashed;color:var(--ink2);font-size:13px}
+.aisafe{font-size:12.5px;color:var(--ink2);background:#f7efdf;border-left:3px solid #d8b56a;border-radius:6px;padding:7px 11px;margin:6px 0 12px}
+.gmbox{border:1px solid var(--line2);border-radius:12px;padding:12px 14px 4px;margin:0 0 14px;background:#fbf7ee}
+.gmbox>b,dialog h4{font-family:var(--serif)}
+.gmst{font-size:12.5px;color:var(--ink2)}.gmst.bad{color:var(--bad)}
+.gmkey{flex:1;min-width:220px;font-family:ui-monospace,Consolas,monospace!important}
+dialog textarea.gmadj{height:80px}
+.gmul{padding-left:18px}.gmul li{padding:1px 0}
+.gmreply{color:var(--ink2);background:var(--acc-l);border-radius:8px;padding:7px 11px;margin:8px 0}
+.gmacts{list-style:none;padding:0;margin:8px 0 12px}
+.gmacts li{padding:6px 0;border-bottom:1px solid var(--line)}
+.gmacts li.no{color:var(--mute)}
+.gmacts small{display:block;color:var(--mute);margin-left:24px}
+.gmacts small.warn{color:var(--warn)}
+tr.gmsug td{background:#fdf3dc}
+button.b.gmsugb{border-color:#d8b56a;background:#fbf1da}
+.aisafe.warnbox{background:var(--warn-l);border-left-color:var(--warn);color:var(--ink)}
+.gmmode{display:block;padding:6px 0;cursor:pointer}.gmmode b{margin:0 6px 0 4px}.gmmode small{display:block;color:var(--mute);margin-left:24px}
+.gmprev{border:1px solid #d8b56a;border-radius:10px;padding:10px 12px;margin:8px 0;background:#fffaf0}
+.gmpre{white-space:pre-wrap;word-break:break-all;max-height:260px;overflow:auto;font-size:12px;background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0}
+.gmimg{max-width:100%;border:1px solid var(--line);border-radius:6px;margin:4px 0}
+.gmacts small.q{color:var(--ink2)}
+.gmlog{list-style:none;padding:0;margin:4px 0;max-height:320px;overflow:auto;font-size:13px}
+.gmlog li{padding:6px 0;border-bottom:1px solid var(--line)}.gmlog .ok{color:var(--ok)}.gmlog .warn{color:var(--warn)}.gmlog .dim{color:var(--mute)}
+.gmlog details{display:inline-block;margin-right:10px}.gmlog summary{cursor:pointer;color:var(--acc-d)}
+@media (max-width:860px){.side .aiset{width:auto;margin:0;padding:5px 11px}}

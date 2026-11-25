@@ -24,6 +24,7 @@ try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark'
     <button data-p="checkin"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></svg>簽到退</button>
   </nav>
   <div class="grow"></div>
+  <button class="b aiset" onclick="gmSettings()" title="Gemini 金鑰與模型，只存在這個瀏覽器">AI 設定</button>
   <div id="cloud"></div>
   <div id="prefs">
     <div class="seg" role="group" aria-label="外觀"><button type="button" data-th="auto">自動</button><button type="button" data-th="light">淺色</button><button type="button" data-th="dark">深色</button></div>
@@ -54,10 +55,12 @@ try{(function(r,t){t=localStorage.getItem('rc-theme');if(t==='light'||t==='dark'
     paint();});
   paint();})();</script>
 <script src="firebase-config.js"></script>
-<script src="school.js?v=16"></script>
-<script src="core.js?v=16"></script>
-<script src="cloud.js?v=16"></script>
-<script src="checkin.js?v=16"></script>
-<script src="app.js?v=16"></script>
+<script src="school.js?v=17"></script>
+<script src="core.js?v=17"></script>
+<script src="cloud.js?v=17"></script>
+<script src="checkin.js?v=17"></script>
+<script src="gemini.js?v=17"></script>
+<script src="ai.js?v=17"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
