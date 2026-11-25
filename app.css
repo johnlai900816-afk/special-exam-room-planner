@@ -643,6 +643,7 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
   .cards{grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))}
   .gc,.card,.tsec,.colr,.cols>*,.stats>*,.cgrid>*,.iepcard,.xx-card{min-width:0}
   .thd>b{min-width:0;overflow-wrap:anywhere}
+  table.ed td:first-child{white-space:nowrap}
   /* 排課表：在卡片裡左右捲，節次那一欄固定在左邊 */
   table.board{min-width:47.5rem}
   table.board th.ph2{position:sticky;left:0;z-index:2;background:var(--bg)}
@@ -655,8 +656,9 @@ nav.sub,#nav{scrollbar-width:none}nav.sub::-webkit-scrollbar,#nav::-webkit-scrol
 }
 @media screen and (max-width:980px){
   dialog .bar.end{bottom:-20px}
+  /* 段考頁（iframe）：版面不再是固定高度時，給它一個畫面高 */
+  #examFrame{flex:none;height:calc(100vh - 9rem);height:calc(100dvh - 9rem);min-height:24rem}
   .menubox{left:auto;right:0}
-  .ph .phrow{flex-wrap:wrap;gap:6px 12px}
 }
 
 /* ===== 列印 ===== */

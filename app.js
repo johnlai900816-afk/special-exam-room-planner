@@ -5,7 +5,7 @@ let D,M,ST,ROOM,undoStack=[],page='home',sub='',offSel='*',view='',outMode='teac
 const lastSub={};
 // 'dlgBody'：設定 › 帳號與共用把 cloud.js 的共用畫面放在頁面裡（#shareHost）；有對話框開著時還是對話框
 const $=id=>{if(id==='dlgBody'&&shareEmbed){const d=document.getElementById('dlg');if(!(d&&d.open)){const h=document.getElementById('shareHost');if(h)return h;}}return document.getElementById(id);};
-const EXAM_V='20';   // 段考頁的版本：每次改 exam.html 都要加一，不然瀏覽器會用舊的
+const EXAM_V='21';   // 段考頁的版本：每次改 exam.html 都要加一，不然瀏覽器會用舊的
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // 放進 onclick="f(…)" 裡的資料：先轉成 JSON 字串，再轉成 HTML 屬性可用的字元（瀏覽器會先還原 &#39; 等字元才執行）
 const jsArg=v=>esc(JSON.stringify(v==null?'':v));
