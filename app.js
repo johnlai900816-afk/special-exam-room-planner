@@ -1059,10 +1059,12 @@ async function exportEnc(){if(!(window.crypto&&crypto.subtle)){toast('這個瀏�
   const pw=await askPw('下載加密備份檔',true);if(!pw)return;
   try{const o=await encPack(JSON.stringify(backupObj()),pw);download('資源班管理系統_加密備份_'+bkDate()+'.json',JSON.stringify(o));toast('已下載加密備份檔，請記好密碼');}
   catch(e){toast('加密失敗：'+(e.message||e));}}
-// 備份檔的格式檢查：型別、清單、數量上限、文字欄位是文字
+// 備份檔的格式檢查：型別、清單、數量上限、文字欄位是文字、id 的字元（不合格的整份不還原）
 const BK_MAX_BYTES=30*1024*1024;
 function checkBackup(o){
   const err=[],isObj=v=>!!v&&typeof v==='object'&&!Array.isArray(v),txt=(v,n)=>v==null||((typeof v==='string'||typeof v==='number')&&String(v).length<=n);
+  // id（學生、老師、課程、教室、節次、群組）只能是英數字、底線、減號，1～40 字；empty＝可以空白（例：沒有個管）
+  const idOk=(v,empty)=>v==null||(empty&&v==='')||((typeof v==='string'||typeof v==='number')&&/^[A-Za-z0-9_-]{1,40}$/.test(String(v)));
   if(!isObj(o))return {ok:false,err:['這不是備份檔']};
   if(!Array.isArray(o.students)||!Array.isArray(o.groups))return {ok:false,err:['這不是資源班管理系統的備份檔（沒有學生或課程清單）']};
   const LIM={students:5000,teachers:3000,groups:3000,rooms:300,periods:40,sets:1000,blocked:2000,lockFix:20000};
@@ -1070,18 +1072,19 @@ function checkBackup(o){
     if(v.length>LIM[k])err.push(k+' 筆數太多（'+v.length+'）');else if(k!=='blocked'&&v.some(x=>!isObj(x)))err.push(k+' 裡有格式不對的資料');}
   if(err.length)return {ok:false,err};
   const row=(list,name,f)=>{const i=list.findIndex(x=>!f(x));if(i>=0)err.push(name+'第 '+(i+1)+' 筆的格式不對');};
-  row(o.students,'學生',s=>txt(s.id,80)&&txt(s.name,100)&&txt(s.cls,20)&&txt(s.seat,10)&&txt(s.note,2000)&&txt(s.caseMgr,80)&&(s.needs==null||Array.isArray(s.needs)));
-  row(o.teachers||[],'老師',t=>txt(t.id,80)&&txt(t.name,100)&&txt(t.role,40)&&txt(t.note,2000)&&(t.off==null||Array.isArray(t.off)));
-  row(o.groups,'課程',g=>txt(g.id,80)&&txt(g.name,200)&&txt(g.subject,100)&&txt(g.teacher,80)&&txt(g.room,80)&&txt(g.mode,20)&&(g.students==null||Array.isArray(g.students)));
-  row(o.rooms||[],'教室',r=>txt(r.id,80)&&txt(r.name,100));
-  row(o.periods||[],'作息',p=>txt(p.id,40)&&txt(p.name,40)&&txt(p.start,10)&&txt(p.end,10));
+  row(o.students,'學生',s=>idOk(s.id)&&txt(s.name,100)&&txt(s.cls,20)&&txt(s.seat,10)&&txt(s.note,2000)&&idOk(s.caseMgr,1)&&(s.needs==null||Array.isArray(s.needs)));
+  row(o.teachers||[],'老師',t=>idOk(t.id)&&txt(t.name,100)&&txt(t.role,40)&&txt(t.note,2000)&&(t.off==null||Array.isArray(t.off)));
+  row(o.groups,'課程',g=>idOk(g.id)&&txt(g.name,200)&&txt(g.subject,100)&&idOk(g.teacher,1)&&idOk(g.room,1)&&txt(g.mode,20)&&(g.students==null||(Array.isArray(g.students)&&g.students.every(x=>idOk(x)))));
+  row(o.rooms||[],'教室',r=>idOk(r.id)&&txt(r.name,100));
+  row(o.periods||[],'作息',p=>idOk(p.id)&&txt(p.name,40)&&txt(p.start,10)&&txt(p.end,10));
+  row(o.sets||[],'學生群組',x=>idOk(x.id)&&(x.students==null||(Array.isArray(x.students)&&x.students.every(y=>idOk(y)))));
   if(!txt(o.title,200))err.push('學期名稱的格式不對');
   ['classSubj','assign','settings','offBy','tt'].forEach(k=>{if(o[k]!=null&&!isObj(o[k]))err.push(k+' 的格式不對');});
   if(o._att!=null){if(!isObj(o._att))err.push('點名紀錄的格式不對');
     else{let bad=false,n=0;
       for(const d in o._att){const day=o._att[d];if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!isObj(day)){bad=true;break;}
-        for(const k in day){const g=day[k];if(!isObj(g)){bad=true;break;}
-          for(const sid in g){n++;const r=g[sid];if(!isObj(r)||!txt(r.st,10)||!txt(r.tin,10)||!txt(r.tout,10)||!txt(r.note,500)){bad=true;break;}}
+        for(const k in day){const g=day[k];if(!isObj(g)||!/^[A-Za-z0-9_-]{1,40}@[A-Za-z0-9_-]{1,40}$/.test(k)){bad=true;break;}
+          for(const sid in g){n++;const r=g[sid];if(!idOk(sid)||!isObj(r)||!txt(r.st,10)||!txt(r.tin,10)||!txt(r.tout,10)||!txt(r.note,500)){bad=true;break;}}
           if(bad)break;}
         if(bad)break;}
       if(bad)err.push('點名紀錄的格式不對');else if(n>500000)err.push('點名紀錄太多');}}
@@ -1219,8 +1222,8 @@ let CMR=null;
 function cmOpen(){const res=D.teachers.filter(t=>t.role==='資源班');if(!res.length){toast('先新增資源班老師');return;}
   openDlg(`<h3>個管分配</h3><div class="lead">產生建議，勾選的才會改。${tip('原則：已有個管的盡量不換；有教到的老師優先；同年級、同班盡量給同一位；人數平均。')}</div>
   <div class="scroll"><table class="ed"><tr><th>老師</th><th>目前</th><th>最多</th><th>不當個管</th></tr>${res.map(t=>`<tr><td>${esc(t.name)}</td><td class="dim">${D.students.filter(s=>s.caseMgr===t.id).length} 位</td>
-    <td><input type="number" min="0" max="60" class="w3" value="${+t.cmCap>0?t.cmCap:''}" placeholder="平均" onchange="cmSetT('${t.id}','cmCap',this.value)"></td>
-    <td><input type="checkbox"${t.noCM?' checked':''} onchange="cmSetT('${t.id}','noCM',this.checked)"></td></tr>`).join('')}</table></div>
+    <td><input type="number" min="0" max="60" class="w3" value="${+t.cmCap>0?+t.cmCap:''}" placeholder="平均" data-id="${esc(t.id)}" onchange="cmSetT(this.dataset.id,'cmCap',this.value)"></td>
+    <td><input type="checkbox"${t.noCM?' checked':''} data-id="${esc(t.id)}" onchange="cmSetT(this.dataset.id,'noCM',this.checked)"></td></tr>`).join('')}</table></div>
   <label class="chk1"><input type="checkbox" id="cmKeep" checked> 已有個管的盡量不換</label>
   <div class="bar end"><button class="b" onclick="closeDlg()">取消</button><button class="b pri" onclick="cmRun()">產生建議</button></div><div id="cmOut"></div>`);}
 function cmSetT(id,k,v){const t=D.teachers.find(x=>x.id===id);if(!t)return;if(k==='cmCap'){if(+v>0)t.cmCap=+v;else delete t.cmCap;}else{if(v)t.noCM=true;else delete t.noCM;}changed();}
