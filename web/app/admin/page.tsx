@@ -1,11 +1,10 @@
 "use client";
 /* 管理者「今天」：今天全部老師的課（現在這一節標出來）、待辦（衝突、沒排、待編組、沒個管、本月到期、交接、邀請）、資源班老師的節數。
-   舊版 app.js renderHome。待辦還要到舊版處理的（排課、編組）連到舊版對應的頁面。 */
-import { ChevronRight, ExternalLink } from "lucide-react";
+   舊版 app.js renderHome。待辦都連到新版的頁面（點名、導師週報、IEP 會議、排課…）；只有段考還在舊版。 */
+import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AdminShell, useAdmin } from "@/components/AdminShell";
-import { OLD_APP } from "@/components/Planned";
 import { SectionTitle, Stat, cx } from "@/components/ui";
 import type { InviteDoc } from "@/lib/model";
 import { adminTodos, teacherLoads, todayLessons } from "@/lib/nx/admin";
@@ -119,32 +118,17 @@ function Today() {
           <SectionTitle no={2}>待辦</SectionTitle>
           {todo.length ? (
             <ul className="flex flex-col gap-2">
-              {todo.map((t, i) => {
-                const old = t.href.startsWith("old:");
-                const cls = cx("flex min-h-12 items-center gap-2.5 rounded-2xl border bg-card px-4 py-2.5 hover:bg-hover", t.level === "bad" ? "border-bad/40" : "border-line");
-                const inner = (
-                  <>
+              {todo.map((t, i) => (
+                <li key={i}>
+                  <Link href={t.href} className={cx("flex min-h-12 items-center gap-2.5 rounded-2xl border bg-card px-4 py-2.5 hover:bg-hover", t.level === "bad" ? "border-bad/40" : "border-line")}>
                     <span className={cx("min-w-0 flex-1", t.level === "bad" && "text-bad")}>{t.text}</span>
                     <em className="flex items-center gap-1 text-sm whitespace-nowrap text-blue not-italic">
                       {t.act}
-                      {old ? <ExternalLink size={14} /> : <ChevronRight size={16} />}
+                      <ChevronRight size={16} />
                     </em>
-                  </>
-                );
-                return (
-                  <li key={i}>
-                    {old ? (
-                      <a href={OLD_APP + t.href.slice(4)} className={cls}>
-                        {inner}
-                      </a>
-                    ) : (
-                      <Link href={t.href} className={cls}>
-                        {inner}
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
+                  </Link>
+                </li>
+              ))}
             </ul>
           ) : (
             <p className="text-sm text-mute">沒有待辦</p>

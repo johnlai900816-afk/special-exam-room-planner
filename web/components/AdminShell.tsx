@@ -21,10 +21,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { applyFontSize, applyTheme } from "@/lib/prefs";
-import type { Loaded, Repo, WritableCol } from "@/lib/repo";
+import type { Loaded, Repo } from "@/lib/repo";
 import type { Board } from "@/lib/schedule";
 import type { RcData } from "@/lib/types";
-import { useNx, type Nx } from "@/lib/nx/session";
+import { useNx, type AdminArea, type Nx } from "@/lib/nx/session";
 import { OLD_APP } from "./Planned";
 import { Toaster } from "./Toast";
 import { Brand, Card, Select, cx } from "./ui";
@@ -37,7 +37,7 @@ export const ADMIN_NAV = [
   { href: "/admin/sched/", label: "排課", icon: ic(CalendarRange) },
   { href: "/admin/exam/", label: "段考", icon: ic(ClipboardList) },
   { href: "/admin/iep/", label: "IEP 會議", icon: ic(FileHeart) },
-  { href: "/admin/check/", label: "點名", icon: ic(ClipboardCheck) },
+  { href: "/admin/checkin/", label: "點名", icon: ic(ClipboardCheck) },
   { href: "/admin/stats/", label: "統計", icon: ic(BarChart3) },
   { href: "/admin/settings/", label: "設定", icon: ic(Settings) },
 ];
@@ -54,7 +54,7 @@ export interface AdminCtx {
   D: RcData;
   board: Board | null;
   /** 這一塊不能改（過渡期、或範例資料以外的唯讀）；'sched'＝排課整塊 */
-  ro(col: WritableCol | "sched"): boolean;
+  ro(col: AdminArea): boolean;
 }
 export function useAdmin(): AdminCtx {
   const x = useNx();

@@ -84,7 +84,7 @@ function Notice({ what }: { what: string }) {
 }
 
 /** 還沒接上 Gemini：在這裡設定連線方式（舊版 設定 › AI 的精簡版；設定只存在這台瀏覽器） */
-function AiSetup({ what, onReady }: { what: string; onReady: () => void }) {
+export function AiSetup({ what, onReady }: { what: string; onReady: () => void }) {
   const [mode, setMode] = useState(GEMINI.getMode());
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState("");

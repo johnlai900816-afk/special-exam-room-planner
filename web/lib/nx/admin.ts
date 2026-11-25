@@ -7,6 +7,8 @@ import type { InviteDoc, StudentDoc, StudentPrivateDoc, TermRecords } from "../m
 import type { Board } from "../schedule";
 import type { RcData, Student, Teacher } from "../types";
 import { planOnD } from "./apply";
+import { IEP, type Round } from "../iep";
+import { checkTodos } from "./checkin";
 import { dowOf, sessionsOn, type Ses } from "./today";
 
 type C2 = typeof CORE & {
@@ -89,6 +91,9 @@ export function handover(D: RcData, today: string): Handover {
 export function adminTodos(x: AdminTodayInput): AdminTodo[] {
   const { D, board, R, today } = x;
   const out: AdminTodo[] = [];
+  // 這一節還沒簽到的人（舊版 renderHome 第一項）、週一提醒上週的導師週報（extras.js weeklyTodo）
+  const dow = new Date(today + "T00:00:00").getDay();
+  checkTodos({ D, board, att: R.attendance || {}, today, hm: x.hm, dow, sessions: dowOf(today) >= 0 ? sessionsOn(board, today) : [] }).forEach((t) => out.push(t));
   const probs = board.problems.filter((p) => p.k !== "un").length;
   if (probs) out.push({ level: "bad", text: "排課衝突 " + probs + " 個", act: "排課表", href: "/admin/sched/?step=board" });
   if (board.total && board.placed < board.total) out.push({ level: "warn", text: "還有 " + (board.total - board.placed) + " 節沒排", act: "排課表", href: "/admin/sched/?step=board" });
@@ -101,6 +106,18 @@ export function adminTodos(x: AdminTodayInput): AdminTodo[] {
   if (noG) out.push({ level: "warn", text: noG + " 位學生沒分組", act: "編組", href: "/admin/sched/?step=need" });
   const noCM = D.students.filter((s) => !s.caseMgr).length;
   if (noCM) out.push({ level: "warn", text: noCM + " 位學生沒有個管", act: "個管分配", href: "/admin/students/?cm=-" });
+  // IEP 調查的回覆進度（發布了、還沒過期限、還有人沒填）
+  ((IEP.ensure(D).rounds || []) as Round[])
+    .filter((r) => !r.quick && r.meets && r.meets.length && (r.pub || []).length && (!r.due || r.due >= today))
+    .forEach((r) => {
+      try {
+        const pg = IEP.progress(D, r);
+        const n = pg.people.filter((o) => o.done).length;
+        if (n < pg.people.length) out.push({ level: "warn", text: "IEP「" + (r.name || "調查") + "」回覆 " + n + "/" + pg.people.length, act: "IEP", href: "/admin/iep/?r=" + encodeURIComponent(r.id) });
+      } catch {
+        /* 舊版也是略過 */
+      }
+    });
   const due = dueThisMonth(R, today);
   if (due.size) out.push({ level: "warn", text: due.size + " 位學生本月到期", act: "學生", href: "/admin/students/?due=1" });
   const H = handover(D, today);

@@ -45,6 +45,9 @@ export interface NxUser {
 }
 
 /** 管理者端：讀得到全部（管理者／編輯登入；範例資料時是記憶體版） */
+/** 管理者端可以寫的一塊：集合名稱，或整塊功能（'sched' 排課、'checkin' 點名） */
+export type AdminArea = WritableCol | "sched" | "checkin";
+
 export interface AdminSide {
   repo: Repo;
   data: Loaded | null;
@@ -52,8 +55,8 @@ export interface AdminSide {
   board: Board | null;
   role: "admin" | "editor";
   /** 這一塊可以寫嗎（過渡期 schools/{sid}.mode=='legacy' 時，只有交給新版的集合可以寫）。
-      'sched'＝排課整塊（課程、草稿、版本、鎖課紀錄）：native 列了 'sched' 就可以 */
-  canWrite(col: WritableCol | "sched"): boolean;
+      'sched'＝排課整塊（課程、草稿、版本、鎖課紀錄）：native 列了 'sched' 就可以；'checkin'＝點名（native 列了 'checkin' 或 'attendance'） */
+  canWrite(col: AdminArea): boolean;
 }
 
 export interface Nx {
@@ -317,9 +320,10 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
       D: adminD,
       board: adminBoard,
       role: adminRepo.scope.role === "editor" ? "editor" : "admin",
-      canWrite(col: WritableCol | "sched") {
+      canWrite(col: AdminArea) {
         if (adminRepo.readOnly) return false;
         if (adminRepo.kind === "memory" || !school || school.mode === "native") return true;
+        if (col === "checkin") return school.native.includes("checkin") || school.native.includes("attendance");
         return school.native.includes(col);
       },
     };

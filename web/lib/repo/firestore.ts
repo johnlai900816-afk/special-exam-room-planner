@@ -313,7 +313,7 @@ export function createFirestoreRepo(db: Firestore, scope: RepoScope, opt: Firest
       await runTransaction(db, async (tx) => {
         const s = await tx.get(r);
         const cur = s.exists() ? split(s.data()) : null;
-        const base = (cur?.doc as unknown as DocOf<"attendance"> | undefined) || {
+        const base: DocOf<"attendance"> = (cur?.doc as unknown as DocOf<"attendance"> | undefined) || {
           date,
           key: gid + "@" + pid,
           gid,

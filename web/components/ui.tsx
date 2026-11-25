@@ -1,5 +1,5 @@
 /* 共用元件，照 repo 根目錄的 DESIGN.md：膠囊按鈕（主要＝深藍黑底）、白色 16px 卡片、紅色區段編號、10px 圓角輸入框。 */
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 export function cx(...a: (string | false | null | undefined)[]): string {
   return a.filter(Boolean).join(" ");
@@ -85,13 +85,13 @@ export function Button({ tone = "default", size = "md", className, ...p }: Butto
 }
 
 const field = "min-h-10 rounded-[10px] border border-line2 bg-field px-3 text-base text-ink focus:outline-2 focus:outline-focus";
-export function Input({ className, ...p }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...p }: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> }) {
   return <input {...p} className={cx(field, className)} />;
 }
 export function Select({ className, ...p }: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...p} className={cx(field, "pr-8", className)} />;
 }
-export function Textarea({ className, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> }) {
   return <textarea {...p} className={cx(field, "py-2", className)} />;
 }
 

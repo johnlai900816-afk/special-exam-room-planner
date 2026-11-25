@@ -2,7 +2,7 @@
 /* 管理者的個案頁（/admin/student/?id=學生；舊版 app.js renderCase）：一位學生的全部——
    基本資料（可改）、私密、組別與課表、段考服務、出缺席、家長聯絡、IEP 會議。
    基本資料經 planOnD 寫回（改個管時 private.caseMgrId、teacherIds 跟著變）；私密欄位直接 patch private（帶 rev）。 */
-import { ArrowLeft, ExternalLink, Lock, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronRight, Lock, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -10,7 +10,6 @@ import { AdminShell, useAdmin } from "@/components/AdminShell";
 import { CmOptions } from "@/components/admin/CmOptions";
 import { useApply } from "@/components/admin/useApply";
 import { AttendanceSummary, Contacts, ExamService, PrivateFields, privSaver } from "@/components/case/CaseParts";
-import { OLD_APP } from "@/components/Planned";
 import { WeekGrid } from "@/components/WeekGrid";
 import { Badge, Button, Card, Input, Select, SectionTitle } from "@/components/ui";
 import { IEP, type Round } from "@/lib/iep";
@@ -212,10 +211,10 @@ function Case() {
           ) : (
             <p className="text-sm text-mute">沒有</p>
           )}
-          <a href={OLD_APP + "#iep"} className="mt-3 inline-flex min-h-10 items-center gap-1.5 text-sm text-blue">
-            <ExternalLink size={14} />
+          <Link href="/admin/iep/" className="mt-3 inline-flex min-h-10 items-center gap-1.5 text-sm text-blue">
             IEP 會議
-          </a>
+            <ChevronRight size={14} />
+          </Link>
         </Card>
       </div>
 

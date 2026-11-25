@@ -1,11 +1,12 @@
 "use client";
-/* 管理者「點名」：還沒搬到新版（phase 3b），先連到舊版的同一頁。 */
-import { AdminShell, UseOld } from "@/components/AdminShell";
+/* 舊網址：點名搬到 /admin/checkin/（保留查詢參數） */
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default function CheckPage() {
-  return (
-    <AdminShell title="點名" needData={false}>
-      <UseOld title="點名" hash="#checkin/now" />
-    </AdminShell>
-  );
+export default function OldCheckPage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/admin/checkin/" + window.location.search);
+  }, [router]);
+  return <p className="py-20 text-center text-mute">讀取中…</p>;
 }

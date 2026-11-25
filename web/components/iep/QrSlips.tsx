@@ -33,15 +33,16 @@ function loadQr(): Promise<void> {
   return loading;
 }
 
-/** 把容器裡所有 .iepqr[data-t] 畫成 QR（畫完才 resolve，列印前要等） */
-export function drawQr(root: HTMLElement | null): Promise<void> {
-  const els = [...(root?.querySelectorAll<HTMLElement>(".iepqr[data-t]") || [])];
+/** 把容器裡所有 .iepqr[data-t] 畫成 QR（畫完才 resolve，列印前要等）。學生卡用 {sel:'.qr[data-t]', size:96}（和舊版一樣） */
+export function drawQr(root: HTMLElement | null, opt: { sel?: string; size?: number } = {}): Promise<void> {
+  const size = opt.size || 256;
+  const els = [...(root?.querySelectorAll<HTMLElement>(opt.sel || ".iepqr[data-t]") || [])];
   if (!els.length) return Promise.resolve();
   return loadQr()
     .then(() => {
       els.forEach((el) => {
         el.innerHTML = "";
-        new window.QRCode!(el, { text: el.dataset.t || "", width: 256, height: 256, correctLevel: window.QRCode!.CorrectLevel.M });
+        new window.QRCode!(el, { text: el.dataset.t || "", width: size, height: size, correctLevel: window.QRCode!.CorrectLevel.M });
       });
     })
     .catch(() => els.forEach((el) => (el.textContent = "QR Code 載入失敗，請檢查網路")));
