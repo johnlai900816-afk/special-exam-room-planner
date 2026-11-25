@@ -121,7 +121,7 @@ function css(){if(typeof document==='undefined'||document.getElementById('xx-css
 .xx-otm{font-family:var(--kai,"標楷體",serif);color:#000;background:#fff}
 .xx-otm h2{font-size:16pt;text-align:center;line-height:1.4;margin:0 0 6px}
 .xx-otm .xx-otn{font-size:11pt;margin:0 0 6px}
-.xx-otm table.out th,.xx-otm table.out td{font-size:12pt;padding:6px 8px;border-color:#000;vertical-align:middle}
+.xx-otm table.out th,.xx-otm table.out td{font-size:12pt;padding:6px 8px;border-color:#000;vertical-align:middle;color:#000}.xx-otm table.out th{background:#fff}
 .xx-otm .xx-otsg{display:flex;gap:40mm;margin-top:16mm;font-size:12pt}.xx-otm .xx-otsg span{flex:1;border-bottom:1px solid #000;padding-bottom:2mm}
 @media print{.xx[data-xx="load"] .xx-np,.xx[data-xx="load"] .xx-bar,.xx[data-xx="load"]>.xx-bar{display:none!important}
   .xx[data-xx="load"] .xx-card{border:0;padding:0;margin:0;box-shadow:none;background:#fff}.xx[data-xx="load"] .xx-h{display:none}}
