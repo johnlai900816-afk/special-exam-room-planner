@@ -6,3 +6,4 @@ const ai=require('./ai');
 exports.aiGenerate=ai.aiGenerate;
 exports.aiListModels=ai.aiListModels;
 Object.assign(exports,require('./iep'));
+Object.assign(exports,require('./nx-index'));

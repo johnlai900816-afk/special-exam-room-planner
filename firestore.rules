@@ -1,4 +1,11 @@
 rules_version = '2';
+// 資源班管理系統｜下一版 Firestore 規則（尚未部署）
+//
+//   A.  舊位置：從正式的 firestore.rules 原封複製（第 1 行 rules_version 之後到 iepRate 為止，一字不差），舊版照常運作。
+//   A+. 過渡期新增：teacherOff、joinRequests、replies（新版的老師送出不排課時段、加入申請、回覆）。
+//   B.  新位置 schools/{sid}/…：角色來自 custom claims {sid, role, tid}（functions/nx-claims.js），規則不用 get() 查角色。
+//       老師只讀得到 caseMgrId == tid 或 teacherIds 含 tid 的學生；private 只有個管與管理者／編輯。
+//   測試：web/test/rules.test.ts（npm run test:rules，要 Java 與 Firestore 模擬器）。
 service cloud.firestore {
   match /databases/{database}/documents {
     // ★ 學校自己架設時：把下面的信箱改成主持人的 Gmail（網站「學校自己的雲端 › 複製安全規則」會自動填好）。
@@ -143,6 +150,357 @@ service cloud.firestore {
     }
     match /iepRate/{k} {
       allow read, write: if false;
+    }
+
+    // ═════════ A+. 過渡期新增（新版用；舊版不碰）═════════
+    // config/access.bind = { 信箱: teacher id }，由主持人設定
+    function myTeacherLegacy() { return access().get('bind', {}).get(email(), ''); }
+    // 老師自己送出的不排課時段：只能寫自己綁定的那一位；編輯讀取並套用到 rc/main
+    match /teacherOff/{teacherId} {
+      allow read: if editor() || (member() && myTeacherLegacy() == teacherId);
+      allow create, update: if member() && (
+          (myTeacherLegacy() == teacherId
+            && incoming().teacherId == teacherId
+            && incoming().by == email()
+            && incoming().status == 'pending'
+            && incoming().off is list && incoming().off.size() <= 80)
+          || (editor() && resource != null
+            && incoming().diff(resource.data).affectedKeys().hasOnly(['status', 'appliedBy', 'appliedAt'])));
+      allow delete: if editor();
+    }
+    // 還不是成員的人送出加入申請（只能寫自己的；編輯讀、處理完刪掉）
+    match /joinRequests/{reqUid} {
+      allow create: if signedIn() && reqUid == request.auth.uid && incoming().email == email()
+        && incoming().keys().hasOnly(['uid', 'email', 'name', 'note', 'at'])
+        && incoming().name is string && incoming().name.size() <= 40
+        && incoming().note is string && incoming().note.size() <= 200;
+      allow read, delete: if editor() || (signedIn() && reqUid == request.auth.uid);
+    }
+    // 老師自己的回覆（通知單、IEP 會議出席…）：只能寫自己的
+    match /replies/{topic}/by/{replyUid} {
+      allow read: if editor() || (member() && replyUid == request.auth.uid);
+      allow create, update: if member() && replyUid == request.auth.uid
+        && incoming().uid == request.auth.uid && incoming().email == email();
+      allow delete: if editor();
+    }
+
+    // ═════════ B. 新位置 schools/{sid}/… ═════════
+    // custom claims：sid＝學校、role＝admin|editor|teacher|viewer、tid＝綁定的名冊老師（老師一定要有）
+    function tok() { return request.auth.token; }
+    function inSchool(sid) {
+      return signedIn() && tok().get('sid', '') == sid
+        && tok().get('role', '') in ['admin', 'editor', 'teacher', 'viewer'];
+    }
+    function myTid() { return tok().get('tid', ''); }
+    function isAdmin(sid) { return inSchool(sid) && tok().role == 'admin'; }
+    // 管理者與編輯：學校裡的資料全部可讀可寫
+    function isStaff(sid) { return inSchool(sid) && tok().role in ['admin', 'editor']; }
+    function isTeacher(sid) { return inSchool(sid) && tok().role == 'teacher' && myTid() is string && myTid() != ''; }
+
+    // 版本：新增 rev==1；更新剛好 +1；updatedBy 一定是自己、updatedAt 一定是伺服器時間
+    function stamped() { return incoming().updatedBy == request.auth.uid && incoming().updatedAt == request.time; }
+    function revCreate() { return incoming().rev == 1 && stamped(); }
+    function revUpdate() { return incoming().rev is int && incoming().rev == resource.data.rev + 1 && stamped(); }
+    function META() { return ['rev', 'updatedBy', 'updatedAt']; }
+    // 這次只改了 keys（加上 rev 等）
+    function changedOnly(keys) { return incoming().diff(resource.data).affectedKeys().hasOnly(keys.concat(META())); }
+    function str(v, n) { return v is string && v.size() <= n; }
+    function optStr(k, n) { return !(k in incoming()) || str(incoming()[k], n); }
+    function optList(k, n) { return !(k in incoming()) || (incoming()[k] is list && incoming()[k].size() <= n); }
+    function optMap(k, n) { return !(k in incoming()) || (incoming()[k] is map && incoming()[k].size() <= n); }
+    function optNum(k, n) { return !(k in incoming()) || (incoming()[k] is number && incoming()[k] >= 0 && incoming()[k] <= n); }
+    function ordOk() { return incoming().ord is int && incoming().ord >= 0 && incoming().ord < 5000; }
+
+    function termShape() {
+      return incoming().keys().hasOnly(['v', 'title', 'periods', 'rooms', 'settings', 'blocked', 'offBy', 'sets',
+               'lockFix', 'offPool', 'lockLast', 'packed'].concat(META()))
+        && optStr('title', 200) && optList('periods', 30) && optList('rooms', 100) && optMap('settings', 100)
+        && optList('blocked', 200) && optMap('offBy', 2000) && optList('sets', 200) && optList('lockFix', 2000)
+        && optMap('offPool', 500) && optMap('packed', 20);
+    }
+    function teacherShape() {
+      return incoming().keys().hasAll(['ord', 'name', 'role', 'off'])
+        && incoming().keys().hasOnly(['ord', 'name', 'role', 'off', 'note', 'hours', 'prefRooms',
+               'reduce', 'reduceNote', 'otMax', 'prefSubj', 'prefGrade', 'avoidSubj', 'cmCap', 'noCM', 'x'].concat(META()))
+        && ordOk() && str(incoming().name, 60) && str(incoming().role, 20)
+        && incoming().off is list && incoming().off.size() <= 100
+        && optStr('note', 500) && optList('prefRooms', 30) && optStr('x', 20000)
+        && optNum('hours', 60) && optNum('reduce', 60) && optNum('otMax', 60) && optNum('cmCap', 200)
+        && optStr('reduceNote', 100) && optList('prefSubj', 30) && optList('prefGrade', 12) && optList('avoidSubj', 30)
+        && (!('noCM' in incoming()) || incoming().noCM is bool);
+    }
+    function classShape() {
+      return incoming().keys().hasAll(['cls', 'subj'])
+        && incoming().keys().hasOnly(['cls', 'head', 'subj', 'ttJson', 'x'].concat(META()))
+        && str(incoming().cls, 40) && incoming().subj is map && incoming().subj.size() <= 60
+        && optStr('head', 60) && optStr('ttJson', 60000) && optStr('x', 60000);
+    }
+    function groupShape() {
+      return incoming().keys().hasAll(['ord', 'name', 'subject', 'teacherId', 'studentIds'])
+        && incoming().keys().hasOnly(['ord', 'name', 'subject', 'teacherId', 'per', 'mode', 'room', 'on', 'grade',
+               'studentIds', 'fixed', 'slots', 'x'].concat(META()))
+        && ordOk() && str(incoming().name, 60) && str(incoming().subject, 40) && str(incoming().teacherId, 60)
+        && incoming().studentIds is list && incoming().studentIds.size() <= 80
+        && (!('per' in incoming()) || (incoming().per is int && incoming().per >= 0 && incoming().per <= 15))
+        && optStr('mode', 10) && optStr('room', 60) && optStr('grade', 10)
+        && optList('fixed', 15) && optList('slots', 15) && optStr('x', 20000);
+    }
+    // 學生：個管一定也在 teacherIds 裡（老師只要一個 array-contains 查詢就拿得到全部）
+    function studentShape() {
+      return incoming().keys().hasAll(['ord', 'cls', 'seat', 'name', 'caseMgrId', 'groupIds', 'teacherIds'])
+        && incoming().keys().hasOnly(['ord', 'cls', 'seat', 'name', 'caseMgrId', 'groupIds', 'teacherIds',
+               'note', 'needs', 'off'].concat(META()))
+        && ordOk() && (str(incoming().cls, 40) || incoming().cls is int) && (str(incoming().seat, 10) || incoming().seat is int)
+        && str(incoming().name, 40) && str(incoming().caseMgrId, 60)
+        && incoming().groupIds is list && incoming().groupIds.size() <= 40
+        && incoming().teacherIds is list && incoming().teacherIds.size() <= 40
+        && (incoming().caseMgrId == '' || incoming().caseMgrId in incoming().teacherIds)
+        && optStr('note', 300) && optList('needs', 30) && optList('off', 100);
+    }
+    function privShape() {
+      return incoming().keys().hasAll(['caseMgrId'])
+        && incoming().keys().hasOnly(['caseMgrId', 'privNote', 'iepDate', 'reviewDate', 'certExp', 'examSvc',
+               'contacts', 'x'].concat(META()))
+        && str(incoming().caseMgrId, 60) && optStr('privNote', 3000)
+        && optStr('iepDate', 20) && optStr('reviewDate', 20) && optStr('certExp', 20)
+        && optMap('examSvc', 30) && optList('contacts', 500) && optStr('x', 100000);
+    }
+    function attShape(aid) {
+      return incoming().keys().hasAll(['date', 'key', 'gid', 'pid', 'teacherId', 'marks'])
+        && incoming().keys().hasOnly(['date', 'key', 'gid', 'pid', 'teacherId', 'marks', 'roster', 'info'].concat(META()))
+        && incoming().date is string && incoming().date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && str(incoming().gid, 60) && str(incoming().pid, 20) && incoming().key == incoming().gid + '@' + incoming().pid
+        && aid == incoming().date + '_' + incoming().key
+        && str(incoming().teacherId, 60) && incoming().marks is map && incoming().marks.size() <= 80
+        && optList('roster', 80) && optMap('info', 10);
+    }
+    function iepShape() {
+      return incoming().keys().hasOnly(['ord', 'name', 'due', 'stuIds', 'readers', 'json'].concat(META()))
+        && ordOk() && str(incoming().name, 100) && str(incoming().due, 20)
+        && incoming().stuIds is list && incoming().stuIds.size() <= 200
+        && incoming().readers is list && incoming().readers.size() <= 200
+        && str(incoming().json, 500000);
+    }
+    // IEP 填空堂邀請：發起人（readers）寫公開的部分；被邀請的老師只寫 free、note、ansAt
+    function INV_ANS() { return ['free', 'note', 'ansAt']; }
+    function invShape(iid) {
+      return incoming().keys().hasAll(['roundId', 'teacherId', 'readers', 'keys'])
+        && incoming().keys().hasOnly(['roundId', 'teacherId', 'readers', 'name', 'round', 'kind', 'host', 'd1', 'd2', 'due',
+               'keys', 'ps', 'busy', 'stu', 'meets'].concat(INV_ANS()).concat(META()))
+        && str(incoming().roundId, 60) && str(incoming().teacherId, 60) && iid == incoming().roundId + '_' + incoming().teacherId
+        && incoming().readers is list && incoming().readers.size() <= 200
+        && incoming()['keys'] is list && incoming()['keys'].size() <= 400
+        && optStr('name', 100) && optStr('round', 100) && optStr('kind', 40) && optStr('host', 60)
+        && optStr('d1', 20) && optStr('d2', 20) && optStr('due', 20)
+        && optList('ps', 30) && optMap('busy', 400) && optList('stu', 80) && optList('meets', 80)
+        && optList('free', 400) && optStr('note', 300) && (!('ansAt' in incoming()) || incoming().ansAt is number);
+    }
+    // 只給管理者／編輯的雜項文件：versions、lockLog、staff、exam/{eid}/private
+    function blobShape() {
+      return incoming().keys().hasAll(['json']) && str(incoming().json, 900000)
+        && incoming().keys().hasOnly(['json', 'kind', 'ord', 'label', 'at', 'keys'].concat(META()));
+    }
+    function examShape() {
+      return incoming().keys().hasOnly(['title', 'sessions', 'rooms', 'proctors', 'proctorOf', 'supportOf', 'packed'].concat(META()))
+        && optStr('title', 200) && optList('sessions', 200) && optList('rooms', 200) && optList('proctors', 300)
+        && optMap('proctorOf', 3000) && optMap('supportOf', 3000) && optMap('packed', 20);
+    }
+
+    function placeShape() {
+      return incoming().keys().hasOnly(['ses', 'room', 'date', 'dow', 'per', 'lab', 't', 'roomName', 'proctor', 'support', 'proctorIds', 'stu', 'wait'].concat(META()))
+        && incoming().proctorIds is list && incoming().proctorIds.size() <= 4
+        && str(incoming().ses, 100) && str(incoming().room, 100)
+        && optStr('date', 40) && optStr('dow', 10) && optStr('per', 40) && optStr('lab', 100) && optStr('t', 40)
+        && optStr('roomName', 100) && optStr('proctor', 100) && optStr('support', 100)
+        && optList('stu', 300) && optList('wait', 300);
+    }
+    function seatShape() {
+      return incoming().keys().hasOnly(['teacherIds', 'cls', 'seat', 'name', 'rows'].concat(META()))
+        && incoming().teacherIds is list && incoming().teacherIds.size() <= 80
+        && optStr('cls', 20) && optStr('seat', 10) && optStr('name', 60) && optList('rows', 60);
+    }
+
+    match /schools/{sid} {
+      // 學校文件、成員、邀請只有 Cloud Functions（Admin SDK）寫
+      allow get: if inSchool(sid);
+      allow list, write: if false;
+
+      match /members/{mUid} {
+        allow get: if inSchool(sid) && (mUid == request.auth.uid || isStaff(sid));
+        allow list: if isAdmin(sid);
+        allow write: if false;
+      }
+      match /invites/{inviteEmail} {
+        allow read: if isAdmin(sid);
+        allow write: if false;
+      }
+
+      match /terms/{tid} {
+        // 學期設定（作息、教室、規則）：沒有學生資料，成員都讀得到
+        allow read: if inSchool(sid);
+        allow create: if isStaff(sid) && revCreate() && termShape();
+        allow update: if isStaff(sid) && revUpdate() && termShape();
+        allow delete: if isAdmin(sid);
+
+        // 老師：管理者／編輯全部可改；老師本人只能改自己的不排課時段
+        match /teachers/{teacherId} {
+          allow read: if inSchool(sid);
+          allow create: if isStaff(sid) && revCreate() && teacherShape();
+          allow update: if revUpdate() && teacherShape()
+            && (isStaff(sid) || (isTeacher(sid) && myTid() == teacherId && changedOnly(['off'])));
+          allow delete: if isStaff(sid);
+        }
+
+        // 班級（導師、全校課表一列、任課老師）與課程（含排課結果）：成員都讀得到（排課總表）
+        match /classes/{clsId} {
+          allow read: if inSchool(sid);
+          allow create: if isStaff(sid) && revCreate() && classShape();
+          allow update: if isStaff(sid) && revUpdate() && classShape();
+          allow delete: if isStaff(sid);
+        }
+        match /groups/{gid} {
+          allow read: if inSchool(sid);
+          allow create: if isStaff(sid) && revCreate() && groupShape();
+          allow update: if isStaff(sid) && revUpdate() && groupShape();
+          allow delete: if isStaff(sid);
+        }
+
+        // 學生：老師只讀得到自己個管的或 teacherIds 裡有自己的（查詢也要帶同樣的條件，否則整個查詢被拒）
+        match /students/{stuId} {
+          allow get, list: if isStaff(sid)
+            || (isTeacher(sid) && (resource.data.caseMgrId == myTid() || myTid() in resource.data.teacherIds));
+          allow create: if isStaff(sid) && revCreate() && studentShape();
+          allow update: if isStaff(sid) && revUpdate() && studentShape();
+          allow delete: if isStaff(sid);
+
+          // 敏感資料：只有個管老師與管理者／編輯。caseMgrId 抄在這份文件上，讀的時候不用 get()；
+          // 管理者／編輯寫的時候要和學生文件（同一批寫入後的樣子）一致
+          match /private/{docId} {
+            function sameCaseMgr() {
+              return incoming().caseMgrId
+                == getAfter(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/students/$(stuId)).data.caseMgrId;
+            }
+            allow get: if isStaff(sid) || (isTeacher(sid) && resource.data.caseMgrId == myTid());
+            allow list: if isStaff(sid);
+            allow create: if docId == 'profile' && isStaff(sid) && revCreate() && privShape() && sameCaseMgr();
+            allow update: if docId == 'profile' && revUpdate() && privShape() && (
+                (isStaff(sid) && sameCaseMgr())
+                || (isTeacher(sid) && resource.data.caseMgrId == myTid()
+                    && changedOnly(['privNote', 'iepDate', 'reviewDate', 'certExp', 'examSvc', 'contacts'])));
+            allow delete: if isStaff(sid);
+          }
+        }
+
+        // 點名：一節課一份（id＝日期_課程@節次）；管理者／編輯與那門課的老師
+        match /attendance/{aid} {
+          // 還不存在的文件也讓老師 get（交易裡先讀再建立）；不會洩漏內容
+          allow get: if isStaff(sid) || (isTeacher(sid) && (resource == null || resource.data.teacherId == myTid()));
+          allow list: if isStaff(sid) || (isTeacher(sid) && resource.data.teacherId == myTid());
+          allow create: if revCreate() && attShape(aid) && (isStaff(sid)
+            || (isTeacher(sid) && incoming().teacherId == myTid()
+                && get(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/groups/$(incoming().gid)).data.teacherId == myTid()));
+          allow update: if revUpdate() && attShape(aid) && (isStaff(sid)
+            || (isTeacher(sid) && resource.data.teacherId == myTid() && changedOnly(['marks', 'roster', 'info'])));
+          allow delete: if isStaff(sid);
+        }
+
+        // IEP 會議時間調查：管理者／編輯＋readers（發起人、學生的個管）。回覆只由 Function 寫
+        match /iep/{roundId} {
+          allow get: if isStaff(sid) || (isTeacher(sid) && (resource == null || myTid() in resource.data.readers));
+          allow list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.readers);
+          allow create: if revCreate() && iepShape() && (isStaff(sid) || (isTeacher(sid) && myTid() in incoming().readers));
+          allow update: if revUpdate() && iepShape() && (isStaff(sid)
+            || (isTeacher(sid) && myTid() in resource.data.readers && myTid() in incoming().readers));
+          // 老師可以刪自己開、只有自己一個 reader 的調查單（只有自己個管的學生；刪了不影響別人）
+          allow delete: if isStaff(sid) || (isTeacher(sid) && resource.data.readers == [myTid()]);
+          match /responses/{h} {
+            allow read: if isStaff(sid)
+              || (isTeacher(sid) && myTid() in get(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/iep/$(roundId)).data.readers);
+            allow write: if false;
+          }
+        }
+
+        // IEP 填空堂：id＝調查單_老師。被邀請的老師讀寫自己的（只能改回覆）；調查單的 readers 讀、建、改公開部分、刪
+        match /iepInvite/{iid} {
+          function roundReaders(rid) {
+            return getAfter(/databases/$(database)/documents/schools/$(sid)/terms/$(tid)/iep/$(rid)).data.readers;
+          }
+          allow get: if isStaff(sid) || (isTeacher(sid) && (resource == null
+            || resource.data.teacherId == myTid() || myTid() in resource.data.readers));
+          allow list: if isStaff(sid) || (isTeacher(sid) && (resource.data.teacherId == myTid() || myTid() in resource.data.readers));
+          allow create: if revCreate() && invShape(iid) && (isStaff(sid)
+            || (isTeacher(sid) && myTid() in incoming().readers && myTid() in roundReaders(incoming().roundId)));
+          allow update: if revUpdate() && invShape(iid) && incoming().roundId == resource.data.roundId
+            && incoming().teacherId == resource.data.teacherId && (isStaff(sid)
+            || (isTeacher(sid) && myTid() in resource.data.readers && myTid() in incoming().readers
+                && myTid() in roundReaders(incoming().roundId)
+                && !incoming().diff(resource.data).affectedKeys().hasAny(INV_ANS()))
+            || (isTeacher(sid) && resource.data.teacherId == myTid() && changedOnly(INV_ANS())));
+          allow delete: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.readers);
+        }
+
+        // 段考：考程、試場、監考對照大家讀；學生名單與調整（private）只有管理者／編輯
+        match /exam/{eid} {
+          allow read: if inSchool(sid);
+          allow create: if isStaff(sid) && revCreate() && examShape();
+          allow update: if isStaff(sid) && revUpdate() && examShape();
+          allow delete: if isStaff(sid);
+          match /private/{docId} {
+            allow read, delete: if isStaff(sid);
+            allow create: if isStaff(sid) && revCreate() && blobShape();
+            allow update: if isStaff(sid) && revUpdate() && blobShape();
+          }
+          // 每個試場（一節一間）的交卷名單：監考、支援老師（proctorIds）讀得到自己的；管理者存段考時產生
+          match /placements/{pid} {
+            allow get, list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.proctorIds);
+            allow create: if isStaff(sid) && revCreate() && placeShape();
+            allow update: if isStaff(sid) && revUpdate() && placeShape();
+            allow delete: if isStaff(sid);
+          }
+          // 每位學生的考場：讀得到這位學生的老師（teacherIds，和學生文件一樣）讀得到；欄位和舊版班級查考場連結一樣少
+          match /seats/{stuId} {
+            allow get, list: if isStaff(sid) || (isTeacher(sid) && myTid() in resource.data.teacherIds);
+            allow create: if isStaff(sid) && revCreate() && seatShape();
+            allow update: if isStaff(sid) && revUpdate() && seatShape();
+            allow delete: if isStaff(sid);
+          }
+        }
+
+        // 版本、鎖課紀錄、其他只給管理者／編輯的資料
+        match /{col}/{docId} {
+          allow read, delete: if col in ['versions', 'lockLog', 'staff'] && isStaff(sid);
+          allow create: if col in ['versions', 'lockLog', 'staff'] && isStaff(sid) && revCreate() && blobShape();
+          allow update: if col in ['versions', 'lockLog', 'staff'] && isStaff(sid) && revUpdate() && blobShape();
+        }
+      }
+    }
+
+    // 免登入檢視（查考場連結，舊版 view/{鑰匙}）：只能用鑰匙取得單一份；要沒過期，而且鑰匙還登記在那份段考的
+    // exam/{eid}/private/view.keys 裡（換新連結、關閉連結後，就算舊文件沒刪掉也讀不到）。
+    // 管理者／編輯寫：鑰匙 32 碼亂數（可接 _班級），sid 是自己的學校，寫入的同一批要把鑰匙登記進 private/view（getAfter）。
+    function viewReg(d) {
+      return /databases/$(database)/documents/schools/$(d.sid)/terms/$(d.termId)/exam/$(d.eid)/private/view;
+    }
+    function viewShape(token) {
+      return token.matches('[0-9a-f]{32}(_[0-9A-Za-z]{1,40})?')
+        && incoming().keys().hasAll(['sid', 'termId', 'eid', 'rows', 'exp'])
+        && incoming().keys().hasOnly(['sid', 'termId', 'eid', 'v', 'title', 'cls', 'all', 'rows', 'exp', 'at'])
+        && str(incoming().sid, 60) && str(incoming().termId, 60) && str(incoming().eid, 60)
+        && str(incoming().rows, 900000) && optStr('title', 200) && optStr('cls', 20)
+        && (!('all' in incoming()) || incoming().all == true)
+        && (!('v' in incoming()) || incoming().v is int)
+        && (!('at' in incoming()) || incoming().at == request.time)
+        && incoming().exp is timestamp && incoming().exp > request.time && incoming().exp < request.time + duration.value(400, 'd');
+    }
+    match /publicViews/{token} {
+      allow get: if resource.data.get('exp', null) is timestamp && resource.data.exp > request.time
+        && exists(viewReg(resource.data)) && token in get(viewReg(resource.data)).data.get('keys', []);
+      allow list: if false;
+      allow create: if viewShape(token) && isStaff(incoming().sid)
+        && token in getAfter(viewReg(incoming())).data.get('keys', []);
+      allow update: if viewShape(token) && isStaff(incoming().sid) && incoming().sid == resource.data.sid
+        && token in getAfter(viewReg(incoming())).data.get('keys', []);
+      allow delete: if isStaff(resource.data.sid);
     }
   }
 }
