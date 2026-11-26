@@ -107,7 +107,7 @@ describe("檢視登入：看得到總課表與段考，讀不到學生", () => {
     const cells: Record<string, { s: string; t: string }> = {};
     const [d0, p0] = at.split("|");
     cells[at] = { s: C.ttCellAt(D, "701", d0 + "-" + p0)!.s, t: "李惠婷" };
-    p = planOnD(L.records, (X: RcData) => applyGridEdit(X, "701", { cls: "", head: "李惠婷", cells, accept: true }));
+    p = planOnD(L.records, (X: RcData) => void applyGridEdit(X, "701", { cls: "", head: "李惠婷", cells, accept: true }));
     await applyOps(repo, p.ops, L.revs);
     L = await repo.load();
     D = toCoreD(L.records);
