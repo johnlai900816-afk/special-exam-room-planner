@@ -86,3 +86,16 @@ export function demoAdminRepo(): Repo {
   }
   return adminRepo;
 }
+
+/** 範例資料的檢視視角（教務處：沒有學生資料） */
+export const DEMO_VIEWER_SCOPE: RepoScope = { sid: "demo", termId: "demo", uid: "demo-viewer", role: "viewer" };
+let viewerRepo: Repo | null = null;
+let viewerFor: MemoryStore | null = null;
+export function demoViewerRepo(): Repo {
+  const st = demoStore();
+  if (!viewerRepo || viewerFor !== st) {
+    viewerRepo = createMemoryRepo(DEMO_VIEWER_SCOPE, st, { readOnly: true });
+    viewerFor = st;
+  }
+  return viewerRepo;
+}

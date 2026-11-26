@@ -1,11 +1,10 @@
 "use client";
 /* 登入（新資料模型）：Google 登入 → 有邀請就領取（nxAcceptInvite）→ getIdToken(true) 拿 claims →
-   老師到「今天」；管理者／編輯／檢視這一階段先用舊版。狀態：還沒有邀請、找不到綁定的老師、學期還沒設定。 */
-import { ArrowRight, Copy, ExternalLink, LogOut, RefreshCw, Sparkles } from "lucide-react";
+   老師到「今天」、管理者／編輯到管理者端、檢視到總課表（/viewer/）。狀態：還沒有邀請、找不到綁定的老師、學期還沒設定。 */
+import { ArrowRight, Copy, LogOut, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { OLD_APP } from "@/components/Planned";
 import { Brand, Button, Card, Note } from "@/components/ui";
 import { callNx, useNx } from "@/lib/nx/session";
 import { applyFontSize, applyTheme } from "@/lib/prefs";
@@ -37,6 +36,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (x.phase === "teacher") router.replace("/me/");
     if (x.phase === "staff") router.replace("/admin/");
+    if (x.phase === "viewer") router.replace("/viewer/");
   }, [x.phase, router]);
 
   const login = async () => {
@@ -57,12 +57,6 @@ export default function LoginPage() {
       換一個帳號
     </Button>
   );
-  const oldLink = (
-    <a href={OLD_APP} className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full border border-ink bg-ink px-4 text-[15px] font-medium text-on-ink">
-      <ExternalLink size={16} />
-      請先用舊版
-    </a>
-  );
   const signedIn = !!x.user;
 
   return (
@@ -72,7 +66,7 @@ export default function LoginPage() {
           <Brand />
         </div>
         <Card>
-          {x.phase === "boot" || x.phase === "signing" || x.phase === "teacher" || x.phase === "staff" ? (
+          {x.phase === "boot" || x.phase === "signing" || x.phase === "teacher" || x.phase === "staff" || x.phase === "viewer" ? (
             <p className="py-6 text-center text-mute">{x.phase === "signing" ? "確認身分中…" : "連線中…"}</p>
           ) : x.phase === "demo" && !x.cloud ? (
             <div className="space-y-4">
@@ -99,6 +93,9 @@ export default function LoginPage() {
                 </Link>
                 <Link href="/admin/" className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full px-4 text-[15px] text-ink2 hover:bg-hover">
                   範例資料的管理者畫面
+                </Link>
+                <Link href="/viewer/" className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-full px-4 text-[15px] text-ink2 hover:bg-hover">
+                  範例資料的檢視畫面
                 </Link>
               </div>
             </div>
@@ -158,12 +155,6 @@ export default function LoginPage() {
           ) : x.phase === "noTerm" ? (
             <div className="space-y-4">
               <Note tone="warn">學校還沒有設定這學期的資料</Note>
-              {out}
-            </div>
-          ) : x.phase === "viewer" ? (
-            <div className="space-y-4">
-              <p className="text-sm text-ink2">{x.user?.email}・檢視</p>
-              {oldLink}
               {out}
             </div>
           ) : (

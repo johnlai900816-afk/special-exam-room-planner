@@ -9,7 +9,7 @@
      3. claims {sid, role, tid}：讀 schools/{sid}（currentTerm、mode）
           teacher → 名冊上要有 teachers/{tid}，沒有就是「找不到綁定的老師」→ Firestore 版 Repo
           admin／editor → 管理者端（/admin/…，Firestore 版 Repo 讀全部）；可以「以老師身分預覽」（記憶體版、唯讀、照規則過濾）
-          viewer → 這一階段先用舊版（畫面給連結）
+          viewer → 檢視（/viewer/：總課表、段考考程與監考）：Firestore 版 Repo（role viewer，規則只讓他讀學期設定、老師、班級、課程、段考，沒有學生）
    沒登入、這台電腦設定成單機、或沒有雲端設定 → 範例資料（記憶體版 Repo，虛構的；可以選看哪一位老師）。
 
    過渡期：schools/{sid}.mode=='legacy' 時資料由舊版單向同步，新版只讀；
@@ -24,7 +24,7 @@ import type { RoleClaims } from "../model";
 import { createFirestoreRepo, createMemoryRepo, memoryStore, toCoreD, type Loaded, type Repo, type RepoScope, type WritableCol } from "../repo";
 import { buildBoard, type Board } from "../schedule";
 import type { RcData, Teacher } from "../types";
-import { DEMO_DEFAULT_TID, demoAdminRepo, demoRepo } from "./demo";
+import { DEMO_DEFAULT_TID, demoAdminRepo, demoRepo, demoViewerRepo } from "./demo";
 
 export type NxPhase =
   | "boot" // 還在判斷
@@ -34,7 +34,7 @@ export type NxPhase =
   | "missingTeacher" // 找不到綁定的老師
   | "noTerm" // 學校還沒有目前的學期
   | "staff" // 管理者／編輯：管理者端
-  | "viewer" // 檢視：先用舊版
+  | "viewer" // 檢視（教務處）：/viewer/
   | "teacher" // 老師，Firestore
   | "error";
 
@@ -44,7 +44,13 @@ export interface NxUser {
   name: string;
 }
 
-/** 管理者端：讀得到全部（管理者／編輯登入；範例資料時是記憶體版） */
+/** 檢視（教務處、行政）：只讀學期設定、老師、班級、課程（總課表）與段考，沒有學生資料（§4.1） */
+export interface ViewerSide {
+  repo: Repo;
+  data: Loaded | null;
+  D: RcData | null;
+}
+
 /** 管理者端可以寫的一塊：集合名稱，或整塊功能（'sched' 排課、'checkin' 點名） */
 export type AdminArea = WritableCol | "sched" | "checkin";
 
@@ -80,6 +86,8 @@ export interface Nx {
   writable(col: WritableCol): boolean;
   /** 管理者端的資料（不是管理者／編輯、或學校還沒有學期時是 null） */
   admin: AdminSide | null;
+  /** 檢視的資料（檢視登入；沒登入時是範例資料的檢視視角） */
+  viewer: ViewerSide | null;
   /** 學校文件（範例資料時是 null） */
   school: School | null;
   /** 管理者正在以哪一位老師的身分預覽（''＝沒有）；預覽時老師頁讀的是唯讀的記憶體版 */
@@ -148,6 +156,7 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
   const [publicMode, setPublicModeState] = useState(false);
   const [data, setData] = useState<Loaded | null>(null);
   const [adminData, setAdminData] = useState<Loaded | null>(null);
+  const [viewData, setViewData] = useState<Loaded | null>(null);
   const [previewTid, setPreviewTid] = useState("");
   const [nonce, setNonce] = useState(0);
   const authUser = useRef<User | null>(null);
@@ -172,6 +181,7 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
       authUser.current = u;
       setData(null);
       setAdminData(null);
+      setViewData(null);
       setPreviewTid("");
       setSchool(null);
       setClaims(null);
@@ -208,7 +218,6 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
           return;
         }
         setClaims(c);
-        if (c.role === "viewer") return setPhase("viewer");
         const s = await getDoc(doc(fb.db, "schools/" + c.sid));
         const sd = s.data() || {};
         const termId = String(sd.currentTerm || "");
@@ -220,6 +229,10 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
           return setPhase("staff");
         }
         if (!termId) return setPhase("noTerm");
+        if (c.role === "viewer") {
+          setSchool(sch);
+          return setPhase("viewer");
+        }
         const tid = c.tid || "";
         const t = tid ? await getDoc(doc(fb.db, `schools/${c.sid}/terms/${termId}/teachers/${tid}`)) : null;
         if (!alive) return;
@@ -258,6 +271,25 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
       (e) => setMsg(String((e as { code?: string }).code || e.message)),
     );
   }, [adminRepo]);
+
+  // 檢視：只讀（規則本來就不讓他寫）；範例資料時用同一份記憶體資料庫的檢視視角
+  const viewRepo = useMemo<Repo | null>(() => {
+    if (phase === "demo") return demoViewerRepo();
+    if (phase !== "viewer" || !claims || !school || !school.termId || !user) return null;
+    const fb = firebase();
+    if (!fb) return null;
+    return createFirestoreRepo(fb.db, { sid: claims.sid, termId: school.termId, uid: user.uid, role: "viewer" }, { readOnly: true });
+  }, [phase, claims, school, user]);
+
+  useEffect(() => {
+    if (!viewRepo) return;
+    return viewRepo.watch(
+      (x) => setViewData(x),
+      (e) => setMsg(String((e as { code?: string }).code || e.message)),
+    );
+  }, [viewRepo]);
+  const viewD = useMemo(() => (viewData ? toCoreD(viewData.records) : null), [viewData]);
+  const viewer = useMemo<ViewerSide | null>(() => (viewRepo ? { repo: viewRepo, data: viewData, D: viewD } : null), [viewRepo, viewData, viewD]);
 
   const repo = useMemo<Repo | null>(() => {
     if (phase === "demo") return demoRepo(demoTid);
@@ -347,6 +379,7 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
     tid,
     writable,
     admin,
+    viewer,
     school,
     previewTid,
     setPreview(t) {
@@ -374,6 +407,7 @@ export function NxSessionProvider({ children }: { children: ReactNode }) {
     async logout() {
       setData(null);
       setAdminData(null);
+      setViewData(null);
       setPreviewTid("");
       if (publicMode) {
         // 公用電腦：這個分頁存的東西（IEP 連結的鑰匙、設定、範例資料的選擇）全部清掉

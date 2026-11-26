@@ -188,6 +188,30 @@ describe("檢視（viewer）", () => {
   });
 });
 
+describe("全校課表（classes.ttJson，§9e）", () => {
+  const tt = (n: number) => JSON.stringify({ src: "x".repeat(n) });
+  const cls = (ttJson: string, rev: number, by: string) => ({ cls: "701", subj: {}, head: "李老師", ttJson, rev, updatedBy: by, updatedAt: serverTimestamp() });
+  it("管理者／編輯寫得進整張格子（6 萬字以內）；超過就被拒", async () => {
+    await assertSucceeds(setDoc(doc(admin(), T + "/classes/701"), cls(tt(59000), 1, "uAdmin")));
+    await assertSucceeds(setDoc(doc(editor(), T + "/classes/701"), cls(tt(100), 2, "uEditor")));
+    await assertFails(setDoc(doc(admin(), T + "/classes/701"), cls(tt(60001), 3, "uAdmin")));
+  });
+  it("檢視、老師讀得到班級與課表，不能改", async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), T + "/classes/701"), { cls: "701", subj: {}, ttJson: tt(10), ...meta(1) }));
+    await assertSucceeds(getDocs(collection(viewer(), T + "/classes")));
+    await assertSucceeds(getDoc(doc(r1(), T + "/classes/701")));
+    await assertFails(setDoc(doc(viewer(), T + "/classes/701"), cls(tt(10), 2, "uView")));
+    await assertFails(setDoc(doc(r1(), T + "/classes/701"), cls(tt(10), 2, "uR1")));
+  });
+  it("檢視讀不到學生、private、版本、試排草稿", async () => {
+    const v = viewer();
+    await assertFails(getDocs(collection(v, T + "/students")));
+    await assertFails(getDoc(doc(v, T + "/students/s1/private/profile")));
+    await assertFails(getDocs(collection(v, T + "/versions")));
+    await assertFails(getDoc(doc(v, T + "/versions/draft")));
+  });
+});
+
 describe("跨校一律拒絕", () => {
   it("別校的管理者讀寫不到這間學校", async () => {
     const o = otherAdmin();
