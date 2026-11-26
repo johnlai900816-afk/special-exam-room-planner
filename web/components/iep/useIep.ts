@@ -7,6 +7,7 @@ import { IEP, type Busy, type Round } from "@/lib/iep";
 import type { IepRoundDoc } from "@/lib/model";
 import { inviteDocs, inviteWrites, nextOrd, roundDoc } from "@/lib/nx/iepSync";
 import { useNx } from "@/lib/nx/session";
+import { roText } from "@/lib/oldApp";
 import { revKey, toCoreD, type Loaded, type Repo, type RepoScope } from "@/lib/repo";
 import type { Board } from "@/lib/schedule";
 import type { RcData } from "@/lib/types";
@@ -54,6 +55,7 @@ export function useIep() {
   const revs = x.data.revs;
   const tid = x.tid;
   const ro = x.ro;
+  const legacy = useNx().school?.mode === "legacy";
 
   /** iep.js 的 ctx（M、排好的節次、教室）：用畫面上已經算好的課表，不再算一次；weekBusy 會把結果快取在 ctx 上 */
   const ctx = useMemo(() => {
@@ -101,7 +103,7 @@ export function useIep() {
   const save = useCallback(
     async (D: RcData, R: Round): Promise<boolean> => {
       if (ro) {
-        toast("過渡期請在舊版修改");
+        toast(roText(legacy));
         return false;
       }
       try {
@@ -115,7 +117,7 @@ export function useIep() {
         return false;
       }
     },
-    [ro, x.repo, x.data, syncInvites],
+    [ro, legacy, x.repo, x.data, syncInvites],
   );
 
   /** 改一份調查單：用一份新的 D（不動畫面上的那份），改完存檔 */

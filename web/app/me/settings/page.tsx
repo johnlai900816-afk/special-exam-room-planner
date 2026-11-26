@@ -10,6 +10,7 @@ import { Button, Card, Seg, SectionTitle, cx } from "@/components/ui";
 import { DAYS } from "@/lib/core";
 import { useNx } from "@/lib/nx/session";
 import { getFontSize, getTheme, setFontSize, setTheme, type FontSize, type Theme } from "@/lib/prefs";
+import { roText } from "@/lib/oldApp";
 import { revKey } from "@/lib/repo";
 import { TEACH } from "@/lib/teach";
 
@@ -83,7 +84,7 @@ function OffGrid() {
           </tbody>
         </table>
       </div>
-      {ro && <p className="mt-2 text-sm text-mute">過渡期請在舊版修改</p>}
+      {ro && <p className="mt-2 text-sm text-mute">{roText(x.school?.mode === "legacy")}</p>}
     </>
   );
 }

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAdmin } from "@/components/AdminShell";
 import { failText, toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
-import { OLD_APP } from "@/components/Planned";
+import { OLD_APP } from "@/lib/oldApp";
 import { CORE } from "@/lib/core";
 import { applyOps, diffD } from "@/lib/nx/apply";
 import { planOnD } from "@/lib/nx/apply";

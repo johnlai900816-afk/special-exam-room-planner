@@ -145,7 +145,7 @@ function Backup() {
               學生 {parsed.counts.students || 0}、老師 {parsed.counts.teachers || 0}、課程 {parsed.counts.groups || 0}
             </span>
           </p>
-          {parsed.kind === "legacy" && <Note>舊版備份只還原名冊、課程與排課；段考、點名請在舊版還原</Note>}
+          {parsed.kind === "legacy" && <Note>舊版備份只還原名冊、課程與排課</Note>}
           <div className="mt-2 flex flex-wrap gap-2">
             <Badge tone="ok">新增 {sum.add}</Badge>
             <Badge tone="acc">更新 {sum.update}</Badge>

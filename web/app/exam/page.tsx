@@ -1,10 +1,7 @@
 "use client";
-/* 舊網址：段考已經搬到 /admin/exam/ */
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+/* 舊網址：段考搬到 /admin/exam/；老師的監考在 /me/exam/，檢視看 /viewer/exam/（依角色轉過去） */
+import { RoleRedirect } from "@/components/RoleRedirect";
 
-export default function ExamRedirect() {
-  const r = useRouter();
-  useEffect(() => r.replace("/admin/exam/"), [r]);
-  return <p className="py-20 text-center text-mute">段考已經搬到新的位置…</p>;
+export default function OldRoute() {
+  return <RoleRedirect admin="/admin/exam/" teacher="/me/exam/" viewer="/viewer/exam/" />;
 }

@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_TC } from "next/font/google";
 import { NxSessionProvider } from "@/lib/nx/session";
-import { SessionProvider } from "@/lib/session";
 import { THEME_BOOT } from "@/lib/prefs";
 // 舊版 IEP 的樣式（調查表、小通知單、QR 小單的列印版面）：直接用 repo 根目錄同一份，印出來才會和舊版一模一樣
 import "../../iep.css";
@@ -38,9 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
       <body className="min-h-dvh">
-        <SessionProvider>
-          <NxSessionProvider>{children}</NxSessionProvider>
-        </SessionProvider>
+        <NxSessionProvider>{children}</NxSessionProvider>
       </body>
     </html>
   );

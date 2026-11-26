@@ -1,7 +1,7 @@
 "use client";
 /* 管理者頁面共用的小東西：分頁（?tab=，可以直接連到某一頁）、過渡期唯讀的提示、複製。 */
 import Link from "next/link";
-import { OLD_APP } from "@/components/Planned";
+import { OLD_APP } from "@/lib/oldApp";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 

@@ -4,7 +4,7 @@
    ・寫 iepTok：新版的老師不在舊名單的「編輯」裡，規則不讓寫，改呼叫 nxIepPublish（functions/nx-iep.js）代寫。
    ・回覆：iepSubmit 照舊寫 iepResp/{調查}/r/{雜湊}，nxIepMirror 抄一份到 iep/{調查}/responses/{雜湊}，這裡讀新位置。 */
 import { collection, getDocs } from "firebase/firestore";
-import { OLD_APP } from "@/components/Planned";
+import { OLD_APP } from "@/lib/oldApp";
 import { firebase } from "../firebase";
 import { IEP, type LocalTokens, type Round } from "../iep";
 import type { RcData } from "../types";

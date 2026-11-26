@@ -25,7 +25,7 @@ import type { Loaded, Repo } from "@/lib/repo";
 import type { Board } from "@/lib/schedule";
 import type { RcData } from "@/lib/types";
 import { useNx, type AdminArea, type Nx } from "@/lib/nx/session";
-import { OLD_APP } from "./Planned";
+import { OLD_APP } from "@/lib/oldApp";
 import { Toaster } from "./Toast";
 import { Brand, Card, Select, cx } from "./ui";
 
@@ -272,21 +272,6 @@ export function AdminShell({ title, children, needData = true }: { title: string
         </div>
       )}
       <Toaster />
-    </div>
-  );
-}
-
-/** 還沒搬過來的頁面：一行字＋到舊版的連結 */
-export function UseOld({ hash, title }: { hash: string; title: string }) {
-  return (
-    <div className="max-w-[640px]">
-      <h1 className="mb-6 text-[1.75rem] font-bold tracking-[-0.02em]">{title}</h1>
-      <Card>
-        <p className="mb-4 text-ink2">這一頁請先用舊版</p>
-        <a href={OLD_APP + hash} className="inline-flex min-h-10 items-center rounded-full bg-ink px-4 font-medium text-on-ink">
-          到舊版的{title}
-        </a>
-      </Card>
     </div>
   );
 }
