@@ -33,17 +33,16 @@
 web/
   app/                 頁面（全部是用戶端元件）
     login/ me/ me/students/ me/off/ me/exam/ checkin/ settings/
-    admin/ setup/ schedule/ exam/ accounts/
-  components/          AppShell（側邊欄＋手機底部列）、WeekGrid、ScheduleBoard、OffEditor、Steps…
+    admin/ viewer/ view/   （setup/ schedule/ checkin/ accounts/ settings/ exam/ 只剩依角色轉址，§9e）
+  components/          AdminShell、TeacherShell、ViewerShell（側邊欄＋手機底部列）、RoleRedirect、WeekGrid…
   lib/
     core.ts            core.js 的型別包裝（import "../../core.js"）
     types.ts           舊資料 D 與段考資料的型別
     model.ts           目標資料模型（schools/{sid}/…）的型別
     legacy.ts          舊格式 D ⇄ 分拆文件（包 functions/nx-split.js）
     repo/              Repo 介面、Firestore 版、記憶體版、toCoreD（README.md）
-    session.tsx        登入狀態、角色、資料來源（整個 App 一份）
+    nx/session.tsx     登入狀態、角色、資料來源（整個 App 一份；舊的 lib/session.tsx 讀 rc/main，§9e 拿掉了）
     accounts.ts        角色推算（claims 優先，沒有就用舊名單）
-    cloud.ts           Firestore 讀寫（過渡期的舊位置＋新增的三個集合）
     local.ts           localStorage、備份檔、範例資料
     schedule.ts        用 core.js 算課表、老師一週、我的學生
     exam.ts            段考監考對照
@@ -248,7 +247,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 
 ## 6. 共用電腦的安全
 
-1. **有雲端時沒登入不顯示資料**：AppShell 會導到登入頁；localStorage 的舊資料只在「單機」模式顯示。
+1. **有雲端時沒登入不顯示資料**：各角色的外框（AdminShell、TeacherShell、ViewerShell）會導到登入頁；localStorage 的舊資料只在「單機」模式顯示。
 2. **登出清乾淨**：登出時把記憶體裡的資料、預覽身分、讀進來的備份檔全部清掉。
 3. **公用電腦模式**（登入頁、設定頁可勾）：不讀不寫 localStorage；登入狀態改成只存在這個分頁（`browserSessionPersistence`），關掉分頁就登出；登出時一併清掉 sessionStorage。
 4. 新版不開 Firestore 離線快取（不在磁碟留下資料）。
@@ -326,7 +325,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 - 側邊欄最多 6 項；手機改成底部列。
 - **老師**：今天（我的課表、現在這一節點名、待辦）／點名／我的學生（個案卡）／不排課時段／段考查詢（我的監考、交卷名單）／設定（字級、公用電腦模式）。
 - **管理者**：總覽／學期初準備（① 匯入 › ② 學生 › ③ 老師與任課 › ④ 教室與節次 › ⑤ 規則）／排課（① 老師開課 › ② 不排課時段 › ③ 學生編組 › ④ 排課表 › ⑤ 課表輸出）／段考考場（照它的步驟）／簽到退／資料與帳號；側邊欄底部有「以教師身分預覽」。
-- **檢視**：排課總表／設定。
+- **檢視**：總課表／段考（考程與監考）／設定（`/viewer/`，§9e）。
 - 多步驟流程一律 ①②③ 加「下一步 →」（`components/Steps.tsx`）。
 
 ---
@@ -338,11 +337,11 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 舊功能（舊版位置） | 新版位置 | 狀態 | 要做的事 |
 |---|---|---|---|
 | 總覽儀表板（總覽） | `/admin` | 部分 | 已有：學生／老師／課程／排入數、衝突與警告、老師節數與個案數、各班人數。待補：段考狀態、今天的課、待處理事項 |
-| 名冊：學生（名冊） | `/setup` ② | 骨架 | 表格編輯、Excel 貼上（`core.importStudents`）、個管、需要的科目；敏感欄位改存 `private/` |
-| 名冊：老師、教室、作息（名冊） | `/setup` ③④ | 骨架 | 老師身分與應授節數、`importTeacherList`；教室含備用；作息與外加時段 |
-| 全校課表（名冊／匯入：文字與掃描 PDF） | `/setup` ① | 骨架 | `ttParseAll`、`ttGuessClass`、學生名單對照；PDF 文字擷取與 OCR 放到 Function（大檔不在手機上跑） |
-| 匯入：分組表、任課老師、不排課、手排鎖課（排課／名冊） | `/setup` ①、`/schedule` ①③ | 骨架 | `importCourseTable`、`importOff`、`importLocks`、`canonSubj`；匯入前自動保留版本 |
-| 匯入與新學期（名冊 › 匯入與新學期） | `/accounts` | 骨架 | `newTerm`（升年級、清空）；全部清空要打出學校名稱確認；版本快照 |
+| 名冊：學生（名冊） | `/admin/students/`、`/admin/student/` | 完成（§9） | 舊網址 `/setup/` 轉到「設定 › 學校資料」 |
+| 名冊：老師、教室、作息（名冊） | `/admin/settings/school/?step=tea|env` | 完成（§9） | |
+| 全校課表（名冊／匯入：文字與掃描 PDF） | `/admin/settings/school/?step=tt` | 完成（§9e） | 讀圖（Gemini，tt.js）、離線辨識（文字 PDF、Tesseract）、核對格子、名字一次改、全部接受、和名冊對照、用課表更新任課老師 |
+| 匯入：分組表、任課老師、不排課、手排鎖課（排課／名冊） | `/admin/settings/school/?step=import`、`?step=off` | 完成（§9） | |
+| 匯入與新學期（名冊 › 匯入與新學期） | `/admin/settings/data/` | 完成（§9） | 舊網址 `/accounts/` 轉到「設定 › 帳號與共用」 |
 | 排課：分組（排課） | `/admin/sched/?step=groups`、`?step=need` | 完成 | 老師開課、學生編組（`needList`、`candidates`、`placeStudents`） |
 | 排課：不排課時段（排課） | `/schedule` ②、老師 `/me/off` | 部分 | 老師自己的已完成（過渡期送出→組長套用）；年級／班級／群組／個人層次的編輯待做 |
 | 排課：排課板、一鍵排課、衝堂檢查（排課） | `/admin/sched/?step=board` | 完成（見 §9b）；舊的 `/schedule` ④ 唯讀總表留著 | 已用 core.js 顯示總表、篩選、衝突清單。待接：拖曳（`data-lesson`／`data-slot`、`BoardHooks`、`canPlace`）、一鍵排課（`solve`，建議放 Web Worker）、試排／確定（另一位開發者在 core/app.js 做） |
@@ -352,7 +351,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 段考考場（`exam.html`） | `/admin/exam/` | 完成（§9d，輸出和舊版逐字相同） | ① 名單與服務 ② 考程與教室 ③ 排考場 ④ 輸出＋查考場；舊網址 `/exam` 轉過來 |
 | 我的監考（新功能） | `/me/settings/`、`/me/exam/` | 完成 | 監考對照（exam/main）；試場與交卷名單（placements） |
 | 段考交卷名單（exam.html） | `/admin/exam/?step=out&o=hand`、老師 `/me/exam/` | 完成 | 紙本和舊版預設逐字相同；老師看自己監考的試場名單 |
-| 簽到退（`checkin.js`） | `/checkin` | 骨架 | 點名、掃碼、出缺席紀錄、學生卡；過渡期讀寫 `rc/att-日期`，目標 `attendance/{date}` |
+| 簽到退（`checkin.js`） | `/admin/checkin/`、老師 `/me/check/` | 完成（§9c） | 舊網址 `/checkin/` 依角色轉過去（§9e） |
 | 通知單（`notice.html`） | `/admin/exam/?step=out&o=notice` | 完成（公版，和舊版逐字相同） | `exam/main/private/notice` |
 | 雲端共用（`cloud.js` 共用對話框） | `/accounts`、`/login` | 部分 | 成員、角色、綁定老師、加入申請、老師送出的不排課時段已做；在線上的人（presence）未做；最終改由 Function 管理 |
 | 學校自己的雲端（`school.js`） | `lib/firebase-config.ts` | 部分 | 新版讀同一個 localStorage `rc-school-cloud`；設定畫面未做。改成 App Hosting 後，每校一個專案或一個專案多校（`schools/{sid}`）要先決定 |
@@ -400,7 +399,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 我的設定 | `/me/settings/` | 不排課時段（`Repo.saveMyOff`）、監考（`exam/{eid}` 的 proctorOf／supportOf）、深色、字級、公用電腦模式 |
 
 - 登入（`lib/nx/session.tsx`）：Google → 沒有 claims 就呼叫 `nxAcceptInvite` → `getIdToken(true)` → 讀 `schools/{sid}.currentTerm`。
-  老師 → Firestore 版 Repo；管理者／編輯／檢視這一階段只看到「管理功能請先用舊版」。沒登入或單機 → 範例資料（記憶體版 Repo，可以選看哪位老師）。
+  老師 → Firestore 版 Repo；管理者／編輯 → `/admin/`（§9）；檢視 → `/viewer/`（§9e）。沒登入或單機 → 範例資料（記憶體版 Repo，可以選看哪位老師）。
 - 過渡期：`schools/{sid}.mode=='legacy'` 時老師端只讀；`schools/{sid}.native`（集合名稱陣列，和 `nxLink/main.native` 一致，由 Function 寫）列出的部分可以寫。
 - `iep.js`、`teacher.js` 直接 import（`lib/iep.ts`、`lib/teach.ts`，只補型別），和 `core.js` 一樣不複製。
 - IEP 照舊版的新流程（iep.js 0f95afb、dd2caf9）：`components/iep/Create.tsx`（建立調查：學生、日期、節次、期限；承辦挑時段的格子用 `IEP.pickGrid`，承辦有課的灰掉、原班課表 `ttCellAt` 標主科／建議，「勾選建議時段」；按「建立並產生 QR」＝存檔＋送填空堂＋發布）、
@@ -437,7 +436,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 | 學生 | `/admin/students/` | 篩選（年級、個管、沒有個管、本月到期、搜尋）、勾選後批次指定個管、新增學生 |
 | 個案 | `/admin/student/?id=` | 基本資料（可改）、私密、組別與課表、段考服務、出缺席（最近兩週）、家長聯絡、IEP 會議、刪除學生。區段和老師端共用 `components/case/CaseParts.tsx` |
 | 個管分配 | `/admin/casemgr/` | 老師上限、不當個管 → `core.suggestCaseMgr` 建議 → 勾選的才套用 |
-| 設定 › 學校資料 | `/admin/settings/school/?step=` | ① 匯入 Excel（SheetJS CDN、認工作表、試跑看差異、一批寫入）② 全校課表（唯讀，`classes.ttJson`）③ 老師與任課（含減授、超鐘點上限、`classes.subj`）④ 不排課時段（全校、年級、群組、班級、不能鎖課、學生、老師）⑤ 教室與作息 ⑥ 排課規則 ⑦ 學年交接 |
+| 設定 › 學校資料 | `/admin/settings/school/?step=` | ① 匯入 Excel（SheetJS CDN、認工作表、試跑看差異、一批寫入）② 全校課表（讀 PDF、核對、更新任課老師，§9e）③ 老師與任課（含減授、超鐘點上限、`classes.subj`）④ 不排課時段（全校、年級、群組、班級、不能鎖課、學生、老師）⑤ 教室與作息 ⑥ 排課規則 ⑦ 學年交接 |
 | 設定 › 帳號與共用 | `/admin/settings/accounts/` | 成員（角色、綁定老師、停用）、邀請、舊名單轉邀請（先看清單）、搬移狀態與 `nxMigrateLegacy`（先試算） |
 | 設定 › 資料與備份 | `/admin/settings/data/` | 下載備份（讀得到的全部 records）、加密備份（和舊版同一個 AES-GCM 格式）、從備份還原（新版或舊版備份；先檢查、看差異）、版本、開始新學期 |
 | 段考 | `/admin/exam/` | 見 §9d（phase 3d） |
@@ -459,7 +458,7 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 
 **測試**：`npm test`（`apply.test.ts` 比對與一批寫入、`import.test.ts` 匯入、`admin.test.ts` 待辦／篩選／個管／新學期／備份、`nx-admin.test.ts`）、`npm run test:rules`、`npm run test:e2e`（`e2e-admin.test.ts`：管理者登入、匯入範例表、分配個管，兩位老師登入只讀得到自己的學生；檔案改成一個一個跑）。
 
-**還沒做**：全校課表的 PDF 讀取（舊版正在改）；版本「回到這版」。（IEP 會議、點名、統計在 phase 3c，見 §9c）
+**還沒做**：版本「回到這版」。（全校課表的 PDF 讀取與核對在 §9e）（IEP 會議、點名、統計在 phase 3c，見 §9c）
 
 ---
 
@@ -555,3 +554,61 @@ npm run test:rules    # firebase emulators:exec 開 Firestore 模擬器（demo-r
 2. 靜態檔：`web/public/stamp.png` 會在建置時放到網站根目錄（通知單的印章）。
 3. 交給新版：`nxLink/main.native` 加 `'exam'`、`'examPrivate'`（同步從此跳過段考）；請特教組之後只在新版改段考，並在新版打開段考頁存一次（產生老師端的試場與學生考場）。
 4. 查考場連結：在新版重新「開啟查考場連結」並把新連結給導師；舊版 `view/*` 文件在 §3.3 第 6 步退休時一起刪。
+
+---
+
+## 9e. Phase 3e：全校課表、檢視、舊網址（切換後的收尾）
+
+板橋已經切換（`schools/banqiao.mode=='native'`，舊位置唯讀），新版裡任何「到舊版修改」「先用舊版」對真正的使用者都是死路。這一階段把最後三個缺口補上。
+
+### 全校課表（`/admin/settings/school/?step=tt`）
+
+| 做什麼 | 對照舊版 |
+|---|---|
+| 讀課表 PDF（用 AI）：每頁轉成圖（寬約 1600px 的 JPEG，圖片檔直接縮放），開始前看「幾頁 → 幾次呼叫・約幾分鐘・費用」；這次開網頁第一次送出時給看第一頁的圖和完整題目；同時兩頁、忙碌／網路／格式錯誤自動等 4、12、30 秒（或伺服器說的秒數）再試；登入、金鑰、每日額度用完就整批停下；可以取消、重試沒讀到的；每頁的狀態 | tt.js readAI、confirmRun、runJob、jobHtml（TTR.request／estimate／runQueue／readPage **直接 import repo 根目錄的 tt.js**，不複製） |
+| 離線辨識：文字 PDF 依位置排成行、從「總時數／編號」以下讀統計；掃描檔用 Tesseract 5.1.1（同一組 CDN＋SRI）讀左下角編號與下方統計，整份一起比對（ttParseAll）、猜班級（ttGuessClass） | app.js readTT、ttCrop、ttThumb |
+| 各班課表：每班待核對幾處、下一個待核對、全部接受 | tt.js render、pend、nextPending、acceptAll |
+| 核對一班：左邊那一頁的圖（只留在這次開著的網頁）、右邊作息每一節 × 星期一～五的科目與老師（作息沒有的第8節也列）；待核對的格子標色、說明在 title；班級、導師；「儲存」「接受，下一個」；改成已經有課表的班級先問 | tt.js open、saveCur |
+| 只有統計的班（離線辨識）：科目、老師、節數，整列清空就刪掉 | app.js ttEdit／ttEditOk |
+| 名字一次改：名單上沒有的名字跨班整理、建議最像的、全部改、名字沒錯（D.ttOk） | tt.js 的 ren／keep、core.ttNameList／ttRename |
+| 和名冊對照：課表沒有的班、任課老師和課表不同的格子；每位學生的任課老師 | tt.js rosterHtml、app.js ttCell |
+| 用課表更新任課老師（國英數理；名冊沒有的老師新增成普通班老師）、清除課表 | app.js ttApplyCS、ttClear |
+
+- **純邏輯**：`lib/nx/tt.ts`（saveCur→`applyGridEdit`、`nextPending`、`acceptAll`、`keepName`、`renameName`、`csList`／`applyCS`、`rosterCheck`、`saveSummary`、`textPage`、`storeOcr`、runJob 的存檔順序→`runPages`）；檢查、存檔、查詢都是 core.js 最後的「全校課表：整張格子」區塊（ttGridCheck、ttGridStore、ttGridRecheck…）照用。讀檔（PDF 轉圖、Tesseract）在 `lib/nx/ttRead.ts`（pdf.js 用段考匯入同一個載入器）。畫面 `components/admin/school/TtStep.tsx`、`TtDialogs.tsx`。
+- **資料**：`D.tt[班級]` 存在 `classes/{班級}.ttJson`（`functions/nx-split.js`，格式和舊版一樣：grid、pids、gridExtra、sum、unsure、dups、flags、subj、ok…），導師 `D.classHead` 是 `classes/{班級}.head`，「名字沒錯」`D.ttOk` 是未知欄位（`staff/legacy`）。所以 `toCoreD`／`splitD` 來回不變，`ttCellAt`、`ttClassSubjectAt`、`ttStudentMissed`、`ttTeacherBusy`（IEP 選時段、鎖課輸出）照用。改一格只寫那一班的 classes 文件；第一次有課表時 `staff/legacy` 的欄位清單也會寫一次。
+- **寫入**：核對、接受、名字、任課老師一律 `planOnD → applyOps`（每份帶 rev）。讀圖時一頁讀好就存一頁：一次寫一份，用最新讀到的資料算；被搶先（`RevConflictError`）就等一下用新的資料再算（最多 7 次）；全部讀完再重算一次待核對。
+- **AI**：一律經 `lib/ai.ts`（學校的 AI 服務＝已部署的 `aiGenerate`，或自己的金鑰）；用途 `ttgrid`、`allowTeacherNames`（課表上只有老師姓名、沒有學生）。要先勾「可以送出老師姓名」（和舊版同一個設定 `rc-gemini-names`）；還沒接上 AI 時在這一步直接設定（`AiSetup`），或改用離線辨識。
+- **讀圖的工作與圖片**放在模組裡（換步驟再回來還看得到進度與圖）；離開這一步就取消（讀好的頁已經存了，回來可以「重試沒讀到的」）；讀圖或辨識中關分頁會先問。
+
+### 檢視（`/viewer/`，教務處、行政）
+
+- 登入（`lib/nx/session.tsx`）：claims `role:'viewer'` → 讀 `schools/{sid}`（沒有學期就是「學期還沒設定」）→ `viewer`：Firestore 版 Repo（role viewer，`readOnly`），只查學期設定、老師、班級、課程、段考（`exam/main`）。範例資料有檢視視角（`demoViewerRepo`，記憶體版照規則過濾）。
+- 頁面（`components/ViewerShell.tsx`，側欄三項）：**總課表**（和管理者「排課 › 輸出 › 總課表」同一份 HTML、同一份列印樣式；只用課程的 `slots`，不用學生；一律正式課表）、**段考**（考程、每一節哪一間誰監考／支援、每位老師的場次；`lib/nx/viewer.ts examRows／proctorList`，只用 `exam/main`）、**設定**（外觀、公用電腦模式、登出）。
+- 沒有學生資料：學生、private、點名、IEP、版本、草稿、段考名單（private）、試場名單（placements）、學生考場（seats）規則本來就不讓檢視讀；Repo 也不查。
+- 登入頁、首頁：檢視直接到 `/viewer/`（不再顯示「請先用舊版」）。
+
+### 舊網址與「到舊版」
+
+- `/setup/`、`/schedule/`、`/checkin/`、`/accounts/`、`/settings/`、`/exam/` 改成依角色轉址（`components/RoleRedirect.tsx`，保留查詢參數）：管理者／編輯（與沒登入的範例資料）→ `/admin/settings/school/`、`/admin/sched/`、`/admin/checkin/`、`/admin/settings/accounts/`、`/admin/settings/`、`/admin/exam/`；老師 → `/me/`（點名 `/me/check/`、設定 `/me/settings/`、段考 `/me/exam/`）；檢視 → `/viewer/`（設定、段考各自的頁）。
+- 拿掉舊的 `lib/session.tsx`（每一頁都讀 `config/access` 與整份 `rc/main`）、`lib/cloud.ts`、`lib/useMe.ts`、`AppShell`、`TeacherGate`、`Planned`、`Steps`、`ScheduleBoard`、`LessonChip`、`OffEditor`；根 layout 只剩 `NxSessionProvider`，切換後新版完全不碰舊位置。
+- 舊版網址只剩 `lib/oldApp.ts` 一處：IEP 公開填答頁（`iep.html`，正式上線中的那一套）與過渡期（`mode=='legacy'`）學校的唯讀提示。native 模式不會出現「到舊版修改」；管理者以老師身分預覽（唯讀）時的提示改成「這裡只能看」（`roText`）；還原舊版備份的提示拿掉「段考、點名請在舊版還原」。
+
+### 規則
+
+不用改（`firestore.rules.next` 與根目錄 `firestore.rules` 一個字都沒動，兩份仍然相同）：classes 本來就是成員都讀、管理者／編輯寫（`classShape`：`ttJson` 6 萬字以內），檢視本來就讀不到學生。`test/rules.test.ts` 加「全校課表（classes.ttJson，§9e）」：管理者／編輯寫得進、超過 6 萬字被拒、檢視與老師讀得到不能改、檢視讀不到學生／private／版本／草稿。
+
+### 和舊版不同的地方
+
+- 不存「改之前的版本」（舊版每次讀入、核對、改名字前 `snapshot`，存在那台電腦的瀏覽器）；新版每份文件有 rev，要回復請用「設定 › 資料與備份」。
+- 用課表更新任課老師：新增的老師不留 `_new` 欄位（舊版 findTeacher 會留在 D 裡）。
+- 只有統計的班（離線辨識）沒有「請 AI 看圖核對」（舊版 app.js 的 gmTT；讀圖已經改成整張格子，舊版那一段也被 tt.js 蓋掉，只剩只有統計的班會出現）；要用 AI 請改用「讀課表 PDF」重讀。
+- 只有統計的班的核對表：在最後一列打字會自動多一列（舊版固定只有一列空白）。
+- 讀圖中離開這一步會取消（舊版是整頁程式，換頁不會停）；讀好的頁已經存了。
+- 檢視看得到的是總課表與段考考程／監考；舊版的「檢視」讀得到整份 rc/main（含學生）。資源班老師課表、鎖課表、抽離表都要學生資料，只給管理者／編輯。
+
+### 測試
+
+- `test/tt.test.ts`（18 項；tt.js 畫面那一半、app.js 的 ttApplyCS／ttEditOk／readTT 原文放在 vm 沙盒裡跑，和新版逐項比對整份 `D.tt`／`classHead`／`classSubj`／`ttOk`）：tt.js 的 readPage 用假的 fetch（不連網，送出的是圖＋題目、沒有學生）；整批讀（runJob：同時兩頁、班級重複改成 ?頁碼、失敗的頁、最後重算）；saveCur 6 種情況（改錯字、改班級＋導師＋接受、清一格＋早自習＋作息沒有的第8節＋科目簡稱＋名字有空白、蓋掉已有的班、只改導師、沒改直接接受）；重算後的 flags、pend、nextPending、clsSort；acceptAll；全部改＋名字沒錯；ttApplyCS（名冊沒有的老師）；rosterHtml；文字 PDF 三頁（一頁沒有編號用任課老師猜）；ttEditOk；`toCoreD(splitD(D))` 來回後 ttCellAt／ttTeacherBusy／ttStudentMissed 一樣；改一格只寫一份 classes 文件；ttJson 在規則上限以內。資料是 repo 根目錄 `test-tt-data.js` 的虛構課表。
+- `test/viewer.test.ts`：範例資料的檢視視角沒有任何學生資料、總課表和管理者一字不差、不能寫；考程與監考。
+- `test/e2e-viewer.test.ts`（模擬器，學校 s6）：管理者真的登入、讀三班課表、核對一班（改一格、接受）、排考程與監考 → 檢視登入：讀得到課表、課程、段考，總課表和管理者一字不差、`ttCellAt` 查得到；學生、private、點名、版本、段考名單都 `permission-denied`；改課表、課程、學期設定都被拒。
+- `test/rules.test.ts` 見上。
