@@ -94,7 +94,7 @@ export function useSched() {
 }
 
 /** 對話框：按 Esc 或背景關閉；內容比畫面高時捲動、按鈕列留在下面 */
-export function Dialog({ title, onClose, children, foot, wide }: { title: string; onClose: () => void; children: ReactNode; foot?: ReactNode; wide?: boolean }) {
+export function Dialog({ title, onClose, children, foot, wide }: { title: string; onClose: () => void; children: ReactNode; foot?: ReactNode; wide?: boolean | "xl" }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -110,7 +110,7 @@ export function Dialog({ title, onClose, children, foot, wide }: { title: string
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className={cx("flex max-h-[92dvh] w-full flex-col rounded-2xl border border-line bg-card shadow-xl", wide ? "max-w-[860px]" : "max-w-[560px]")}
+        className={cx("flex max-h-[92dvh] w-full flex-col rounded-2xl border border-line bg-card shadow-xl", wide === "xl" ? "max-w-[1320px]" : wide ? "max-w-[860px]" : "max-w-[560px]")}
       >
         <div className="flex items-center justify-between gap-2 border-b border-line px-5 py-3">
           <h3 className="text-lg font-bold">{title}</h3>

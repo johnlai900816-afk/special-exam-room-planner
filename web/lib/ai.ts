@@ -101,7 +101,7 @@ export function wireAi(): void {
   });
 }
 
-export const AI_KIND: Record<string, string> = { sched: "AI 排課", adj: "用文字調整", explain: "說明問題", paste: "複製貼上的 AI 排法" };
+export const AI_KIND: Record<string, string> = { sched: "AI 排課", adj: "用文字調整", explain: "說明問題", paste: "複製貼上的 AI 排法", ttgrid: "讀全校課表" };
 export const aiModeText = () => (GEMINI.getMode() === "proxy" ? "學校的 AI 服務" : "你自己的金鑰");
 export const aiMsg = (e: unknown) => {
   const x = e as { name?: string; message?: string };
