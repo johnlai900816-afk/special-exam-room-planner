@@ -127,7 +127,7 @@ export function BoardStep() {
         if (stateOf(CORE.compile(D1), D1, true).slot[l] === s) return false;
         return moveLessonD(D1, true, l, s);
       },
-      (r) => (r && r.bad ? "放進去了，但這一格有衝突，請看上方說明" : ""),
+      (r) => (r && r.bad ? "放進去了，但這一格有衝突；按「重排」會把其他課移開" : ""),
       { undo: true },
     ).then(() => setSelL(-1));
   const pickL = (l: number) => {
@@ -313,7 +313,8 @@ export function BoardStep() {
         title={(g.t >= 0 ? M.T[g.t].name + "｜" : "") + names + roomNote(D, M, ST, ROOM, l) + (errs[l] ? "\n" + errs[l] : "")}
       >
         {g.name}
-        <small>{ST.slot[l] >= 0 && r >= 0 ? D.rooms[r].name : g.t >= 0 ? M.T[g.t].name : ""}</small>
+        {/* 一律「老師・教室」：排進去了卻分不到教室時寫「沒教室」，一眼看得出教室不夠 */}
+        <small>{[g.t >= 0 ? M.T[g.t].name : "", ST.slot[l] >= 0 ? (r >= 0 ? D.rooms[r].name : D.rooms.length ? "沒教室" : "") : ""].filter(Boolean).join("・")}</small>
       </span>
     );
   };
