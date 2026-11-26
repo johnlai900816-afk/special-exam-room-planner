@@ -325,7 +325,7 @@ async function sriBlob(f: string) {
   return URL.createObjectURL(new Blob([await r.text()], { type: "text/javascript" }));
 }
 let pdfjsLib: any = null;
-async function pdfLib() {
+export async function pdfLib() {
   if (pdfjsLib) return pdfjsLib;
   try {
     const [lib, wk] = await Promise.all([sriBlob("legacy/build/pdf.min.mjs"), sriBlob("legacy/build/pdf.worker.min.mjs")]);
