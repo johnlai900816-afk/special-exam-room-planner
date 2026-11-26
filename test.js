@@ -545,6 +545,12 @@ const synth=(seed,K,OFF)=>{K=K||3;OFF=OFF||3;const r=rng(seed),ri=n=>Math.floor(
   g.fixed=[key];M=C.compile(D);const S=C.toState(M,D),l=M.L.findIndex(x=>x.g===gi&&x.k===0);
   ok(S.slot[l]===s&&S.pin[l]===1,'固定時段：第一節直接放在週五第 1 節並固定');
   const R=C.solve(M,S,{seed:3});ok(R.slot[l]===s,'一鍵排課不會移動固定時段的課');
+  // 板橋：年級不排課也把週五第 1 節留給社會技巧——固定在那裡時不算違規；沒固定的課照樣被擋；老師不排課照樣擋
+  const gr=String(cls).slice(0,1);D.offBy['g:'+gr]=[key];M=C.compile(D);
+  ok(!C.why(M,gi,s).length,'固定時段不受年級、班級不排課影響');
+  const g2=D.groups.find(x=>x!==g&&!x.fixed&&x.mode!=='外加'&&x.students.some(id=>String((D.students.find(y=>y.id===id)||{}).cls).slice(0,1)===gr));
+  if(g2){const gi2=M.G.findIndex(x=>x.ref===g2);ok(C.why(M,gi2,s).some(r=>/年級不排課|不排課/.test(r)),'沒有固定的課照樣不能排在年級不排課的時段');}
+  const tt=D.teachers.find(x=>x.id===g.teacher);if(tt){tt.off=[key];M=C.compile(D);ok(C.why(M,gi,s).some(r=>/不排課/.test(r)),'老師自己不排課的時段，固定也照樣擋');}
 }
 
 // 46. id 只能是英數字、底線、減號：不合格的換掉，引用它的地方一起改（防止 id 夾帶程式碼進到畫面的事件裡）

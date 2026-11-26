@@ -226,10 +226,12 @@ function why(M,gi,s){
   if(g.pull&&p.extra)r.push(p.name+'只排外加課');
   if(!g.pull&&!p.extra)r.push('外加課只排在外加時段');
   if(M.blocked[s])r.push('全校共同不排');
-  g.soff.forEach(o=>{if(o.arr[s])r.push(o.label+'不排課');});
+  // 固定時段（例：社會技巧固定週五第 1 節）：學校把年級、班級、學生的不排課留給這門課，所以這幾層不擋；老師不排課、衝堂照算
+  const fx=(g.ref.fixed||[]).includes(M.s2key(s));
+  if(!fx)g.soff.forEach(o=>{if(o.arr[s])r.push(o.label+'不排課');});
   if(g.t>=0&&M.off[g.t][s])r.push(M.T[g.t].name+'不排課');
   // 班級不排課（不能鎖課）的時段：要鎖課的抽離課（國英數）不能排；不鎖課、外加的課（例：社會技巧）可以排
-  if(g.need){const bk=g.locks.filter(k=>M.klay[k.c]&&M.klay[k.c][s]).map(k=>k.cls);if(bk.length)r.push(bk.join('、')+' 這一節不能排國英數');}
+  if(g.need&&!fx){const bk=g.locks.filter(k=>M.klay[k.c]&&M.klay[k.c][s]).map(k=>k.cls);if(bk.length)r.push(bk.join('、')+' 這一節不能排國英數');}
   if(!M.flex){const seen={};     // 彈性鎖課時原班老師不排課不是硬性的：鎖不到就改鎖別科
     g.locks.forEach(k=>{if(k.t>=0&&!seen[k.t]&&M.off[k.t][s]){seen[k.t]=1;r.push(M.T[k.t].name+'不排課');}});}
   return r;
