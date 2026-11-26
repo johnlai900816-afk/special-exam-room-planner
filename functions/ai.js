@@ -11,8 +11,8 @@ const DAY=864e5;
 function config(env){
   env=env||process.env;const num=(v,d)=>{const n=parseInt(v,10);return n>0?n:d;};
   return {
-    // 只接受這些網站來的呼叫（GitHub Pages 與本機測試）；其他網站就算拿到 token 也不給用
-    origins:String(env.AI_ALLOWED_ORIGINS||'https://johnlai900816-afk.github.io,http://localhost:5000,http://127.0.0.1:5000,http://localhost:8080').split(',').map(s=>s.trim()).filter(Boolean),
+    // 只接受這些網站來的呼叫（新版 Firebase Hosting、舊版 GitHub Pages 與本機測試）；其他網站就算拿到 token 也不給用
+    origins:String(env.AI_ALLOWED_ORIGINS||'https://special-exam-rooms.web.app,https://special-exam-rooms.firebaseapp.com,https://johnlai900816-afk.github.io,http://localhost:5000,http://127.0.0.1:5000,http://localhost:8080').split(',').map(s=>s.trim()).filter(Boolean),
     location:env.AI_VERTEX_LOCATION||'global',          // 新的 Gemini 模型多半先在 global 提供
     project:env.GCLOUD_PROJECT||env.GOOGLE_CLOUD_PROJECT||'',
     perMinute:num(env.AI_PER_MINUTE,10),perDay:num(env.AI_PER_DAY,200),
@@ -75,7 +75,13 @@ function makeAI(deps){
     if(!m)throw httpError(401,'UNAUTHENTICATED','請先登入');
     let u;try{u=await deps.verifyIdToken(m[1]);}catch(e){throw httpError(401,'UNAUTHENTICATED','登入已過期，請重新登入');}
     if(!u||!u.email||u.email_verified!==true)throw httpError(401,'UNAUTHENTICATED','這個帳號的信箱還沒驗證');
-    const snap=await db.doc('config/access').get(),a=snap.exists?snap.data():null,email=String(u.email).toLowerCase();
+    const email=String(u.email).toLowerCase();
+    // 新版（schools/{sid}）：角色在 custom claims；檢視不能用 AI（除非 allowViewers）
+    if(typeof u.sid==='string'&&u.sid&&['admin','editor','teacher','viewer'].includes(u.role)){
+      if(u.role==='viewer'&&!cfg.allowViewers)throw httpError(403,'PERMISSION_DENIED','檢視權限不能使用 AI');
+      return {uid:u.uid,email,role:u.role==='admin'?'admin':u.role==='viewer'?'viewer':'editor',sid:u.sid};
+    }
+    const snap=await db.doc('config/access').get(),a=snap.exists?snap.data():null;
     const lc=x=>(x||[]).map(e=>String(e).toLowerCase());
     if(!a||!lc(a.emails).includes(email))throw httpError(403,'PERMISSION_DENIED','你不在共用名單裡，請主持人把你加進去');
     const role=String(a.admin||'').toLowerCase()===email?'admin':lc(a.viewers).includes(email)?'viewer':'editor';
