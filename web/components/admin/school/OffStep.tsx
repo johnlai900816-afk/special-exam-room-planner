@@ -8,6 +8,7 @@ import { Button, Card, Select, cx } from "@/components/ui";
 import { CORE, DAYS } from "@/lib/core";
 import { C, sortStu, stuLabel } from "@/lib/nx/admin";
 import { useQuery } from "@/lib/nx/hooks";
+import { SchedImpact } from "./SchedImpact";
 import type { RcData, SlotKey } from "@/lib/types";
 
 type Dx = RcData & { blocked: SlotKey[]; offBy: Record<string, SlotKey[]>; sets: { id: string; name: string; students: string[]; off: SlotKey[] }[] };
@@ -104,6 +105,7 @@ export function OffStep() {
 
   return (
     <Card>
+      <SchedImpact kinds="off" />
       <div className="mb-3 flex flex-wrap gap-2">
         <Select aria-label="對象" value={cur.k} onChange={(e) => setK(e.target.value)} className="min-w-[12rem]">
           {grps.map((g) => (

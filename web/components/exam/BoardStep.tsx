@@ -7,6 +7,9 @@ import { Button, Empty, cx } from "@/components/ui";
 import Link from "next/link";
 import { capTxt, evaluate, fmt, fromState, GN, labelOf, sesLabel, shortName, sortDates, type ExModel } from "@/lib/nx/examCore";
 import { autoProctor, busyHint, cellMap, f1, gradeCount, groupsOf, isT, procMatrix, tally, waitMap, type Ctx } from "@/lib/nx/examOut";
+import { AiExplain } from "@/components/AiAsk";
+import { toast } from "@/components/Toast";
+import { examAiRequest, examAiRestore, fixProcConflicts, fixViolations } from "@/lib/nx/examSuggest";
 import { useExam } from "./useExam";
 type Msg = { t: number; r: number; lvl: string; m: string };
 
@@ -31,6 +34,19 @@ export function BoardStep() {
     ...M.multi.map((x: { g: number; subject: string; n: number; mk: boolean }) => ["warn", (GN[x.g] || x.g) + "年級「" + x.subject + "」有 " + x.n + " 節，每節各排一次" + (x.mk ? "，補考節不用" : "")] as [string, string]),
   ];
   const bad = errs.length || extra.length;
+  const nErr = errs.filter((e) => e.lvl === "err").length + extra.filter(([l]) => l === "err").length;
+  const fix = () =>
+    edit(
+      (e, Xc) => {
+        const r = fixViolations(Xc);
+        if (!r.moved) {
+          toast(r.text);
+          return false;
+        }
+        return r.text;
+      },
+      { undo: true },
+    );
   const dates = sortDates([...new Set<string>(M.ses.map((s: { date: string }) => s.date))]);
 
   const commit = (fn: (Xc: Ctx) => void | false | string, undoable = true) =>
@@ -256,6 +272,26 @@ export function BoardStep() {
           )}
         </span>
       </div>
+      <div className="no-print mb-2 flex flex-wrap items-center gap-2">
+        <span className={cx("text-sm", nErr ? "text-bad" : bad ? "text-warn" : "text-mute")}>
+          問題 <b>{errs.length + extra.length}</b>
+        </span>
+        {nErr > 0 && (
+          <Button size="sm" disabled={!canEdit} onClick={fix} title="只移動違規那幾間的學生和未排入的，其他人不動；可以復原">
+            一鍵修正
+          </Button>
+        )}
+        {bad > 0 && (
+          <AiExplain
+            kind="examFix"
+            what="只送教室、節次、違規與監考衝突的文字；學生、監考老師都換成代號，不送姓名、班級與服務以外的資料。"
+            build={() => {
+              const { req, pairs } = examAiRequest(X);
+              return { req, restore: (t) => examAiRestore(t, pairs) };
+            }}
+          />
+        )}
+      </div>
       <div className={cx("warnbox", !bad && "ok")}>
         {bad
           ? [
@@ -430,6 +466,16 @@ function Tally({ T, X }: { T: ReturnType<typeof tally>; X: Ctx }) {
               </tbody>
             </table>
           </div>
+          {T.conf.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-bad">
+                監考衝突 <b>{T.conf.length}</b>
+              </span>
+              <Button size="sm" disabled={!canEdit} onClick={() => edit((e, Xc) => fixProcConflicts(Xc).text, { undo: true })} title="清掉衝突的那幾場，其他場不動，只補空的；可以復原">
+                修正監考衝突
+              </Button>
+            </div>
+          )}
           {T.conf.map((c, i) => (
             <div key={i} className="cm">
               ● {c}

@@ -7,6 +7,7 @@
    - 每一個動作都是 planOnD → applyOps（一批、每份帶 rev），被別人搶先改時整批不寫並提示。 */
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/components/Toast";
 import { Button, cx, Input, Select } from "@/components/ui";
@@ -42,6 +43,7 @@ import {
 } from "@/lib/nx/sched";
 import type { Progress } from "@/lib/nx/solveHooks";
 import { runSolve } from "@/lib/nx/solveRun";
+import { useQuery } from "@/lib/nx/hooks";
 import { AiAdjDialog, AiExplainDialog, AiSchedDialog } from "./AiDialogs";
 import { Dialog, Tip, useSched } from "./common";
 import "./board.css";
@@ -157,6 +159,19 @@ export function BoardStep() {
       toast((e as Error).message === "已取消" ? "已取消，草稿沒有變" : "排課失敗：" + (e as Error).message);
     }
   }
+
+  // 從學校資料的「重排成草稿」過來（?auto=1）：打開就試排／重排一次，結果放在草稿
+  const q = useQuery(),
+    router = useRouter(),
+    autoRan = useRef(false);
+  const wantAuto = q.get("auto") === "1";
+  useEffect(() => {
+    if (!wantAuto || autoRan.current || !canEdit || !total) return;
+    autoRan.current = true;
+    router.replace("/admin/sched/?step=board");
+    void solve(d ? "again" : "try");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantAuto, canEdit, total]);
 
   // 拖曳（舊版「拖曳調整」，改成 React 的寫法；畫面上的 ghost 與說明框直接操作 DOM，拖的時候不重畫整個表）
   const live = useRef({ ST, move, canEdit });

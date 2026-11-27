@@ -6,6 +6,8 @@ import { toast } from "@/components/Toast";
 import { Button, Card, Select, cx } from "@/components/ui";
 import { CORE } from "@/lib/core";
 import { autoPlaceD, GRADE, setNeedD, sortStu, stuLabel, X } from "@/lib/nx/sched";
+import { Problems, SuggestBox } from "@/components/Problems";
+import { applyRegroup, needProblems, regroupMoves, type Move } from "@/lib/nx/suggest";
 import { Tip, useSched } from "./common";
 
 export function NeedStep() {
@@ -16,6 +18,17 @@ export function NeedStep() {
   const grs = [...new Set(D.students.map((s) => CORE.gradeOfCls(s.cls)))].filter((x) => GRADE[x]).sort();
   const pend = useMemo(() => X.needList(D) as { id: string; subject: string }[], [D]);
   const pk = new Set(pend.map((n) => n.id + "|" + n.subject));
+  const probs = useMemo(() => needProblems(D), [D]);
+  const [mv, setMv] = useState<Move[] | null>(null);
+  const regroup = (ids: Set<string>) =>
+    edit(
+      (D1) => {
+        const n = applyRegroup(D1, (mv || []).filter((m) => ids.has(m.sid + "|" + m.from)));
+        return n ? "換了 " + n + " 位的組別" : false;
+      },
+      (m) => String(m || ""),
+      { undo: true },
+    ).then(() => setMv(null));
   const tn = (gr: (typeof D.groups)[number]) => {
     const t = D.teachers.find((x) => x.id === gr.teacher);
     return t ? "｜" + t.name : "";
@@ -73,6 +86,25 @@ export function NeedStep() {
           待安排 <b>{new Set(pend.map((n) => n.id)).size}</b> 人・{pend.length} 科
         </span>
       </div>
+      <Problems list={probs} ok="編組沒有問題">
+        {probs.some((p) => p.lvl === "err" || p.text.includes("年級不同")) && (
+          <Button size="sm" disabled={busy || !canEdit} onClick={() => setMv(regroupMoves(D))} title="把同時在兩組、年級不同的學生換到同科目、不衝堂的課；勾選的才套用">
+            建議換組
+          </Button>
+        )}
+      </Problems>
+      {mv && (
+        <SuggestBox
+          key={mv.map((m) => m.sid + m.to).join()}
+          title="建議換組"
+          items={mv.map((m) => ({ id: m.sid + "|" + m.from, text: m.text }))}
+          empty="找不到更好的組別；可以到「① 開課」多開一組，或到「③ 排課表」重排"
+          busy={busy}
+          disabled={!canEdit}
+          onApply={regroup}
+          onClose={() => setMv(null)}
+        />
+      )}
       <Card className="!p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -88,7 +120,7 @@ export function NeedStep() {
             </thead>
             <tbody>
               {rows.map((s) => (
-                <tr key={s.id} className="border-t border-line">
+                <tr key={s.id} id={"s-" + s.id} className="border-t border-line">
                   <td className="sticky left-0 bg-card px-3 py-1.5 font-bold whitespace-nowrap">{stuLabel(s)}</td>
                   {subs.map((sj) => {
                     const cur = on.find((x) => x.subject === sj && x.students.includes(s.id)),

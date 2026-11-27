@@ -7,7 +7,9 @@ import { useMemo, useState } from "react";
 import { AdminShell, useAdmin } from "@/components/AdminShell";
 import { useApply } from "@/components/admin/useApply";
 import { Badge, Button, Card, Input, PageHeader, SectionTitle } from "@/components/ui";
+import { Problems } from "@/components/Problems";
 import { planCMApply, suggestCM, type CmResult, type CmTeacherOpt } from "@/lib/nx/admin";
+import { cmProblems } from "@/lib/nx/suggest";
 
 const th = "px-2 py-2 text-left text-[13px] font-normal text-mute";
 const td = "border-t border-line px-2 py-1.5 whitespace-nowrap";
@@ -49,6 +51,7 @@ function CaseMgr() {
     }
   };
   const ch = out ? out.list.filter((x) => x.change) : [];
+  const probs = useMemo(() => cmProblems(D), [D]);
 
   if (!res.length)
     return (
@@ -78,6 +81,7 @@ function CaseMgr() {
           </Button>
         }
       />
+      <Problems list={probs} ok="每位學生都有個管" />
       <Card>
         <SectionTitle no={1}>資源班老師</SectionTitle>
         <div className="overflow-x-auto">

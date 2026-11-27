@@ -6,6 +6,7 @@ import { useApply } from "@/components/admin/useApply";
 import { Button, Card, Input, SectionTitle, Select } from "@/components/ui";
 import { CORE } from "@/lib/core";
 import type { Period, RcData, Room, Teacher } from "@/lib/types";
+import { SchedImpact } from "./SchedImpact";
 
 const th = "px-2 py-2 text-left text-[13px] font-normal text-mute whitespace-nowrap";
 const td = "border-t border-line px-2 py-1.5";
@@ -43,6 +44,7 @@ export function EnvStep() {
 
   return (
     <>
+      <SchedImpact kinds="room,off" />
       <Card>
         <SectionTitle no={1} extra={rooms.length ? "同一節最多 " + nMain + " 組" + (rooms.length > nMain ? "，加上備用 " + rooms.length + " 組" : "") : ""}>
           教室

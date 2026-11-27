@@ -14,6 +14,9 @@ import { SlotGrid, StuPicker, cutLine, md } from "./Create";
 import { PeopleEditor } from "./PeopleEditor";
 import { PRIV_OPTS, Publish, type Priv } from "./Publish";
 import { drawQr } from "./QrSlips";
+import { AiExplain } from "@/components/AiAsk";
+import { Problems, SuggestBox } from "@/components/Problems";
+import { applyPlanChanges, iepAiRequest, iepAiRestore, planProblems, planSuggest, type PlanChange } from "@/lib/nx/iepPlan";
 import { useIep, useIepSource } from "./useIep";
 
 const SYM: Record<string, string> = { y: "○", n: "╳", m: "△" };
@@ -403,7 +406,8 @@ function Plan({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round) 
   const [un, setUn] = useState<Record<string, string>>({});
   const prog = IEP.progress(D, R);
   const ready = new Map(prog.meets.map((y) => [y.m.id, y]));
-  const cf = IEP.conflicts(D, R).concat(IEP.crossConflicts(D, R));
+  const probs = useMemo(() => planProblems(D, R, busy).map((p) => ({ ...p, at: p.id ? "m-" + p.id : undefined })), [D, R, busy]);
+  const [sug, setSug] = useState<{ changes: PlanChange[]; un: { id: string; stu: string; why: string }[] } | null>(null);
   return (
     <Card className="no-print" title={<H n="②">排定</H>}>
       <span id="iepPlan" />
@@ -425,7 +429,51 @@ function Plan({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round) 
           清除沒固定的
         </Button>
       </div>
-      {cf.length > 0 && <div className="mb-3 rounded-[10px] bg-bad-l px-3 py-2 text-sm text-bad">{cf.map((c, i) => <div key={i}>{c.m}</div>)}</div>}
+      {R.meets.length > 0 && (
+        <Problems list={probs} ok="每一場都排好了，沒有衝突">
+          {probs.length > 0 && (
+            <Button size="sm" disabled={io.ro} onClick={() => setSug(planSuggest(D, R, busy))} title="有問題的場次（固定的也算）和還沒排的重新找時間；先看再套用">
+              建議
+            </Button>
+          )}
+          {probs.length > 0 && (
+            <AiExplain
+              kind="iepPlan"
+              what="只送會議代號、出席者的身分（不送姓名）、候選時段與每個人可不可以；不送學生姓名、班級座號、障別與服務。"
+              build={() => {
+                const { req, codes } = iepAiRequest(D, R, busy);
+                return { req, restore: (t) => iepAiRestore(D, R, t, codes) };
+              }}
+            />
+          )}
+        </Problems>
+      )}
+      {sug && (
+        <SuggestBox
+          key={sug.changes.map((c) => c.id + c.to).join()}
+          title="建議的時間"
+          items={sug.changes.map((c) => ({ id: c.id, text: c.stu + "：" + c.fromLabel + " → " + c.toLabel + (c.room ? "　" + c.room : ""), sub: c.pinned ? "原本固定" : undefined }))}
+          empty="找不到更好的時間"
+          disabled={io.ro}
+          extra={
+            sug.un.length > 0 && (
+              <div className="mt-2 text-sm text-bad">
+                {sug.un.map((u) => (
+                  <div key={u.id}>
+                    {u.stu}：{u.why}
+                  </div>
+                ))}
+              </div>
+            )
+          }
+          onApply={(ids) =>
+            void ed((_, r) => {
+              if (!applyPlanChanges(r, sug.changes, ids)) return false;
+            }).then((ok) => ok && (setSug(null), setUn({}), toast("已改 " + ids.size + " 場")))
+          }
+          onClose={() => setSug(null)}
+        />
+      )}
       {!R.meets.length ? (
         <p className="text-sm text-mute">還沒有學生</p>
       ) : (
@@ -458,7 +506,7 @@ function Plan({ D, R, ed }: { D: RcData; R: Round; ed(fn: (D: RcData, R: Round) 
                       fn(mm);
                     });
                   return (
-                    <tr key={m.id} className="border-b border-line align-top">
+                    <tr key={m.id} id={"m-" + m.id} className="border-b border-line align-top">
                       <td className="px-2 py-2 whitespace-nowrap">{IEP.stuLabel(IEP.stuOf(D, m.s))}</td>
                       <td className="px-2 py-2">{rd?.ready ? <Badge tone="ok">齊了</Badge> : <small className="text-mute">等 {(rd?.wait || []).join("、")}</small>}</td>
                       <td className="px-2 py-2">

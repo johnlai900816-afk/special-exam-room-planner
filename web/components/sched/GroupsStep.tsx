@@ -26,6 +26,8 @@ import {
   type OtSug,
 } from "@/lib/nx/sched";
 import type { Group, RcData, Teacher } from "@/lib/types";
+import { Problems } from "@/components/Problems";
+import { openProblems } from "@/lib/nx/suggest";
 import { Dialog, Tip, useSched } from "./common";
 
 interface OtRowT {
@@ -94,6 +96,7 @@ export function GroupsStep() {
   const OS = X.otSummary(D) as { want: number; due: number; short: number; open: string[]; rows: OtRowT[] };
   const OR = Object.fromEntries(OS.rows.map((r) => [r.id, r]));
   const pend = X.claimsPending(D) as { gid: string; tid: string }[];
+  const probs = useMemo(() => openProblems(D), [D]);
 
   const setG = (gid: string, k: string, v: unknown) => edit((D1) => void setGroupD(D1, gid, k, v));
   const askDrop = (L: { id: string; subject: string }[]) => L.length && setDrop(L.map((o) => ({ ...o, no: true })));
@@ -120,7 +123,7 @@ export function GroupsStep() {
     const c = M.G[D.groups.indexOf(g)];
     const w = c ? c.warn.filter((x) => x !== "還沒有學生") : [];
     return (
-      <div key={g.id} className={cx("min-w-0 rounded-2xl border border-line bg-card p-4", g.on === false && "opacity-60")}>
+      <div key={g.id} id={"g-" + g.id} className={cx("min-w-0 rounded-2xl border border-line bg-card p-4", g.on === false && "opacity-60")}>
         <div className="mb-2 flex items-center gap-2">
           <Input
             key={g.name}
@@ -272,10 +275,12 @@ export function GroupsStep() {
           需要 <b>{OS.want}</b> 節，應授合計 <b>{OS.due}</b> 節，{OS.short ? <b className="text-bad">缺 {OS.short} 節</b> : <b className="text-ok">足夠</b>}
         </span>
         {OS.open.length > 0 && <Badge tone="warn">待認領 {OS.open.length} 門</Badge>}
-        <Button size="sm" className="ml-auto" disabled={!canEdit} onClick={() => setSug({ R: suggestOvertimeD(D, false), on: new Set(suggestOvertimeD(D, false).list.map((x) => x.gid)), over: false })}>
+      </div>
+      <Problems list={probs} ok="開課沒有問題">
+        <Button size="sm" disabled={!canEdit} onClick={() => setSug({ R: suggestOvertimeD(D, false), on: new Set(suggestOvertimeD(D, false).list.map((x) => x.gid)), over: false })} title="待認領的課分給還有空的老師，超鐘點的移給別人；勾選的才套用">
           建議分配
         </Button>
-      </div>
+      </Problems>
       {Object.keys(byG).length > 0 && (
         <Card title={<>認領待確認 <small className="text-sm font-normal text-mute">{Object.keys(byG).length} 門</small></>} className="mb-4">
           <ul className="flex flex-col gap-3">
@@ -324,7 +329,7 @@ export function GroupsStep() {
           due = r.due,
           n = r.counted;
         return (
-          <section key={t.id} className="mb-6">
+          <section key={t.id} id={"t-" + t.id} className="mb-6 rounded-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <b className="text-lg">{t.name}</b>
               <label className="flex items-center gap-1 text-sm">

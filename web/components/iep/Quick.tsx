@@ -2,7 +2,7 @@
 /* 直接開會（舊版 iep.js vQuick）：已經知道時間，選學生、日期時間地點，帶入出席名單、印開會通知。
    老師端只列自己個管的學生；管理者端（tid=''）全部，承辦寫「特教組」。和舊版一樣的開會通知（lib/nx/iepPrint.ts noticesHtml）。 */
 import { Printer, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "@/components/Toast";
 import { Button, Card, Input, Select, SectionTitle } from "@/components/ui";
 import { IEP, type Round } from "@/lib/iep";
@@ -10,7 +10,60 @@ import { noticesHtml, type PrintOpt } from "@/lib/nx/iepPrint";
 import type { RcData } from "@/lib/types";
 import { PeopleEditor } from "./PeopleEditor";
 import { NoticeOpts, usePer } from "./RoundPage";
+import { Problems } from "@/components/Problems";
+import { quickApply, quickProblems, quickSuggest, type QuickOpt } from "@/lib/nx/iepPlan";
 import { useIep, useIepSource } from "./useIep";
+
+/* ───── 這個時間誰不能來、一鍵建議別的時段 ───── */
+function QuickCheck({ D, R }: { D: RcData; R: Round }) {
+  const io = useIep();
+  const probs = useMemo(() => quickProblems(D, R, io.busyOf(D, R)), [D, R, io]);
+  const [opts, setOpts] = useState<QuickOpt[] | null>(null);
+  if (!R.meets[0]?.at) return null;
+  return (
+    <div className="mb-3">
+      <Problems list={probs} ok="出席的人這個時間都有空">
+        {probs.length > 0 && (
+          <Button size="sm" disabled={io.ro} onClick={() => setOpts(quickSuggest(D, R, 3, io.ctx))} title="兩週內必要的人都有空、地點沒被用的時段；原班是主科的排後面">
+            建議時段
+          </Button>
+        )}
+      </Problems>
+      {opts && (
+        <div className="rounded-2xl border border-line2 bg-card p-3">
+          {opts.length ? (
+            <ul className="flex flex-col gap-2">
+              {opts.map((o) => (
+                <li key={o.k} className="flex flex-wrap items-center gap-2">
+                  <span className="min-w-0 flex-1">
+                    <b>{o.label}</b> <small className="text-mute">{o.time}</small>
+                    <small className={o.ok ? "block text-mute" : "block text-bad"}>{o.why}</small>
+                  </span>
+                  <Button
+                    size="sm"
+                    disabled={io.ro}
+                    onClick={() =>
+                      void io.edit(R.id, (_, r) => quickApply(r, o.k)).then((ok) => ok && (setOpts(null), toast("已改到 " + o.label)))
+                    }
+                  >
+                    改成這個
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-mute">兩週內找不到大家都有空的時段</p>
+          )}
+          <div className="mt-2 flex justify-end">
+            <Button size="sm" tone="ghost" onClick={() => setOpts(null)}>
+              關閉
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ───── 開會通知（直接開會） ───── */
 function Notices({ D, R, admin }: { D: RcData; R: Round; admin: boolean }) {
@@ -113,6 +166,7 @@ export function Quick() {
       {R && (
         <>
           <Card className="no-print mt-4" title={<>{R.name} <small className="text-sm font-normal text-mute">{R.meets[0]?.at ? IEP.slotInfo(D, R.meets[0].at).label + " " + IEP.slotInfo(D, R.meets[0].at).time : ""}</small></>}>
+            <QuickCheck D={D} R={R} />
             {R.meets[0] && (
               <PeopleEditor
                 D={D}
