@@ -76,7 +76,7 @@ describe("通知單 HTML 和 notice.html 逐字相同", () => {
         const { sb } = oldNotice(N, "1", P);
         sb.run("syncPlanner(JSON.parse(__P),true,'');");
         oldJ = sb.run<string>("JSON.stringify(D)");
-        const r = syncNotice(N, clone(P));
+        const r = syncNotice(N, clone(P), 0, { extStudy: false });
         expect(r.ok).toBe(true);
         // 連動後的整份資料一樣（學生、每一格、日期、考科、時間、常用地點）
         expect(JSON.stringify(N)).toBe(oldJ);
@@ -93,7 +93,7 @@ describe("通知單 HTML 和 notice.html 逐字相同", () => {
   it("連動兩次（考程改了）結果也一樣；手動改過的學生留下來", { timeout: 60000 }, () => {
     const N = normalize(defaultData());
     const E = arrangedExam(bigExam());
-    syncNotice(N, clone(E));
+    syncNotice(N, clone(E), 0, { extStudy: false });
     touch(N);
     const { sb } = oldNotice(N, "1");
     const E2 = clone(E);
@@ -101,9 +101,94 @@ describe("通知單 HTML 和 notice.html 逐字相同", () => {
     E2.sessions[1].start = "09:20";
     sb.ctx.__P = JSON.stringify(E2);
     sb.run("syncPlanner(JSON.parse(__P),true,'');");
-    syncNotice(N, clone(E2));
+    syncNotice(N, clone(E2), 0, { extStudy: false });
     expect(JSON.stringify(N)).toBe(sb.run<string>("JSON.stringify(D)"));
     N.students.forEach((s, i) => expect(noticeHtml(N, s)).toBe(sb.run<string>("noticeHtml(D.students[" + i + "])")));
+  });
+  it("排列機換了學生 id（例：搬到新版）：手改過的不會變成重複的一份，手改的格子併進連動的那份", { timeout: 60000 }, () => {
+    const N = normalize(defaultData());
+    const E = arrangedExam(bigExam());
+    syncNotice(N, clone(E));
+    const n0 = N.students.length;
+    const s0 = N.students[0];
+    const key = s0.cls + "-" + s0.seat;
+    const exCell = Object.keys(s0.a)[0];
+    s0.c["0-2"] = { loc: "學習中心四" }; // 自習節手改的地點
+    const E2 = clone(E);
+    E2.students.forEach((s) => (s.id = "new-" + s.id));
+    E2.assign = Object.fromEntries(Object.entries(E2.assign || {}).map(([k, v]) => ["new-" + k, v]));
+    const r = syncNotice(N, clone(E2));
+    expect(r.add).toBe(0);
+    expect(N.students.length).toBe(n0);
+    const same = N.students.filter((s) => s.cls + "-" + s.seat === key);
+    expect(same.length).toBe(1);
+    expect(same[0].pid).toMatch(/^new-/);
+    expect(same[0].c["0-2"]).toEqual({ loc: "學習中心四" });
+    expect(same[0].a[exCell]).toEqual(s0.a[exCell]);
+    // 印出來：考試那幾節照排考場，手改的自習節照手改
+    const html = noticeHtml(N, same[0]);
+    expect(html).toContain("學習中心四");
+    expect(html).toContain(String(s0.a[exCell].loc).split("/")[0]);
+  });
+  it("已經有重複的（板橋：一份沒連動、只有手改的自習節，一份連動）：下一次連動併成一份", { timeout: 60000 }, () => {
+    const N = normalize(defaultData());
+    const E = arrangedExam(bigExam());
+    syncNotice(N, clone(E));
+    const n0 = N.students.length;
+    const t = N.students[0];
+    N.students.push({ cls: t.cls, seat: t.seat, name: t.name, a: {}, c: { "0-5": { shade: true, loc: "環教中心" } }, pm: {}, notes: null });
+    const r = syncNotice(N, clone(E));
+    expect(r.merged).toBe(1);
+    expect(N.students.length).toBe(n0);
+    const same = N.students.filter((s) => s.cls === t.cls && s.seat === t.seat);
+    expect(same.length).toBe(1);
+    expect(same[0].pid).toBeTruthy();
+    expect(same[0].c["0-5"]).toEqual({ shade: true, loc: "環教中心" });
+  });
+});
+
+describe("延長考試的前後一節在同一間教室自習（板橋 2026-11）", () => {
+  // 自己做一份小段考：第 1 天第 1、3 節考試，第 2 節沒考；第 2 天下午第 5 節延長、第 4 節（上午最後一節）不跨午休
+  function mini(mode1: "after" | "before", mode3: "after" | "before") {
+    const D = examDefault();
+    D.title = "115學年度第1學期第2次段考";
+    const base = D.sessions[0];
+    D.sessions = [
+      { ...base, id: "a1", date: "12/01", period: "第1節", start: "08:20", end: "09:05", subject: "國文", grades: [7, 8, 9], extMin: 20, extMode: mode1, makeup: false },
+      { ...base, id: "a3", date: "12/01", period: "第3節", start: "10:10", end: "10:55", subject: "數學", grades: [7, 8, 9], extMin: 20, extMode: mode3, makeup: false },
+      { ...base, id: "b5", date: "12/02", period: "第5節", start: "13:10", end: "13:55", subject: "英文", grades: [7, 8, 9], extMin: 20, extMode: "before", makeup: false },
+    ];
+    D.students = [
+      { id: "e1", cls: "907", seat: "05", name: "延長生", sv: { ext: "*" }, memo: "", on: true },
+      { id: "n1", cls: "907", seat: "06", name: "沒延長", sv: { small: "*" }, memo: "", on: true },
+    ];
+    return arrangedExam(D);
+  }
+  const stuOf = (N: NoticeData, seat: string) => N.students.find((s) => s.seat === seat)!;
+  it("前一節延長到下一節：第 2 節在第 1 節的教室自習", { timeout: 60000 }, () => {
+    const E = mini("after", "after");
+    const N = normalize(defaultData());
+    syncNotice(N, clone(E));
+    const s = stuOf(N, "05");
+    expect(s.a["0-1"]).toEqual({ loc: s.a["0-0"].loc, subj: "自習" });
+    // 沒有延長的學生不變（照舊回原班）
+    expect(stuOf(N, "06").a["0-1"]).toBeUndefined();
+    // 第 4 節（上午最後一節）後面是午休，第 5 節的延長不往上跨
+    expect(s.a["1-3"]).toBeUndefined();
+    // 關掉這個功能時和舊版一樣
+    const N0 = normalize(defaultData());
+    syncNotice(N0, clone(E), 0, { extStudy: false });
+    expect(stuOf(N0, "05").a["0-1"]).toBeUndefined();
+  });
+  it("後一節提早開始：第 2 節在第 3 節的教室自習；手改過的格子照手改", { timeout: 60000 }, () => {
+    const E = mini("before", "before");
+    const N = normalize(defaultData());
+    syncNotice(N, clone(E));
+    const s = stuOf(N, "05");
+    expect(s.a["0-1"]).toEqual({ loc: s.a["0-2"].loc, subj: "自習" });
+    s.c["0-1"] = { loc: "學習中心四" };
+    syncNotice(N, clone(E));
+    expect(noticeHtml(N, stuOf(N, "05"))).toContain("學習中心四");
   });
 });
 

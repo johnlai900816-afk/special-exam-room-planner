@@ -250,8 +250,10 @@ export interface SyncResult {
   days: number;
   /** 目前選的學生在新名單裡的位置 */
   cur: number;
+  /** 併掉的重複手動學生（沒有就不出現） */
+  merged?: number;
 }
-export function syncNotice(D: NoticeData, P: any, cur = 0): SyncResult {
+export function syncNotice(D: NoticeData, P: any, cur = 0, opt: { extStudy?: boolean } = {}): SyncResult {
   const fail: SyncResult = { ok: false, seen: 0, add: 0, gone: 0, days: 0, cur };
   if (!P || !P.students || !P.sessions || !P.rooms) return fail;
   const me = D.students[cur];
@@ -334,9 +336,11 @@ export function syncNotice(D: NoticeData, P: any, cur = 0): SyncResult {
   const sameName = (a: string, b: string) => a && b && (a === b || a.endsWith(b) || b.endsWith(a));
   const waitR = P.rooms.find((r: any) => r.type === "wait"),
     gOf = (c: unknown) => parseInt(String(c || "").trim()[0], 10) || 0;
+  const liveIds = new Set<string>(P.students.filter((x: any) => x.on !== false).map((x: any) => String(x.id)));
   P.students.forEach((ps: any) => {
     if (ps.on === false) return;
     const cells: Record<string, NoticeCell> = {},
+      ext: Record<string, "before" | "after"> = {},
       waits: { subj: string; s: any }[] = [];
     for (const k in P.assign || {}) {
       const sep = k.lastIndexOf("|");
@@ -361,6 +365,7 @@ export function syncNotice(D: NoticeData, P: any, cur = 0): SyncResult {
       if (has("ext") && e) {
         if (s.extMode === "before") c.s = fmt(hm(s.start) - e);
         else c.e = fmt(hm(s.end) + e);
+        ext[d + "-" + i] = s.extMode === "before" ? "before" : "after";
       }
       if (s.makeup) c.subj = subj + "(補考)";
       cells[d + "-" + i] = c;
@@ -377,10 +382,24 @@ export function syncNotice(D: NoticeData, P: any, cur = 0): SyncResult {
           cells[d + "-" + i] = { loc: waitR ? waitR.name : "自習等候教室", subj: "自習/(" + w.subj + "改補考)", shade: true };
         });
     });
+    // 前一節延長（考到下一節）或後一節延長（提早開始）：中間沒考試的那一節在那間教室自習，不回原班（板橋 2026-11）。
+    // 前一節優先；上午、下午不跨（中間是午休）；下午合併成一段文字的那天不處理。和舊版 notice.html 不同的地方。
+    if (opt.extStudy !== false)
+      for (let d = 0; d < 2; d++)
+        D.periods.forEach((p, i) => {
+          const k = d + "-" + i;
+          if (cells[k] || !p.d[d].s || (i >= D.amCount && D.days[d].pmMerge)) return;
+          const same = (j: number) => j >= 0 && j < D.periods.length && j < D.amCount === i < D.amCount;
+          const pk = d + "-" + (i - 1),
+            nk = d + "-" + (i + 1);
+          const from = same(i - 1) && ext[pk] === "after" ? cells[pk] : same(i + 1) && ext[nk] === "before" ? cells[nk] : null;
+          if (from && from.loc) cells[k] = { loc: from.loc, subj: "自習" };
+        });
     if (!Object.keys(cells).length) return;
     let st =
       D.students.find((x) => x.pid === ps.id && !seen.has(x)) ||
-      D.students.find((x) => !x.pid && !seen.has(x) && String(x.cls) === String(ps.cls) && (!x.seat || !ps.seat || +x.seat === +ps.seat) && sameName(x.name, ps.name));
+      // 沒連動的、或連到排列機已經沒有的 id（換過 id）：用班級、座號、姓名對回來（後者和舊版不同，舊版會多出一份）
+      D.students.find((x) => (!x.pid || !liveIds.has(x.pid)) && !seen.has(x) && String(x.cls) === String(ps.cls) && (!x.seat || !ps.seat || +x.seat === +ps.seat) && sameName(x.name, ps.name));
     if (st) {
       if (st.pid && st.name === st.plName) st.name = ps.name || "";
       st.cls = ps.cls || st.cls;
@@ -394,6 +413,19 @@ export function syncNotice(D: NoticeData, P: any, cur = 0): SyncResult {
     st.plName = ps.name || "";
     st.a = cells;
     seen.add(st);
+  });
+  // 同一位學生多出一份沒連動的（排列機換過學生 id 後留下的手動學生）：手改的格子、注意事項併進連動的那份，再刪掉，
+  // 不然名單上會有兩個同名的，印到的那份全部寫「原班」（2026-11 板橋 907-05、902-06）。和舊版 notice.html 不同的地方。
+  let merged = 0;
+  D.students = D.students.filter((s) => {
+    if (s.pid) return true;
+    const t = [...seen].find((x) => String(x.cls) === String(s.cls) && (!x.seat || !s.seat || +x.seat === +s.seat) && sameName(x.name, s.name));
+    if (!t) return true;
+    for (const k in s.c) if (!t.c[k]) t.c[k] = s.c[k];
+    for (const k in s.pm || {}) if (!(t.pm || {})[k]) (t.pm = t.pm || {})[k] = s.pm[k];
+    if (t.notes == null && s.notes != null) t.notes = s.notes;
+    merged++;
+    return false;
   });
   // 排列機已經沒有的學生：沒手動改過就移除，有改過就留下來變成手動學生
   D.students = D.students.filter((s) => {
@@ -411,7 +443,7 @@ export function syncNotice(D: NoticeData, P: any, cur = 0): SyncResult {
     (x, y) =>
       String(x.cls).localeCompare(String(y.cls), "zh-Hant", { numeric: true }) || String(x.seat).localeCompare(String(y.seat), "zh-Hant", { numeric: true }),
   );
-  return { ok: true, seen: seen.size, add, gone, days: dates.length, cur: Math.max(0, D.students.indexOf(me as NoticeStudent)) };
+  return { ok: true, seen: seen.size, add, gone, days: dates.length, cur: Math.max(0, D.students.indexOf(me as NoticeStudent)), ...(merged ? { merged } : {}) };
 }
 
 /* ---------- 紙張與列印的樣式：notice.html 的 <style> 逐行複製（不改任何一個字） ---------- */
