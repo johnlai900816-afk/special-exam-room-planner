@@ -9,6 +9,7 @@ import { useApply } from "@/components/admin/useApply";
 import { Button, Card, Input, SectionTitle, Select } from "@/components/ui";
 import { CORE } from "@/lib/core";
 import type { RcData, Teacher } from "@/lib/types";
+import { SchedImpact } from "./SchedImpact";
 
 const th = "px-2 py-2 text-left text-[13px] font-normal text-mute whitespace-nowrap";
 const td = "border-t border-line px-2 py-1.5 align-middle";
@@ -94,6 +95,7 @@ export function TeaStep() {
 
   return (
     <>
+      <SchedImpact kinds="teacher,reg,class" />
       <Card>
         <SectionTitle no={1} extra={D.teachers.length + " 位"}>
           老師

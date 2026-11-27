@@ -3,6 +3,7 @@
 import { useAdmin } from "@/components/AdminShell";
 import { useApply } from "@/components/admin/useApply";
 import { Card, Input, Select } from "@/components/ui";
+import { SchedImpact } from "./SchedImpact";
 
 type S = Record<string, unknown>;
 const CHECKS: [string, string][] = [
@@ -38,6 +39,7 @@ export function RulesStep() {
 
   return (
     <Card>
+      <SchedImpact kinds="teacher,student,class,reg,room,off,dup" />
       <div className="text-[15px]">
         {CHECKS.map(([k, t]) => (
           <label key={k} className={row}>
